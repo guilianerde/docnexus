@@ -14,10 +14,10 @@ const validMetadata = {
   ],
   relationships: [
     {
-      from: "docnexus-capture",
-      to: "archive_record",
+      from: "docnexus-document-add",
+      to: "document add",
       type: "depends_on",
-      description: "The skill calls the MCP archive tool after producing content."
+      description: "The skill calls the CLI document add command after producing content."
     }
   ]
 };

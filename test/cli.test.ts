@@ -1,9 +1,10 @@
-import { access, mkdtemp, rm, stat } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { isDirectCliInvocation, runCli, validateMcpInvocation, type RunCliDependencies } from "../src/cli.js";
-import { callTool } from "../src/mcp.js";
+import { upsertManagedDocument } from "../src/managed-documents.js";
+import type { DocNexusMetadata } from "../src/types.js";
 
 const tempRoots: string[] = [];
 const previousEmbedder = process.env.DOCNEXUS_EMBEDDER;
@@ -12,6 +13,31 @@ async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "docnexus-cli-"));
   tempRoots.push(root);
   return root;
+}
+
+const metadata: DocNexusMetadata = {
+  title: "CLI Document",
+  summary: "CLI document input provides current managed context for structured Graph RAG retrieval.",
+  tags: ["cli"],
+  entities: [],
+  relationships: []
+};
+
+async function writeDocumentInputs(
+  projectRoot: string,
+  input: { source: string; document: string; metadata?: DocNexusMetadata }
+): Promise<{ source: string; document: string; metadata: string }> {
+  const directory = join(projectRoot, "inputs");
+  await mkdir(directory, { recursive: true });
+  const paths = {
+    source: join(directory, "source.md"),
+    document: join(directory, "document.md"),
+    metadata: join(directory, "metadata.json")
+  };
+  await writeFile(paths.source, input.source);
+  await writeFile(paths.document, input.document);
+  await writeFile(paths.metadata, JSON.stringify(input.metadata ?? metadata));
+  return paths;
 }
 
 afterEach(async () => {
@@ -79,12 +105,68 @@ describe("runCli", () => {
     await expect(runCli(["skills", "install", "--target", "cursor"], projectRoot)).rejects.toThrow("--target must be codex or claude");
   });
 
+  it("creates a managed document from prepared artifact files", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    const inputs = await writeDocumentInputs(projectRoot, {
+      source: "Original selected content.",
+      document: "# Current document\n\nFirst version."
+    });
+
+    const output = JSON.parse(
+      await runCli(
+        [
+          "document",
+          "add",
+          "--file",
+          "docs/memory/auth.md",
+          "--source-file",
+          inputs.source,
+          "--document-file",
+          inputs.document,
+          "--metadata-file",
+          inputs.metadata
+        ],
+        projectRoot
+      )
+    );
+
+    expect(output).toMatchObject({ file_path: "docs/memory/auth.md", operation: "created", chunk_count: 1 });
+    await expect(access(join(projectRoot, "docs/memory/auth.md"))).resolves.toBeUndefined();
+  });
+
+  it("requires explicit replace before updating a managed document", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    const initial = await writeDocumentInputs(projectRoot, {
+      source: "Original source.",
+      document: "# Current document\n\nFirst version."
+    });
+    const command = [
+      "document",
+      "add",
+      "--file",
+      "docs/memory/auth.md",
+      "--source-file",
+      initial.source,
+      "--document-file",
+      initial.document,
+      "--metadata-file",
+      initial.metadata
+    ];
+    await runCli(command, projectRoot);
+    await writeFile(initial.document, "# Current document\n\nUpdated version.");
+
+    await expect(runCli(command, projectRoot)).rejects.toThrow("document add requires --replace");
+
+    const updated = JSON.parse(await runCli([...command, "--replace"], projectRoot));
+    expect(updated).toMatchObject({ file_path: "docs/memory/auth.md", operation: "updated" });
+  });
+
   it("recalls, physically deletes, and reports current document status", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
-    const record = await callTool("archive_record", {
-      project_root: projectRoot,
-      file_path: "cli.md",
+    const inputs = await writeDocumentInputs(projectRoot, {
       source: "CLI local recall content.",
       document: "CLI local recall content.",
       metadata: {
@@ -101,6 +183,23 @@ describe("runCli", () => {
         relationships: []
       }
     });
+    const record = JSON.parse(
+      await runCli(
+        [
+          "document",
+          "add",
+          "--file",
+          "cli.md",
+          "--source-file",
+          inputs.source,
+          "--document-file",
+          inputs.document,
+          "--metadata-file",
+          inputs.metadata
+        ],
+        projectRoot
+      )
+    );
 
     const recalled = await runCli(["recall", "local recall", "--limit", "1"], projectRoot);
     const recallResult = JSON.parse(recalled);
@@ -156,8 +255,7 @@ describe("runCli", () => {
 
 ${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
     const supportingText = "LadybugDB stores graph context for DocNexus retrieval.";
-    await callTool("archive_record", {
-      project_root: projectRoot,
+    await upsertManagedDocument(projectRoot, {
       file_path: "recall.md",
       source: primaryText,
       document: primaryText,
@@ -174,8 +272,7 @@ ${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
         ]
       }
     });
-    await callTool("archive_record", {
-      project_root: projectRoot,
+    await upsertManagedDocument(projectRoot, {
       file_path: "ladybug.md",
       source: supportingText,
       document: supportingText,
@@ -226,8 +323,7 @@ ${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
     await runCli(["init"], projectA);
     await runCli(["init"], projectB);
 
-    await callTool("archive_record", {
-      project_root: projectA,
+    await upsertManagedDocument(projectA, {
       file_path: "a.md",
       source: "Alpha isolated recall evidence.",
       document: "Alpha isolated recall evidence.",
@@ -239,8 +335,7 @@ ${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
         relationships: []
       }
     });
-    await callTool("archive_record", {
-      project_root: projectB,
+    await upsertManagedDocument(projectB, {
       file_path: "b.md",
       source: "Beta separate memory.",
       document: "Beta separate memory.",

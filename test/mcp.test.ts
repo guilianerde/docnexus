@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { upsertManagedDocument } from "../src/managed-documents.js";
 import { callTool, runMcpServer } from "../src/mcp.js";
 import { initializeProject } from "../src/project.js";
 
@@ -39,31 +40,15 @@ afterAll(() => {
 });
 
 describe("callTool", () => {
-  it("creates an immediately indexed current document", async () => {
-    const projectRoot = await makeRoot();
-    await initializeProject(projectRoot);
-
-    const archived = await callTool("archive_record", {
-      project_root: projectRoot,
-      file_path: "docs/memory/mcp.md",
-      source: "source",
-      document: "document",
-      metadata
-    });
-
-    expect(archived).toMatchObject({
-      id: expect.stringMatching(/^doc_/),
-      file_path: "docs/memory/mcp.md",
-      operation: "created",
-      chunk_count: 1
-    });
+  it("does not expose document mutation tools", async () => {
+    await expect(callTool("archive_record", {})).rejects.toThrow("Unknown tool: archive_record");
+    await expect(callTool("delete_document", {})).rejects.toThrow("Unknown tool: delete_document");
   });
 
   it("gets only requested source and metadata assets", async () => {
     const projectRoot = await makeRoot();
     await initializeProject(projectRoot);
-    const archived = await callTool("archive_record", {
-      project_root: projectRoot,
+    const archived = await upsertManagedDocument(projectRoot, {
       file_path: "docs/memory/mcp.md",
       source: "source",
       document: "document",
@@ -105,31 +90,6 @@ describe("callTool", () => {
 
   it("rejects unknown tools", async () => {
     await expect(callTool("missing_tool", {})).rejects.toThrow("Unknown tool: missing_tool");
-  });
-
-  it("physically deletes a current document through MCP handlers with confirmation", async () => {
-    const projectRoot = await makeRoot();
-    await initializeProject(projectRoot);
-    const indexed = await callTool("archive_record", {
-      project_root: projectRoot,
-      file_path: "memory.md",
-      source: "Agent memory recall through local chunks.",
-      document: "Agent memory recall through local chunks.",
-      metadata
-    });
-    expect(indexed).toMatchObject({
-      file_path: "memory.md",
-      operation: "created",
-      chunk_count: 1
-    });
-
-    await expect(callTool("delete_document", { project_root: projectRoot, id: indexed.id })).rejects.toThrow();
-    const deleted = await callTool("delete_document", { project_root: projectRoot, id: indexed.id, confirm: true });
-    expect(deleted).toEqual({
-      id: indexed.id,
-      file_path: "memory.md",
-      deleted: true
-    });
   });
 
   it("reports index status through MCP handlers", async () => {
@@ -179,15 +139,13 @@ describe("callTool", () => {
     await initializeProject(firstRoot);
     await initializeProject(secondRoot);
 
-    await callTool("archive_record", {
-      project_root: firstRoot,
+    await upsertManagedDocument(firstRoot, {
       file_path: "first.md",
       source: "first source",
       document: "first document",
       metadata
     });
-    await callTool("archive_record", {
-      project_root: secondRoot,
+    await upsertManagedDocument(secondRoot, {
       file_path: "second.md",
       source: "second source",
       document: "second document",

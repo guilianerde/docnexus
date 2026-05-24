@@ -2,13 +2,21 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { auditGraph, repairGraph } from "./graph-maintenance.js";
-import { deleteManagedDocument, getManagedIndexStatus, rebuildManagedDocuments } from "./managed-documents.js";
+import {
+  deleteManagedDocument,
+  getManagedIndexStatus,
+  listManagedDocuments,
+  rebuildManagedDocuments,
+  upsertManagedDocument
+} from "./managed-documents.js";
 import { runMcpServer } from "./mcp.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
 import { recall } from "./recall.js";
 import { resetProjectData } from "./reset.js";
 import { installSkills } from "./skills-install.js";
+import type { DocNexusMetadata } from "./types.js";
 
 export interface RunCliDependencies {
   auditGraph: typeof auditGraph;
@@ -69,6 +77,26 @@ export async function runCli(
     );
   }
 
+  if (command === "document" && subcommand === "add") {
+    const replace = rest.includes("--replace");
+    const options = parseOptions(rest.filter((arg) => arg !== "--replace"));
+    if (!options.file || !options["source-file"] || !options["document-file"] || !options["metadata-file"]) {
+      throw new Error("document add requires --file, --source-file, --document-file, and --metadata-file");
+    }
+    const existing = (await listManagedDocuments(projectRoot)).some((document) => document.file_path === options.file);
+    if (existing && !replace) {
+      throw new Error("document add requires --replace for an existing managed document");
+    }
+    return json(
+      await upsertManagedDocument(projectRoot, {
+        file_path: options.file,
+        source: await readFile(options["source-file"], "utf8"),
+        document: await readFile(options["document-file"], "utf8"),
+        metadata: JSON.parse(await readFile(options["metadata-file"], "utf8")) as DocNexusMetadata
+      })
+    );
+  }
+
   if (command === "index" && subcommand === "rebuild") {
     return json(await rebuildManagedDocuments(projectRoot, { force: rest.includes("--force") }));
   }
@@ -105,6 +133,8 @@ docnexus --project-root path/to/project init
 docnexus skills install --target codex
 docnexus skills install --target claude
 docnexus skills install --target codex --scope user
+docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json
+docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json --replace
 docnexus document delete --file path/to/file.md --force
 docnexus document delete --id doc_0000000000000000 --force
 docnexus reset --force

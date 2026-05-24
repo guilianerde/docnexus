@@ -3,26 +3,21 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 import {
-  deleteManagedDocument,
   getManagedIndexStatus,
   getManagedRecord,
   getManagedStatus,
   listManagedRecords,
-  upsertManagedDocument,
   type ManagedRecordAsset
 } from "./managed-documents.js";
 import { validateMetadata } from "./metadata.js";
 import { requireInitializedProject } from "./project.js";
-import type { ArchiveRecordInput } from "./types.js";
 
 type ToolArgs = Record<string, unknown>;
 const knownTools = new Set([
-  "archive_record",
   "list_records",
   "get_record",
   "status",
   "validate_metadata",
-  "delete_document",
   "index_status"
 ]);
 
@@ -53,16 +48,6 @@ function positiveInteger(value: unknown): number | undefined {
   return value;
 }
 
-function optionalString(value: unknown, name: string): string | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    throw new Error(`${name} must be a string`);
-  }
-  return value;
-}
-
 async function routeToolArgs(args: unknown): Promise<{ projectRoot: string; input: ToolArgs }> {
   const input = asObject(args);
   if (typeof input.project_root !== "string" || input.project_root.length === 0) {
@@ -83,8 +68,6 @@ export async function callTool(name: string, args: unknown): Promise<any> {
   const { projectRoot, input } = await routeToolArgs(args);
 
   switch (name) {
-    case "archive_record":
-      return upsertManagedDocument(projectRoot, input as unknown as ArchiveRecordInput);
     case "list_records":
       return listManagedRecords(projectRoot, {
         limit: positiveInteger(input.limit),
@@ -99,12 +82,6 @@ export async function callTool(name: string, args: unknown): Promise<any> {
       return getManagedStatus(projectRoot);
     case "validate_metadata":
       return validateMetadata(input.metadata);
-    case "delete_document":
-      return deleteManagedDocument(projectRoot, {
-        file_path: optionalString(input.file_path, "file_path"),
-        id: optionalString(input.id, "id"),
-        confirm: input.confirm === true
-      });
     case "index_status":
       return getManagedIndexStatus(projectRoot);
   }
@@ -130,18 +107,6 @@ export function createServer(): McpServer {
     name: "docnexus",
     version: "0.1.0"
   });
-
-  server.tool(
-    "archive_record",
-    {
-      ...projectRootSchema,
-      file_path: z.string().min(1),
-      source: z.string().min(1),
-      document: z.string().min(1),
-      metadata: z.record(z.string(), z.unknown())
-    },
-    async (args) => toolResponse(await callTool("archive_record", args))
-  );
 
   server.tool(
     "list_records",
@@ -172,17 +137,6 @@ export function createServer(): McpServer {
       metadata: z.record(z.string(), z.unknown())
     },
     async (args) => toolResponse(await callTool("validate_metadata", args))
-  );
-
-  server.tool(
-    "delete_document",
-    {
-      ...projectRootSchema,
-      file_path: z.string().optional(),
-      id: z.string().optional(),
-      confirm: z.literal(true)
-    },
-    async (args) => toolResponse(await callTool("delete_document", args))
   );
 
   server.tool("index_status", projectRootSchema, async (args) => toolResponse(await callTool("index_status", args)));

@@ -8,10 +8,12 @@ DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://gi
 
 ## Capabilities
 
-- `docnexus-capture` refines source and metadata before one MCP write creates or updates a recallable managed document.
+- `docnexus-document-extract` refines selected material into a proposed document and metadata without storing it.
+- `docnexus-document-add` creates or updates a recallable managed document through CLI, confirming before replacement.
+- `docnexus-document-delete` performs confirmed physical removal through CLI.
 - `docnexus-recall` invokes CLI retrieval and answers from document-grouped context with file references.
-- MCP exposes storage, metadata validation, deletion, and status tools for agents.
-- CLI exposes project initialization, skill installation, retrieval, index maintenance, graph audit/repair, destructive document deletion, and reset.
+- MCP exposes current document reads, metadata validation, and status tools for agents.
+- CLI exposes project initialization, skill installation, document mutation, retrieval, index maintenance, graph audit/repair, and reset.
 - Embeddings run locally with `BAAI/bge-small-zh-v1.5` by default.
 - LadybugDB stores current graph/vector state; SQLite stores current managed document and chunk state.
 
@@ -22,16 +24,17 @@ DocNexus does not call an LLM provider. Document refinement and final answers re
 ```text
 Agent / User
   |
-  | manual capture or recall skill
+  | manual document or recall skill
   v
 Skills
-  - refine source into current document + metadata
+  - extract document + metadata
+  - add/delete confirmed managed documents
   - answer from grouped recall context
   |
   v
 Global MCP service                 CLI
   - explicit project_root          - recall / maintenance / reset
-  - current document CRUD          |
+  - read / validate / status       - document add / delete
   |                                |
   +---------------+----------------+
                   v
@@ -106,44 +109,22 @@ claude mcp add --transport stdio docnexus -- docnexus mcp
 
 | Tool | Purpose |
 | --- | --- |
-| `archive_record` | Create or overwrite one current managed Markdown document and immediately index it. |
 | `list_records` | List current managed documents, optionally filtered by tag. |
 | `get_record` | Read a current document's source, Markdown, and/or metadata. |
 | `status` | Report current managed document storage status. |
-| `validate_metadata` | Validate metadata before storage. |
-| `delete_document` | Physically delete a managed file and derived state; requires `confirm: true`. |
+| `validate_metadata` | Validate prepared metadata before CLI storage. |
 | `index_status` | Report current document and chunk counts. |
 
-The retained `archive_record`, `list_records`, and `get_record` names refer to current state only. No previous document versions are retained.
+The retained `list_records` and `get_record` names refer to current state only. No previous document versions are retained. Document writes and deletion are CLI operations driven by explicit skills.
 
-Example create or update call:
+## Document And Recall Workflow
 
-```json
-{
-  "project_root": "/absolute/path/to/your-project",
-  "file_path": "docs/memory/auth.md",
-  "source": "Original selected material",
-  "document": "# Authentication\n\nCurrent refined decision.",
-  "metadata": {
-    "title": "Authentication",
-    "summary": "Current authentication decisions.",
-    "tags": ["auth"],
-    "entities": [],
-    "relationships": []
-  }
-}
-```
+Document extraction and storage are manually requested:
 
-A subsequent write to the same managed `file_path` replaces its source, document, metadata, chunks, embeddings, and graph state.
-
-## Capture And Recall Workflow
-
-Capture is manually requested:
-
-1. The agent uses `docnexus-capture` to prepare `source`, refined `document`, and structured `metadata`.
-2. The agent chooses a project-relative target Markdown `file_path`.
-3. Metadata is validated through MCP.
-4. One `archive_record` call writes the current target document, current sidecars, chunks, embeddings, and LadybugDB graph state.
+1. `/docnexus-document-extract` prepares `source`, refined `document`, structured `metadata`, and a proposed project-relative Markdown `file_path`; it does not persist anything.
+2. Metadata may be validated through MCP.
+3. `/docnexus-document-add` runs CLI storage and indexing. If the path is already managed, it asks for confirmation before issuing `--replace`.
+4. `/docnexus-document-delete` asks for destructive confirmation and then runs CLI physical deletion.
 
 Recall is manually requested:
 
@@ -158,6 +139,8 @@ Recall returns vector-ranked `results[]` and document-level `context_groups[]`. 
 Run commands in an initialized project unless stated otherwise:
 
 ```bash
+docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json
+docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json --replace
 docnexus index status
 docnexus index rebuild --force
 docnexus graph audit
@@ -167,7 +150,7 @@ docnexus recall "query" --limit 5
 
 `index rebuild --force` is maintenance only: it rebuilds current derived state from registered managed documents and their current sidecars. It does not import unmanaged files.
 
-Delete a managed document by path or ID:
+`--replace` is required for an existing managed path and is used only after the user confirms replacement. Delete a managed document by path or ID after confirmation:
 
 ```bash
 docnexus document delete --file docs/memory/auth.md --force

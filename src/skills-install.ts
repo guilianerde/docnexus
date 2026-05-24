@@ -7,7 +7,12 @@ import { requireInitializedProject } from "./project.js";
 type SkillsTarget = "codex" | "claude";
 type SkillsScope = "project" | "user";
 
-const SKILL_NAMES = ["docnexus-capture", "docnexus-recall"] as const;
+const SKILL_NAMES = [
+  "docnexus-document-extract",
+  "docnexus-document-add",
+  "docnexus-document-delete",
+  "docnexus-recall"
+] as const;
 
 export interface InstallSkillsInput {
   target: SkillsTarget;

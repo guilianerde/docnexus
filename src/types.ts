@@ -54,13 +54,6 @@ export interface ManagedChunk {
   created_at: string;
 }
 
-export interface ArchiveRecordInput {
-  file_path: string;
-  source: string;
-  document: string;
-  metadata: DocNexusMetadata;
-}
-
 export interface StoredRecordSummary {
   id: string;
   file_path: string;
