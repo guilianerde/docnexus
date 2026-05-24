@@ -1,0 +1,33 @@
+{
+  "name": "@docnexus/docnexus",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "files": [
+    "dist/src",
+    "skills",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "bin": {
+    "docnexus": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/src/cli.js', 0o755)\"",
+    "prepack": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "mcp": "node dist/src/cli.js mcp"
+  },
+  "dependencies": {
+    "@ladybugdb/core": "^0.16.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@xenova/transformers": "^2.17.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.1.0"
+  }
+}
