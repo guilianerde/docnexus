@@ -249,4 +249,4 @@ Not implemented:
 - MCP-side final answer generation.
 - Deeper multi-hop graph reasoning.
 
-See [docPlan.md](./docPlan.md) for the current implementation status and prioritized roadmap.
+See the [documentation center](./docs/README.md) for the architecture, product brief, release guide, and [prioritized roadmap](./docs/roadmap/current.zh-CN.md).

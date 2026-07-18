@@ -249,4 +249,4 @@ node dist/src/cli.js mcp
 - MCP 内部生成最终答案。
 - 更深层多跳图推理。
 
-当前实现状态和后续优先级见 [docPlan.md](./docPlan.md)。
+架构、产品说明、发布指南和后续优先级统一收录在[文档中心](./docs/README.md)，其中[当前路线图](./docs/roadmap/current.zh-CN.md)持续维护实现状态。

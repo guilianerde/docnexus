@@ -12,7 +12,7 @@
     "skills",
     "README.md",
     "README.zh-CN.md",
-    "docPlan.md"
+    "docs"
   ],
   "bin": {
     "docnexus": "./dist/src/cli.js"

@@ -127,7 +127,12 @@ async function verifyPackageContents(packageDirectory) {
   const requiredFiles = [
     "README.md",
     "README.zh-CN.md",
-    "docPlan.md",
+    "docs/README.md",
+    "docs/architecture/overview.zh-CN.md",
+    "docs/product/mvp.zh-CN.md",
+    "docs/product/mvp.en.md",
+    "docs/roadmap/current.zh-CN.md",
+    "docs/operations/release-checklist.md",
     "skills/docnexus-document-add/SKILL.md",
     "skills/docnexus-document-delete/SKILL.md",
     "skills/docnexus-document-extract/SKILL.md",

@@ -47,7 +47,7 @@
    - `docnexus doctor`
    - `docnexus document add`
    - `docnexus recall`
-   - README、skills、默认 models、`docPlan.md` 均在包内
+   - README、skills、默认 models、当前 `docs/` 文档均在包内
 5. CI smoke 可使用 hash embedder控制耗时；真实 ONNX 能力由工作流 C 单独覆盖。
 6. 发布前检查包名、版本、bin 可执行权限、tarball 内容和生产依赖审计结果。
 
@@ -89,7 +89,7 @@ npm audit --omit=dev
 npm pack --dry-run
 ```
 
-5. 同步 README、产品简报、`docPlan.md` 和本方案中的完成状态。
+5. 同步 README、产品简报、当前路线图和本方案中的完成状态。
 
 ## 并行执行边界
 

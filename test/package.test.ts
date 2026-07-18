@@ -12,7 +12,14 @@ describe("npm package contract", () => {
     expect(packageJson.engines).toEqual({ node: ">=22.13.0" });
     expect(packageJson.bin).toEqual({ docnexus: "./dist/src/cli.js" });
     expect(packageJson.files).toEqual(
-      expect.arrayContaining(["dist/src", "models", "skills", "README.md", "README.zh-CN.md", "docPlan.md"])
+      expect.arrayContaining([
+        "dist/src",
+        "models",
+        "skills",
+        "README.md",
+        "README.zh-CN.md",
+        "docs"
+      ])
     );
     expect(packagedModel.size).toBeGreaterThan(1_000_000);
     expect(packageJson.scripts.build).toContain("rmSync('dist'");
