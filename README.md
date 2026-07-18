@@ -51,7 +51,7 @@ Requirements: Node.js 22.13.0 or newer and npm. This is the first Node.js releas
 Install the executable once:
 
 ```bash
-npm install -g @docnexus/docnexus
+npm install -g @rowansenne/docnexus
 ```
 
 Initialize each project independently and install skills where needed:
@@ -67,8 +67,8 @@ docnexus skills install --target claude
 Without a global installation:
 
 ```bash
-npx -y @docnexus/docnexus init
-npx -y @docnexus/docnexus skills install --target codex
+npx -y @rowansenne/docnexus init
+npx -y @rowansenne/docnexus skills install --target codex
 ```
 
 Each initialized project owns its own `.docnexus/` data domain. Data, embeddings, and graph state are not shared across projects.

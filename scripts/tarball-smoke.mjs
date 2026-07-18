@@ -13,6 +13,8 @@ const packDirectory = join(smokeRoot, "pack");
 const installDirectory = join(smokeRoot, "install");
 const projectDirectory = join(smokeRoot, "project");
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+const sourceManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
+const packageNameParts = sourceManifest.name.split("/");
 
 try {
   await Promise.all([
@@ -36,7 +38,7 @@ try {
     { cwd: smokeRoot }
   );
 
-  const packageDirectory = join(installDirectory, "node_modules", "@docnexus", "docnexus");
+  const packageDirectory = join(installDirectory, "node_modules", ...packageNameParts);
   const cliPath = join(installDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
   const installedPackagePath = await realpath(packageDirectory);
   const installedCliPath = await realpath(cliPath);
@@ -127,6 +129,8 @@ async function verifyPackageContents(packageDirectory) {
   const requiredFiles = [
     "README.md",
     "README.zh-CN.md",
+    "LICENSE",
+    "SECURITY.md",
     "docs/README.md",
     "docs/architecture/overview.zh-CN.md",
     "docs/product/mvp.zh-CN.md",
@@ -157,7 +161,7 @@ async function verifyPackageContents(packageDirectory) {
   assert(model.size > 1_000_000, "packaged ONNX model appears to be a placeholder");
 
   const packagedManifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8"));
-  assert(packagedManifest.bin?.docnexus === "./dist/src/cli.js", "package bin does not expose dist/src/cli.js");
+  assert(packagedManifest.bin?.docnexus === "dist/src/cli.js", "package bin does not expose dist/src/cli.js");
 }
 
 async function runJson(executable, args, cwd, env) {

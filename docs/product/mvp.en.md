@@ -20,7 +20,7 @@ DocNexus is a local project-memory service for agents such as Codex and Claude. 
 ## Deployment And Isolation
 
 ```bash
-npm install -g @docnexus/docnexus
+npm install -g @rowansenne/docnexus
 cd /path/to/project
 docnexus init
 docnexus doctor

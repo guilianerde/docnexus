@@ -1,7 +1,16 @@
 {
-  "name": "@docnexus/docnexus",
+  "name": "@rowansenne/docnexus",
   "version": "0.1.0",
   "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/guilianerde/docnexus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/guilianerde/docnexus/issues"
+  },
+  "homepage": "https://github.com/guilianerde/docnexus#readme",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -12,10 +21,15 @@
     "skills",
     "README.md",
     "README.zh-CN.md",
+    "LICENSE",
+    "SECURITY.md",
     "docs"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
-    "docnexus": "./dist/src/cli.js"
+    "docnexus": "dist/src/cli.js"
   },
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/src/cli.js', 0o755)\"",

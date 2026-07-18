@@ -7,10 +7,17 @@ describe("npm package contract", () => {
     const cliSource = await readFile("src/cli.ts", "utf8");
     const packagedModel = await stat("models/BAAI/bge-small-zh-v1.5/onnx/model_quantized.onnx");
 
-    expect(packageJson.name).toBe("@docnexus/docnexus");
+    expect(packageJson.name).toBe("@rowansenne/docnexus");
     expect(packageJson.private).toBe(false);
+    expect(packageJson.license).toBe("MIT");
+    expect(packageJson.repository).toEqual({
+      type: "git",
+      url: "git+https://github.com/guilianerde/docnexus.git"
+    });
+    expect(packageJson.bugs).toEqual({ url: "https://github.com/guilianerde/docnexus/issues" });
     expect(packageJson.engines).toEqual({ node: ">=22.13.0" });
-    expect(packageJson.bin).toEqual({ docnexus: "./dist/src/cli.js" });
+    expect(packageJson.bin).toEqual({ docnexus: "dist/src/cli.js" });
+    expect(packageJson.publishConfig).toEqual({ access: "public" });
     expect(packageJson.files).toEqual(
       expect.arrayContaining([
         "dist/src",
@@ -18,6 +25,8 @@ describe("npm package contract", () => {
         "skills",
         "README.md",
         "README.zh-CN.md",
+        "LICENSE",
+        "SECURITY.md",
         "docs"
       ])
     );

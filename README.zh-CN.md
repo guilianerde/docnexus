@@ -51,7 +51,7 @@ Skills
 只安装一次可执行程序：
 
 ```bash
-npm install -g @docnexus/docnexus
+npm install -g @rowansenne/docnexus
 ```
 
 在每个需要独立记忆空间的项目中初始化并按需安装 skills：
@@ -67,8 +67,8 @@ docnexus skills install --target claude
 不进行全局安装时：
 
 ```bash
-npx -y @docnexus/docnexus init
-npx -y @docnexus/docnexus skills install --target codex
+npx -y @rowansenne/docnexus init
+npx -y @rowansenne/docnexus skills install --target codex
 ```
 
 每个已初始化项目都拥有独立的 `.docnexus/` 数据域，文档、embedding 和图谱状态不会跨项目共享。

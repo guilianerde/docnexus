@@ -20,7 +20,7 @@ DocNexus 是面向 Codex、Claude 等智能体的本地项目记忆服务。Skil
 ## 部署与隔离
 
 ```bash
-npm install -g @docnexus/docnexus
+npm install -g @rowansenne/docnexus
 cd /path/to/project
 docnexus init
 docnexus doctor

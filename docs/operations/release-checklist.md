@@ -1,13 +1,14 @@
 # Release Checklist
 
-Use this checklist before publishing `@docnexus/docnexus`. A failed item blocks the release unless the exception and owner are recorded in the release notes.
+Use this checklist before publishing `@rowansenne/docnexus`. A failed item blocks the release unless the exception and owner are recorded in the release notes.
 
 ## Maintainer-owned metadata
 
-- [ ] The minimum supported Node.js version is declared in `package.json`, and the supported Node 22/24 LTS lines are covered by CI.
-- [ ] The maintainer has selected a license and added the corresponding package metadata and license file. This repository does not choose a license automatically.
-- [ ] The maintainer has supplied the canonical repository URL, issue tracker, and security contact. Do not infer these values from a local checkout.
-- [ ] The version is intentional, is not already published, and the release notes describe user-visible changes.
+- [x] The minimum supported Node.js version is declared in `package.json`, and the supported Node 22/24 LTS lines are covered by CI.
+- [x] The maintainer selected the MIT license and added the corresponding package metadata and license file.
+- [x] The canonical repository URL and issue tracker are declared in `package.json`.
+- [x] Security reports are directed to `rowansenne@gmail.com` in `SECURITY.md`.
+- [x] Version `0.1.0` is intentional and was confirmed as unpublished before release.
 
 ## Automated gates
 

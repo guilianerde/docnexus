@@ -8,7 +8,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
 
 ## 已实现基线
 
-- npm 包 `@docnexus/docnexus` 与 `docnexus` CLI。
+- npm 包 `@rowansenne/docnexus` 与 `docnexus` CLI。
 - 每个项目独立的 `.docnexus/` 数据域，以及一次全局注册、每次显式传 `project_root` 的 MCP 服务。
 - `init`、`doctor`、skills 安装、embedding 模型覆盖安装、文档新增/替换/删除、recall、索引重建、图谱审计/修复和 reset。
 - 单版本托管 Markdown、当前 source/metadata sidecars、SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
@@ -43,7 +43,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
    - 增加受支持 Node.js 版本矩阵，运行 test、typecheck、build、`npm pack` 和安装后 CLI smoke test。
    - 在 `package.json` 声明 `engines`，补齐 LICENSE、repository、issue/security 联系信息和发布检查清单。
    - 验收：干净环境可从 tarball 完成 `init -> doctor -> add -> recall`，失败会阻止发布。
-   - 状态：技术实现已完成。Node 22/24 CI、审计门禁和实际 tarball 安装 smoke 已配置；LICENSE 与公开仓库/安全联系信息待维护者提供。
+   - 状态：已完成。Node 22/24 CI、审计门禁和实际 tarball 安装 smoke 已配置；MIT License、公开 repository/issue 信息与安全联系邮箱均已补齐。
 
 3. 真实运行时端到端测试
    - 使用随包 ONNX 模型，而不是 hash 或 mock pipeline，覆盖首次加载、中文/英文输入、文档写入和召回。
