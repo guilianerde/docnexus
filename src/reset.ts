@@ -3,7 +3,8 @@ import { join } from "node:path";
 import {
   listManagedTargetPathsForReset,
   removeManagedTargetForReset,
-  storePath
+  storePath,
+  validateManagedTargetForReset
 } from "./managed-documents.js";
 import { PROJECT_FORMAT_VERSION } from "./project.js";
 
@@ -20,6 +21,7 @@ export async function resetProjectData(projectRoot: string, options: { force: bo
   let managedFiles: string[] = [];
   if (marker?.format_version === PROJECT_FORMAT_VERSION) {
     managedFiles = await listManagedTargetPathsForReset(projectRoot).catch(() => []);
+    await Promise.all(managedFiles.map((filePath) => validateManagedTargetForReset(projectRoot, filePath)));
     for (const filePath of managedFiles) {
       await removeManagedTargetForReset(projectRoot, filePath);
     }

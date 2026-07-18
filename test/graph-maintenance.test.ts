@@ -16,7 +16,7 @@ const metadata = {
   title: "Graph",
   summary: "Current graph maintenance document.",
   tags: ["graph"],
-  entities: [],
+  entities: [{ name: "Graph", type: "concept" as const, description: "The current document graph." }],
   relationships: []
 };
 

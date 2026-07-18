@@ -10,7 +10,7 @@ Use only for persisting prepared source, refined Markdown, metadata, and a proje
 ## Workflow
 
 1. Confirm the target project is initialized with DocNexus.
-2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; create temporary artifact files when only conversation content is available.
+2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; metadata must include at least one source-grounded entity. Create temporary artifact files when only conversation content is available.
 3. For a proposed new managed path, run:
 
 ```bash
@@ -29,4 +29,5 @@ docnexus document add --file <file_path> --source-file <source_path> --document-
 
 - Never use `--replace` before the user has confirmed overwriting the current managed document.
 - Never add an unmanaged existing project file as though it were a DocNexus document; choose a different path or resolve the conflict with the user.
+- Never use a managed target path containing a symbolic link; the CLI rejects it to preserve the project boundary.
 - This command performs persistence, indexing, embedding, and graph update together. Do not call an independent index mutation route.

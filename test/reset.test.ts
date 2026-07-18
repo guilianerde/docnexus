@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,7 +16,7 @@ const metadata = {
   title: "Reset",
   summary: "Reset current managed state.",
   tags: ["reset"],
-  entities: [],
+  entities: [{ name: "Reset", type: "tool" as const, description: "The command that removes managed state." }],
   relationships: []
 };
 
@@ -70,5 +70,25 @@ describe("reset", () => {
 
     await expect(readFile(join(root, "docs/memory/legacy.md"), "utf8")).resolves.toContain("outside recoverable");
     await expect(access(join(root, ".docnexus"))).rejects.toThrow();
+  });
+
+  it("rejects reset before deleting through a symbolic link", async () => {
+    const root = await makeRoot();
+    const external = await mkdtemp(join(tmpdir(), "docnexus-reset-external-"));
+    roots.push(external);
+    await upsertManagedDocument(
+      root,
+      { file_path: "docs/memory/auth.md", source: "raw", document: "# Auth", metadata },
+      new LocalHashEmbedder(8),
+      graphWriter
+    );
+    await rm(join(root, "docs"), { recursive: true, force: true });
+    await mkdir(join(external, "memory"), { recursive: true });
+    await writeFile(join(external, "memory", "auth.md"), "outside project");
+    await symlink(external, join(root, "docs"));
+
+    await expect(resetProjectData(root, { force: true })).rejects.toThrow("must not contain symbolic links");
+    await expect(readFile(join(external, "memory", "auth.md"), "utf8")).resolves.toBe("outside project");
+    await expect(access(join(root, ".docnexus"))).resolves.toBeUndefined();
   });
 });

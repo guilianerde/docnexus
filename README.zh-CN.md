@@ -13,8 +13,8 @@ DocNexus 是一款面向 Codex、Claude 等编码智能体的本地项目记忆�
 - `docnexus-document-delete` 在用户确认后通过 CLI 物理删除托管文档。
 - `docnexus-recall` 通过 CLI 检索归集后的上下文，并基于参考文件回答。
 - MCP 向智能体提供当前文档读取、metadata 校验和状态查询 tools。
-- CLI 提供项目初始化、skills 安装、文档变更、召回、索引维护、图谱审计/修复和 reset。
-- 默认使用本地 embedding 模型 `BAAI/bge-small-zh-v1.5`。
+- CLI 提供项目初始化、运行诊断、skills 安装、文档变更、召回、索引维护、图谱审计/修复和 reset。
+- 默认使用本地 embedding 模型 `BAAI/bge-small-zh-v1.5`，并以 local-only 模式加载。
 - SQLite 保存当前托管文档/chunks，LadybugDB 保存当前图谱和向量状态。
 
 DocNexus 不调用外部 LLM 提供商。提炼和最终回答始终由智能体完成。
@@ -46,7 +46,7 @@ Skills
 
 ## 安装与初始化
 
-需要支持 `node:sqlite` 的 Node.js 与 npm。
+需要 Node.js 22.13.0 或更高版本及 npm；这是 `node:sqlite` 无需实验性启动参数即可使用的最低版本。
 
 只安装一次可执行程序：
 
@@ -59,6 +59,7 @@ npm install -g @docnexus/docnexus
 ```bash
 cd /path/to/your-project
 docnexus init
+docnexus doctor
 docnexus skills install --target codex
 docnexus skills install --target claude
 ```
@@ -123,7 +124,7 @@ claude mcp add --transport stdio docnexus -- docnexus mcp
 
 1. `/docnexus-document-extract` 准备 `source`、提炼后的 `document`、结构化 `metadata` 与建议的项目相对 `file_path`，但不落库。
 2. 可通过 MCP 校验 metadata。
-3. `/docnexus-document-add` 调用 CLI 写入并建立索引；如果路径已托管，必须先询问用户确认后再传 `--replace`。
+3. `/docnexus-document-add` 调用 CLI 写入并建立索引；metadata 必须包含至少一个基于来源的实体；如果路径已托管，必须先询问用户确认后再传 `--replace`。
 4. `/docnexus-document-delete` 在取得破坏性删除确认后调用 CLI 物理删除。
 
 召回由用户手动触发：
@@ -132,7 +133,7 @@ claude mcp add --transport stdio docnexus -- docnexus mcp
 docnexus recall "本地 embedding 和 LadybugDB 的关系" --limit 5
 ```
 
-召回返回按向量相关性排序的 `results[]` 与按文档归集的 `context_groups[]`。每组通过当前 `document_id` 标识并引用其托管路径，可包含有界的邻近 chunks 与一跳图谱支持证据。metadata 和 graph context 是强依赖；系统不会返回缺失这些内容的降级结果。
+召回返回按向量相关性排序的 `results[]` 与按文档归集的 `context_groups[]`。每组通过当前 `document_id` 标识并引用其托管路径，可包含有界的邻近 chunks 与一跳图谱支持证据。metadata 和 graph context 是强依赖；每份写入文档必须声明至少一个实体，系统不会返回缺失这些内容的降级结果。
 
 ## CLI 命令
 
@@ -141,6 +142,9 @@ docnexus recall "本地 embedding 和 LadybugDB 的关系" --limit 5
 ```bash
 docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json
 docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json --replace
+docnexus doctor
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5 --replace
 docnexus index status
 docnexus index rebuild --force
 docnexus graph audit
@@ -168,6 +172,8 @@ docnexus init
 
 对于当前格式项目，reset 删除所有已登记的托管目标文件以及完整 `.docnexus/` 目录。对于旧格式或无法读取的数据域，reset 只删除 `.docnexus/`，因为系统无法安全判断外部目标文件的归属。
 
+为防止路径逃逸，文档新增、删除和当前格式 reset 都拒绝包含符号链接的托管目标路径，并以项目真实路径为边界进行校验。
+
 ## 存储结构
 
 ```text
@@ -176,6 +182,7 @@ docs/memory/auth.md                  # 当前托管 Markdown 示例
   project.json                       # 格式版本标记
   index.sqlite                       # documents + file_chunks
   store.lbug                         # 当前图谱/向量状态
+  models/                            # 可选的项目本地模型覆盖资产
   documents/
     <document_id>/
       source.md                      # 仅当前 source
@@ -193,6 +200,16 @@ docs/memory/auth.md                  # 当前托管 Markdown 示例
 ```text
 BAAI/bge-small-zh-v1.5
 ```
+
+DocNexus 会将 Transformers.js 配置为 `local_files_only`，并禁用远程模型加载。npm 包会包含 `models/BAAI/bge-small-zh-v1.5/` 下的量化 ONNX 模型资产，所以用户安装包时会同时下载默认模型。运行时 DocNexus 优先读取当前项目 `.docnexus/models/` 中的覆盖模型，再回退到包内 `models/` 目录。正常安装不需要执行 `docnexus embeddings install`。
+
+如果需要覆盖随包模型，可将已准备好的 Transformers.js 本地模型目录安装到当前项目：
+
+```bash
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+```
+
+来源目录必须包含 `config.json`、`tokenizer.json` 以及 q8 资产 `onnx/model_quantized.onnx`。覆盖已有项目模型必须显式传 `--replace`。
 
 确定性测试可设置：
 
@@ -218,6 +235,8 @@ node dist/src/cli.js mcp
 
 - Scoped npm 分发与逐项目初始化。
 - 一份全局 MCP 注册，每次调用显式传入 `project_root`。
+- `docnexus doctor` 运行环境诊断。
+- 项目本地 embedding 模型资产安装。
 - Skills 驱动的提炼与对话召回。
 - 单版本当前托管文档存储、物理删除和 reset。
 - 本地 embeddings、LadybugDB 向量/图谱召回与归集 Graph RAG 上下文。
@@ -229,3 +248,5 @@ node dist/src/cli.js mcp
 - 外部模型供应商接入。
 - MCP 内部生成最终答案。
 - 更深层多跳图推理。
+
+当前实现状态和后续优先级见 [docPlan.md](./docPlan.md)。

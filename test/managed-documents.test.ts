@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -114,6 +114,34 @@ describe("managed documents", () => {
     await expect(
       upsertManagedDocument(root, { file_path: "occupied.md", source: "raw", document: "document", metadata }, new LocalHashEmbedder(8), makeWriter().writer)
     ).rejects.toThrow("unmanaged file already exists");
+  });
+
+  it("rejects symbolic links in managed target paths before writing or deleting", async () => {
+    const root = await makeRoot();
+    const external = await mkdtemp(join(tmpdir(), "docnexus-external-"));
+    roots.push(external);
+    await symlink(external, join(root, "linked-docs"));
+
+    await expect(
+      upsertManagedDocument(
+        root,
+        { file_path: "linked-docs/auth.md", source: "raw", document: "document", metadata },
+        new LocalHashEmbedder(8),
+        makeWriter().writer
+      )
+    ).rejects.toThrow("must not contain symbolic links");
+    await expect(access(join(external, "auth.md"))).rejects.toThrow();
+
+    const created = await writeManaged(root);
+    await rm(join(root, "docs"), { recursive: true, force: true });
+    await mkdir(join(external, "memory"), { recursive: true });
+    await writeFile(join(external, "memory", "auth.md"), "outside project");
+    await symlink(external, join(root, "docs"));
+
+    await expect(deleteManagedDocument(root, { id: created.id, confirm: true }, makeWriter().writer)).rejects.toThrow(
+      "must not contain symbolic links"
+    );
+    await expect(readFile(join(external, "memory", "auth.md"), "utf8")).resolves.toBe("outside project");
   });
 
   it("rejects external modification of an already managed target", async () => {

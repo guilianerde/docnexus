@@ -13,8 +13,8 @@ DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://gi
 - `docnexus-document-delete` performs confirmed physical removal through CLI.
 - `docnexus-recall` invokes CLI retrieval and answers from document-grouped context with file references.
 - MCP exposes current document reads, metadata validation, and status tools for agents.
-- CLI exposes project initialization, skill installation, document mutation, retrieval, index maintenance, graph audit/repair, and reset.
-- Embeddings run locally with `BAAI/bge-small-zh-v1.5` by default.
+- CLI exposes project initialization, runtime diagnostics, skill installation, document mutation, retrieval, index maintenance, graph audit/repair, and reset.
+- Embeddings run locally with `BAAI/bge-small-zh-v1.5` by default and are loaded in local-only mode.
 - LadybugDB stores current graph/vector state; SQLite stores current managed document and chunk state.
 
 DocNexus does not call an LLM provider. Document refinement and final answers remain agent responsibilities.
@@ -46,7 +46,7 @@ Project-local .docnexus/
 
 ## Install And Initialize
 
-Requirements: Node.js with `node:sqlite` support and npm.
+Requirements: Node.js 22.13.0 or newer and npm. This is the first Node.js release where `node:sqlite` works without an experimental startup flag.
 
 Install the executable once:
 
@@ -59,6 +59,7 @@ Initialize each project independently and install skills where needed:
 ```bash
 cd /path/to/your-project
 docnexus init
+docnexus doctor
 docnexus skills install --target codex
 docnexus skills install --target claude
 ```
@@ -123,7 +124,7 @@ Document extraction and storage are manually requested:
 
 1. `/docnexus-document-extract` prepares `source`, refined `document`, structured `metadata`, and a proposed project-relative Markdown `file_path`; it does not persist anything.
 2. Metadata may be validated through MCP.
-3. `/docnexus-document-add` runs CLI storage and indexing. If the path is already managed, it asks for confirmation before issuing `--replace`.
+3. `/docnexus-document-add` runs CLI storage and indexing. Metadata must include at least one source-grounded entity. If the path is already managed, it asks for confirmation before issuing `--replace`.
 4. `/docnexus-document-delete` asks for destructive confirmation and then runs CLI physical deletion.
 
 Recall is manually requested:
@@ -132,7 +133,7 @@ Recall is manually requested:
 docnexus recall "local embedding and LadybugDB" --limit 5
 ```
 
-Recall returns vector-ranked `results[]` and document-level `context_groups[]`. Each group is keyed by its current `document_id`, references its managed file path, and may include bounded neighboring chunks and one-hop graph supporting evidence. Metadata and graph context are required; recall does not provide a reduced fallback response.
+Recall returns vector-ranked `results[]` and document-level `context_groups[]`. Each group is keyed by its current `document_id`, references its managed file path, and may include bounded neighboring chunks and one-hop graph supporting evidence. Metadata and graph context are required; every stored document must declare at least one entity, and recall does not provide a reduced fallback response.
 
 ## CLI Commands
 
@@ -141,6 +142,9 @@ Run commands in an initialized project unless stated otherwise:
 ```bash
 docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json
 docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json --replace
+docnexus doctor
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5 --replace
 docnexus index status
 docnexus index rebuild --force
 docnexus graph audit
@@ -168,6 +172,8 @@ docnexus init
 
 For a current-format project, reset removes all registered managed target files and the complete `.docnexus/` directory. For an old or unreadable store, reset removes `.docnexus/` only because ownership of external target files cannot be determined safely.
 
+To prevent path escape, document creation, deletion, and current-format reset reject managed target paths containing symbolic links and enforce containment against the project's real path.
+
 ## Storage Layout
 
 ```text
@@ -176,6 +182,7 @@ docs/memory/auth.md                  # current managed Markdown example
   project.json                       # format version marker
   index.sqlite                       # documents + file_chunks
   store.lbug                         # current graph/vector state
+  models/                            # optional project-local model override assets
   documents/
     <document_id>/
       source.md                      # current source only
@@ -193,6 +200,16 @@ Default local model:
 ```text
 BAAI/bge-small-zh-v1.5
 ```
+
+DocNexus configures Transformers.js with `local_files_only` and disables remote model loading. The npm package includes the quantized ONNX assets under `models/BAAI/bge-small-zh-v1.5/`, so users download the default model with the package. At runtime DocNexus looks for a project override in `.docnexus/models/` first, then falls back to the packaged `models/` directory. A normal install does not require `docnexus embeddings install`.
+
+To override the packaged model, install a prepared local Transformers.js model directory into the current project:
+
+```bash
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+```
+
+The source directory must contain `config.json`, `tokenizer.json`, and the q8 asset `onnx/model_quantized.onnx`. Reinstalling over an existing project model requires `--replace`.
 
 For deterministic tests:
 
@@ -218,6 +235,8 @@ Implemented:
 
 - Scoped npm distribution and per-project initialization.
 - One global MCP registration with explicit `project_root` per call.
+- Runtime diagnostics through `docnexus doctor`.
+- Project-local embedding model asset installation.
 - Skill-driven refinement and conversation recall.
 - Single-version current managed document storage and physical deletion/reset.
 - Local embeddings, LadybugDB vector/graph recall, grouped Graph RAG context.
@@ -229,3 +248,5 @@ Not implemented:
 - External model provider integration.
 - MCP-side final answer generation.
 - Deeper multi-hop graph reasoning.
+
+See [docPlan.md](./docPlan.md) for the current implementation status and prioritized roadmap.

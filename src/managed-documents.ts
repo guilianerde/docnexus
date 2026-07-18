@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { chunkText } from "./chunker.js";
 import { createDefaultEmbedder } from "./embedder-default.js";
@@ -192,14 +192,14 @@ export async function ensureManagedStore(projectRoot: string): Promise<void> {
 export async function upsertManagedDocument(
   projectRoot: string,
   input: ManagedDocumentWriteInput,
-  embedder: Embedder = createDefaultEmbedder(),
+  embedder: Embedder = createDefaultEmbedder(projectRoot),
   graphWriter: ManagedGraphWriter = defaultGraphWriter
 ): Promise<ManagedDocumentWriteResult> {
   if (typeof input.source !== "string" || typeof input.document !== "string" || !input.metadata) {
     throw new Error("source, document, and metadata are required");
   }
   assertValidMetadata(input.metadata);
-  const resolved = resolveManagedTarget(projectRoot, input.file_path);
+  const resolved = await resolveManagedTarget(projectRoot, input.file_path);
   await ensureManagedStore(projectRoot);
 
   const db = openManagedDatabase(projectRoot);
@@ -383,14 +383,15 @@ export async function deleteManagedDocument(
   try {
     row = input.id
       ? db.prepare("SELECT * FROM documents WHERE id = ?").get(input.id) as DocumentRow | undefined
-      : getDocumentRowByPath(db, resolveManagedTarget(projectRoot, input.file_path as string).relativePath);
+      : getDocumentRowByPath(db, (await resolveManagedTarget(projectRoot, input.file_path as string)).relativePath);
   } finally {
     db.close();
   }
   if (!row) {
     throw new Error("managed document not found");
   }
-  const target = await readIfExists(join(projectRoot, row.file_path));
+  const resolved = await resolveManagedTarget(projectRoot, row.file_path);
+  const target = await readIfExists(resolved.absolutePath);
   if (target === undefined || sha256(target) !== row.document_hash) {
     throw new Error("managed target was externally modified");
   }
@@ -459,7 +460,7 @@ export async function getManagedIndexStatus(projectRoot: string): Promise<Manage
 export async function rebuildManagedDocuments(
   projectRoot: string,
   options: { force: boolean },
-  embedder: Embedder = createDefaultEmbedder(),
+  embedder: Embedder = createDefaultEmbedder(projectRoot),
   graphWriter: ManagedGraphWriter = defaultGraphWriter
 ): Promise<RebuildManagedDocumentsOutput> {
   if (!options.force) {
@@ -505,8 +506,12 @@ export async function rebuildManagedDocuments(
 }
 
 export async function removeManagedTargetForReset(projectRoot: string, filePath: string): Promise<void> {
-  const target = resolveManagedTarget(projectRoot, filePath);
+  const target = await resolveManagedTarget(projectRoot, filePath);
   await rm(target.absolutePath, { force: true });
+}
+
+export async function validateManagedTargetForReset(projectRoot: string, filePath: string): Promise<void> {
+  await resolveManagedTarget(projectRoot, filePath);
 }
 
 export async function getManagedSchemaTables(projectRoot: string): Promise<string[]> {
@@ -521,20 +526,41 @@ export async function getManagedSchemaTables(projectRoot: string): Promise<strin
   }
 }
 
-function resolveManagedTarget(projectRoot: string, filePath: string): { absolutePath: string; relativePath: string } {
+async function resolveManagedTarget(projectRoot: string, filePath: string): Promise<{ absolutePath: string; relativePath: string }> {
   if (typeof filePath !== "string" || filePath.trim().length === 0) {
     throw new Error("file_path is required");
   }
   if (isAbsolute(filePath) || extname(filePath).toLowerCase() !== ".md") {
     throw new Error("file_path must be a project-relative Markdown path");
   }
-  const root = resolve(projectRoot);
+  const root = await realpath(resolve(projectRoot));
   const absolutePath = resolve(root, filePath);
   const relativePath = relative(root, absolutePath);
   if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
     throw new Error("file_path must remain inside the project root");
   }
+
+  await assertNoSymbolicLinks(root, relativePath);
   return { absolutePath, relativePath: relativePath.split(sep).join("/") };
+}
+
+async function assertNoSymbolicLinks(root: string, relativePath: string): Promise<void> {
+  let current = root;
+  for (const segment of relativePath.split(sep)) {
+    current = join(current, segment);
+    const info = await lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    });
+    if (info === undefined) {
+      return;
+    }
+    if (info.isSymbolicLink()) {
+      throw new Error("file_path must not contain symbolic links");
+    }
+  }
 }
 
 function getDocumentRowByPath(db: DatabaseSync, filePath: string): DocumentRow | undefined {

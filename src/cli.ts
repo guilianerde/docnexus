@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { runDoctor } from "./doctor.js";
+import { installEmbeddingModel } from "./embedding-models.js";
 import { auditGraph, repairGraph } from "./graph-maintenance.js";
 import {
   deleteManagedDocument,
@@ -19,20 +21,23 @@ import { installSkills } from "./skills-install.js";
 import type { DocNexusMetadata } from "./types.js";
 
 export interface RunCliDependencies {
-  auditGraph: typeof auditGraph;
-  repairGraph: typeof repairGraph;
+  auditGraph?: typeof auditGraph;
+  repairGraph?: typeof repairGraph;
+  doctor?: typeof runDoctor;
 }
 
-const defaultDependencies: RunCliDependencies = {
+const defaultDependencies = {
   auditGraph,
-  repairGraph
-};
+  repairGraph,
+  doctor: runDoctor
+} satisfies Required<RunCliDependencies>;
 
 export async function runCli(
   argv: string[],
   cwd = process.cwd(),
   dependencies: RunCliDependencies = defaultDependencies
 ): Promise<string> {
+  const activeDependencies: Required<RunCliDependencies> = { ...defaultDependencies, ...dependencies };
   const invocation = parseInvocation(argv, cwd);
   const [command, subcommand, ...rest] = invocation.argv;
   const projectRoot = invocation.projectRoot;
@@ -43,6 +48,10 @@ export async function runCli(
 
   if (command === "reset") {
     return json(await resetProjectData(projectRoot, { force: invocation.argv.includes("--force") }));
+  }
+
+  if (command === "doctor") {
+    return json(await activeDependencies.doctor(projectRoot));
   }
 
   if (command === "skills" && subcommand === "install") {
@@ -58,8 +67,17 @@ export async function runCli(
     return json(await installSkills({ target, scope, projectRoot }));
   }
 
-  if (command === "index" || command === "graph" || command === "recall" || command === "document") {
+  if (command === "index" || command === "graph" || command === "recall" || command === "document" || command === "embeddings") {
     await requireInitializedProject(projectRoot);
+  }
+
+  if (command === "embeddings" && subcommand === "install") {
+    const replace = rest.includes("--replace");
+    const options = parseOptions(rest.filter((arg) => arg !== "--replace"));
+    if (!options.from) {
+      throw new Error("embeddings install requires --from");
+    }
+    return json(await installEmbeddingModel(projectRoot, { sourcePath: options.from, replace }));
   }
 
   if (command === "document" && subcommand === "delete") {
@@ -106,11 +124,11 @@ export async function runCli(
   }
 
   if (command === "graph" && subcommand === "audit") {
-    return json(await dependencies.auditGraph(projectRoot));
+    return json(await activeDependencies.auditGraph(projectRoot));
   }
 
   if (command === "graph" && subcommand === "repair") {
-    return json(await dependencies.repairGraph(projectRoot, { force: rest.includes("--force") }));
+    return json(await activeDependencies.repairGraph(projectRoot, { force: rest.includes("--force") }));
   }
 
   if (command === "recall") {
@@ -130,9 +148,12 @@ export async function runCli(
   throw new Error(`Unknown command. Usage:
 docnexus init
 docnexus --project-root path/to/project init
+docnexus doctor
 docnexus skills install --target codex
 docnexus skills install --target claude
 docnexus skills install --target codex --scope user
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5 --replace
 docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json
 docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json --replace
 docnexus document delete --file path/to/file.md --force

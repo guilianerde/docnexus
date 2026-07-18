@@ -26,7 +26,7 @@ export async function recall(
   embedder?: Embedder,
   reader: RecallReader = defaultRecallReader
 ): Promise<RecallOutput> {
-  const activeEmbedder = embedder ?? createDefaultEmbedder();
+  const activeEmbedder = embedder ?? createDefaultEmbedder(projectRoot);
   if (typeof input.query !== "string" || input.query.trim().length === 0) {
     throw new Error("query must be a non-empty string");
   }

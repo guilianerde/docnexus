@@ -22,4 +22,5 @@ Use only when the user explicitly requests DocNexus document extraction or refin
 - Do not run `docnexus document add` in this workflow.
 - Do not write, overwrite, delete, index, or graph-store a managed document.
 - Do not invent entities or relationships absent from the source.
+- Include at least one source-grounded entity; drafts without an entity cannot be stored or recalled.
 - Extraction alone never changes DocNexus state.

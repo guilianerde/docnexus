@@ -13,7 +13,7 @@ const metadata = {
   title: "MCP Contract",
   summary: "The MCP layer archives already-refined Agent content and returns durable record paths and hashes.",
   tags: ["mcp"],
-  entities: [],
+  entities: [{ name: "MCP", type: "protocol" as const, description: "The Model Context Protocol integration." }],
   relationships: []
 };
 

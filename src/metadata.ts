@@ -36,6 +36,9 @@ export function validateMetadata(value: unknown): ValidationResult {
   if (!Array.isArray(value.entities)) {
     errors.push("entities must be an array");
   } else {
+    if (value.entities.length === 0) {
+      errors.push("entities must contain at least one entity");
+    }
     value.entities.forEach((entity, index) => {
       if (!isRecord(entity)) {
         errors.push(`entities[${index}] must be an object`);

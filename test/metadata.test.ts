@@ -48,4 +48,10 @@ describe("validateMetadata", () => {
     expect(result.errors).toContain("entities[0].type must be one of component, concept, protocol, decision, file, tool, other");
     expect(result.errors).toContain("relationships[0].type must be one of depends_on, mentions, implements, replaces, relates_to, decides");
   });
+
+  it("requires at least one entity for graph-backed recall", () => {
+    const result = validateMetadata({ ...validMetadata, entities: [] });
+
+    expect(result).toEqual({ valid: false, errors: ["entities must contain at least one entity"] });
+  });
 });

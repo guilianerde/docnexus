@@ -19,7 +19,7 @@ const metadata: DocNexusMetadata = {
   title: "CLI Document",
   summary: "CLI document input provides current managed context for structured Graph RAG retrieval.",
   tags: ["cli"],
-  entities: [],
+  entities: [{ name: "CLI", type: "tool", description: "The DocNexus command-line interface." }],
   relationships: []
 };
 
@@ -38,6 +38,15 @@ async function writeDocumentInputs(
   await writeFile(paths.document, input.document);
   await writeFile(paths.metadata, JSON.stringify(input.metadata ?? metadata));
   return paths;
+}
+
+async function writeModelDir(projectRoot: string): Promise<string> {
+  const directory = join(projectRoot, "model-source");
+  await mkdir(join(directory, "onnx"), { recursive: true });
+  await writeFile(join(directory, "config.json"), "{}");
+  await writeFile(join(directory, "tokenizer.json"), "{}");
+  await writeFile(join(directory, "onnx", "model_quantized.onnx"), "onnx");
+  return directory;
 }
 
 afterEach(async () => {
@@ -103,6 +112,83 @@ describe("runCli", () => {
     const projectRoot = await makeRoot();
 
     await expect(runCli(["skills", "install", "--target", "cursor"], projectRoot)).rejects.toThrow("--target must be codex or claude");
+  });
+
+  it("runs doctor without requiring project initialization", async () => {
+    const projectRoot = await makeRoot();
+    const dependencies: RunCliDependencies = {
+      doctor: async () => ({
+        result: "issues_found",
+        checked_at: "2026-05-29T00:00:00.000Z",
+        checks: {
+          node: {
+            ok: true,
+            version: "v24.0.0",
+            sqlite_available: true
+          },
+          project: {
+            ok: false,
+            initialized: false,
+            project_root: projectRoot,
+            message: "DocNexus project is not initialized"
+          },
+          sqlite: {
+            ok: false,
+            skipped: true,
+            message: "project is not initialized"
+          },
+          ladybug: {
+            ok: false,
+            skipped: true,
+            message: "project is not initialized"
+          },
+          embedding: {
+            ok: true,
+            provider: "local-transformers",
+            model: "BAAI/bge-small-zh-v1.5",
+            dimension: 512,
+            local_only: true,
+            remote_allowed: false
+          }
+        },
+        recommendations: [`Run "docnexus init" in ${projectRoot}.`]
+      })
+    };
+
+    const output = JSON.parse(await runCli(["doctor"], projectRoot, dependencies));
+
+    expect(output).toMatchObject({
+      result: "issues_found",
+      checks: {
+        project: {
+          initialized: false
+        },
+        embedding: {
+          local_only: true,
+          remote_allowed: false
+        }
+      }
+    });
+  });
+
+  it("installs embedding model assets through the CLI with an overwrite guard", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    const sourcePath = await writeModelDir(projectRoot);
+
+    const installed = JSON.parse(await runCli(["embeddings", "install", "--from", sourcePath], projectRoot));
+
+    expect(installed).toMatchObject({
+      model: "BAAI/bge-small-zh-v1.5",
+      installed_path: join(projectRoot, ".docnexus", "models", "BAAI", "bge-small-zh-v1.5"),
+      replaced: false
+    });
+    await expect(runCli(["embeddings", "install", "--from", sourcePath], projectRoot)).rejects.toThrow(
+      "embeddings install requires --replace"
+    );
+    await expect(runCli(["embeddings", "install", "--from", sourcePath, "--replace"], projectRoot)).resolves.toContain(
+      '"replaced": true'
+    );
   });
 
   it("creates a managed document from prepared artifact files", async () => {
