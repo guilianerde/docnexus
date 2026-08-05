@@ -218,7 +218,7 @@ describe("runCli", () => {
     );
 
     expect(output).toMatchObject({ file_path: "docs/memory/auth.md", operation: "created", chunk_count: 1 });
-    await expect(access(join(projectRoot, "docs/memory/auth.md"))).resolves.toBeUndefined();
+    await expect(access(join(projectRoot, ".docnexus/docs/memory/auth.md"))).resolves.toBeUndefined();
   });
 
   it("requires explicit replace before updating a managed document", async () => {

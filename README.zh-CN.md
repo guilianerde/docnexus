@@ -8,7 +8,7 @@ DocNexus 是一款面向 Codex、Claude 等编码智能体的本地项目记忆�
 
 ## 能力
 
-- `docnexus-document-extract` 提炼 source、document 与 metadata，但不写入存储。
+- `docnexus-document-extract` 在 `.docnexus/drafts/` 下写入并校验 source/document/metadata 草稿包与完成 manifest，但不建立索引。
 - `docnexus-document-add` 通过 CLI 新增或更新可召回的托管文档，覆盖前向用户确认。
 - `docnexus-document-delete` 在用户确认后通过 CLI 物理删除托管文档。
 - `docnexus-recall` 通过 CLI 检索归集后的上下文，并基于参考文件回答。
@@ -39,6 +39,7 @@ Skills
   +---------------+----------------+
                   v
 项目本地 .docnexus/
+  - 已校验的 extract 草稿包
   - SQLite documents + file_chunks
   - LadybugDB 图谱/向量状态
   - 当前 source 与 metadata sidecars
@@ -122,8 +123,8 @@ claude mcp add --transport stdio docnexus -- docnexus mcp
 
 文档提炼与存储由用户手动触发：
 
-1. `/docnexus-document-extract` 准备 `source`、提炼后的 `document`、结构化 `metadata` 与建议的项目相对 `file_path`，但不落库。
-2. 可通过 MCP 校验 metadata。
+1. `/docnexus-document-extract` 校验 metadata，并在唯一的 `.docnexus/drafts/<draft_id>/` 目录中写入 `source.md`、`document.md`、`metadata.json` 和完成标志 `manifest.json`。
+2. 只有回读并验证全部四个文件后，提炼流程才会报告 `draft_created`；建议的托管 `file_path` 保存在 manifest 中。
 3. `/docnexus-document-add` 调用 CLI 写入并建立索引；metadata 必须包含至少一个基于来源的实体；如果路径已托管，必须先询问用户确认后再传 `--replace`。
 4. `/docnexus-document-delete` 在取得破坏性删除确认后调用 CLI 物理删除。
 
@@ -161,7 +162,7 @@ docnexus document delete --file docs/memory/auth.md --force
 docnexus document delete --id doc_0000000000000000 --force
 ```
 
-删除会移除项目内托管 Markdown 文件、当前 sidecars、SQLite 行/chunks 以及 LadybugDB 文档/chunk 状态，不保留单文档删除记录。
+删除会移除 `.docnexus/` 内的托管 Markdown 文件、当前 sidecars、SQLite 行/chunks 以及 LadybugDB 文档/chunk 状态，不保留单文档删除记录。
 
 重置 DocNexus 数据域：
 
@@ -170,15 +171,21 @@ docnexus reset --force
 docnexus init
 ```
 
-对于当前格式项目，reset 删除所有已登记的托管目标文件以及完整 `.docnexus/` 目录。对于旧格式或无法读取的数据域，reset 只删除 `.docnexus/`，因为系统无法安全判断外部目标文件的归属。
+对于当前格式项目，reset 删除完整 `.docnexus/` 目录，其中包含所有已登记的托管目标文件。对于旧格式或无法读取的数据域，reset 同样只删除 `.docnexus/`。
 
-为防止路径逃逸，文档新增、删除和当前格式 reset 都拒绝包含符号链接的托管目标路径，并以项目真实路径为边界进行校验。
+为防止路径逃逸，文档新增、删除和当前格式 reset 都拒绝包含符号链接的托管目标路径，并以项目的 `.docnexus/` 目录为边界进行校验。
 
 ## 存储结构
 
 ```text
-docs/memory/auth.md                  # 当前托管 Markdown 示例
 .docnexus/
+  docs/memory/auth.md                # 当前托管 Markdown 示例（逻辑 file_path 不含 .docnexus/）
+  drafts/
+    <draft_id>/
+      source.md                      # 提炼的来源产物
+      document.md                    # 提炼后的 Markdown 产物
+      metadata.json                  # 已校验的 metadata 产物
+      manifest.json                  # 最后写入，标志草稿完整
   project.json                       # 格式版本标记
   index.sqlite                       # documents + file_chunks
   store.lbug                         # 当前图谱/向量状态

@@ -55,7 +55,7 @@ describe("reset", () => {
       deleted_managed_files: ["docs/memory/a.md", "docs/memory/b.md"],
       removed_store: true
     });
-    await expect(access(join(root, "docs/memory/a.md"))).rejects.toThrow();
+    await expect(access(join(root, ".docnexus/docs/memory/a.md"))).rejects.toThrow();
     await expect(access(join(root, ".docnexus"))).rejects.toThrow();
   });
 
@@ -82,10 +82,10 @@ describe("reset", () => {
       new LocalHashEmbedder(8),
       graphWriter
     );
-    await rm(join(root, "docs"), { recursive: true, force: true });
+    await rm(join(root, ".docnexus/docs"), { recursive: true, force: true });
     await mkdir(join(external, "memory"), { recursive: true });
     await writeFile(join(external, "memory", "auth.md"), "outside project");
-    await symlink(external, join(root, "docs"));
+    await symlink(external, join(root, ".docnexus/docs"));
 
     await expect(resetProjectData(root, { force: true })).rejects.toThrow("must not contain symbolic links");
     await expect(readFile(join(external, "memory", "auth.md"), "utf8")).resolves.toBe("outside project");

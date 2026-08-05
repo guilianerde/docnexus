@@ -79,7 +79,8 @@ describe("managed documents", () => {
 
     expect(result).toMatchObject({ file_path: "docs/memory/auth.md", operation: "created", chunk_count: 1 });
     expect(result.id).toMatch(/^doc_[0-9a-f]{16}$/);
-    await expect(readFile(join(root, "docs/memory/auth.md"), "utf8")).resolves.toContain("Token rotation.");
+    await expect(readFile(join(root, ".docnexus/docs/memory/auth.md"), "utf8")).resolves.toContain("Token rotation.");
+    await expect(access(join(root, "docs/memory/auth.md"))).rejects.toThrow();
     await expect(readFile(join(root, ".docnexus", "documents", result.id, "source.md"), "utf8")).resolves.toBe("raw source");
     expect(await listManagedDocuments(root)).toHaveLength(1);
     expect(await listManagedChunks(root, result.id)).toHaveLength(1);
@@ -108,9 +109,9 @@ describe("managed documents", () => {
     const root = await makeRoot();
     await expect(
       upsertManagedDocument(root, { file_path: "../outside.md", source: "raw", document: "document", metadata }, new LocalHashEmbedder(8), makeWriter().writer)
-    ).rejects.toThrow("inside the project root");
+    ).rejects.toThrow("inside the .docnexus directory");
 
-    await writeFile(join(root, "occupied.md"), "user content");
+    await writeFile(join(root, ".docnexus/occupied.md"), "user content");
     await expect(
       upsertManagedDocument(root, { file_path: "occupied.md", source: "raw", document: "document", metadata }, new LocalHashEmbedder(8), makeWriter().writer)
     ).rejects.toThrow("unmanaged file already exists");
@@ -120,7 +121,7 @@ describe("managed documents", () => {
     const root = await makeRoot();
     const external = await mkdtemp(join(tmpdir(), "docnexus-external-"));
     roots.push(external);
-    await symlink(external, join(root, "linked-docs"));
+    await symlink(external, join(root, ".docnexus/linked-docs"));
 
     await expect(
       upsertManagedDocument(
@@ -133,10 +134,10 @@ describe("managed documents", () => {
     await expect(access(join(external, "auth.md"))).rejects.toThrow();
 
     const created = await writeManaged(root);
-    await rm(join(root, "docs"), { recursive: true, force: true });
+    await rm(join(root, ".docnexus/docs"), { recursive: true, force: true });
     await mkdir(join(external, "memory"), { recursive: true });
     await writeFile(join(external, "memory", "auth.md"), "outside project");
-    await symlink(external, join(root, "docs"));
+    await symlink(external, join(root, ".docnexus/docs"));
 
     await expect(deleteManagedDocument(root, { id: created.id, confirm: true }, makeWriter().writer)).rejects.toThrow(
       "must not contain symbolic links"
@@ -147,7 +148,7 @@ describe("managed documents", () => {
   it("rejects external modification of an already managed target", async () => {
     const root = await makeRoot();
     await writeManaged(root);
-    await writeFile(join(root, "docs/memory/auth.md"), "external modification");
+    await writeFile(join(root, ".docnexus/docs/memory/auth.md"), "external modification");
 
     await expect(
       writeManaged(root, "# Authentication\n\nOverwrite.")
@@ -178,7 +179,7 @@ describe("managed documents", () => {
     ).rejects.toThrow("graph write failed");
 
     expect(await listManagedDocuments(root)).toEqual([]);
-    await expect(access(join(root, "docs/memory/auth.md"))).rejects.toThrow();
+    await expect(access(join(root, ".docnexus/docs/memory/auth.md"))).rejects.toThrow();
     expect(deleted).toEqual(attempted);
   });
 
@@ -207,7 +208,7 @@ describe("managed documents", () => {
       )
     ).rejects.toThrow("graph write failed");
 
-    await expect(readFile(join(root, "docs/memory/auth.md"), "utf8")).resolves.toContain("Original.");
+    await expect(readFile(join(root, ".docnexus/docs/memory/auth.md"), "utf8")).resolves.toContain("Original.");
     await expect(readFile(join(root, ".docnexus", "documents", first.id, "source.md"), "utf8")).resolves.toBe("raw source");
     expect(JSON.stringify(await listManagedChunks(root, first.id))).toContain("Original.");
     expect(restored).toEqual(["# Authentication\n\nOriginal."]);
@@ -239,7 +240,7 @@ describe("managed documents", () => {
       deleteManagedDocument(root, { id: created.id, confirm: true }, failingWriter)
     ).rejects.toThrow("prior graph state could not be restored");
     expect(await listManagedDocuments(root)).toHaveLength(1);
-    await expect(readFile(join(root, "docs/memory/auth.md"), "utf8")).resolves.toContain("Token rotation.");
+    await expect(readFile(join(root, ".docnexus/docs/memory/auth.md"), "utf8")).resolves.toContain("Token rotation.");
   });
 
   it("physically removes target, sidecars, chunks, row, and graph data", async () => {
@@ -253,7 +254,7 @@ describe("managed documents", () => {
       deleted: true
     });
 
-    await expect(access(join(root, "docs/memory/auth.md"))).rejects.toThrow();
+    await expect(access(join(root, ".docnexus/docs/memory/auth.md"))).rejects.toThrow();
     await expect(access(join(root, ".docnexus", "documents", created.id))).rejects.toThrow();
     expect(await listManagedDocuments(root)).toEqual([]);
     expect(await listManagedChunks(root, created.id)).toEqual([]);
@@ -275,7 +276,7 @@ describe("managed documents", () => {
   it("does not rebuild an externally modified managed target", async () => {
     const root = await makeRoot();
     await writeManaged(root);
-    await writeFile(join(root, "docs/memory/auth.md"), "external edit");
+    await writeFile(join(root, ".docnexus/docs/memory/auth.md"), "external edit");
 
     const result = await rebuildManagedDocuments(root, { force: true }, new LocalHashEmbedder(8), makeWriter().writer);
 

@@ -7,7 +7,7 @@ DocNexus is a local project-memory service for agents such as Codex and Claude. 
 - MCP never invokes an LLM. The agent produces `source`, refined Markdown `document`, and structured `metadata`.
 - Metadata must include at least one source-grounded entity; MCP validation and CLI persistence enforce the same rule.
 - One project-relative `file_path` identifies one current managed document.
-- Managed targets must remain within the project's real path and may not contain symbolic links; creation, deletion, and reset share this boundary.
+- Managed targets must remain within the project's `.docnexus/` directory and may not contain symbolic links; creation, deletion, and reset share this boundary.
 - `docnexus document add` creates or overwrites that document and immediately synchronizes chunks, local embeddings, and LadybugDB graph/vector state.
 - Rewriting the same managed path replaces current state; prior versions are not retained.
 - Updating a managed path requires user confirmation in `/docnexus-document-add` and explicit CLI `--replace`.
@@ -37,8 +37,8 @@ Every MCP tool invocation must include an absolute initialized `project_root`. E
 
 ## Agent Workflow
 
-1. `/docnexus-document-extract` prepares the source, refined document, metadata, and a proposed managed `file_path` without persisting state.
-2. `/docnexus-document-add` validates inputs and runs `docnexus document add`; existing managed paths require confirmed `--replace`.
+1. `/docnexus-document-extract` validates metadata and writes a complete draft bundle under `.docnexus/drafts/<draft_id>/`, reporting success only after `source.md`, `document.md`, `metadata.json`, and `manifest.json` are verified.
+2. `/docnexus-document-add` consumes the verified draft manifest and runs `docnexus document add`; existing managed paths require confirmed `--replace`.
 3. CLI writes the target Markdown, current sidecars, SQLite document/chunks, embeddings, and graph data.
 4. `docnexus-recall` runs CLI recall and receives vector-ranked `results[]` plus document-grouped `context_groups[]`.
 5. The agent answers using the grouped chunks and bounded graph context, citing managed file paths.
@@ -46,8 +46,13 @@ Every MCP tool invocation must include an absolute initialized `project_root`. E
 ## Storage
 
 ```text
-<managed file_path>.md
 .docnexus/
+  <managed file_path>.md
+  drafts/<draft_id>/
+    source.md
+    document.md
+    metadata.json
+    manifest.json
   project.json
   index.sqlite                  # documents + file_chunks
   store.lbug

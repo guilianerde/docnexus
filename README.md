@@ -8,7 +8,7 @@ DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://gi
 
 ## Capabilities
 
-- `docnexus-document-extract` refines selected material into a proposed document and metadata without storing it.
+- `docnexus-document-extract` writes a verified source/document/metadata draft bundle and completion manifest under `.docnexus/drafts/` without indexing it.
 - `docnexus-document-add` creates or updates a recallable managed document through CLI, confirming before replacement.
 - `docnexus-document-delete` performs confirmed physical removal through CLI.
 - `docnexus-recall` invokes CLI retrieval and answers from document-grouped context with file references.
@@ -39,6 +39,7 @@ Global MCP service                 CLI
   +---------------+----------------+
                   v
 Project-local .docnexus/
+  - verified extract draft bundles
   - SQLite documents + file_chunks
   - LadybugDB graph/vector state
   - current source and metadata sidecars
@@ -122,8 +123,8 @@ The retained `list_records` and `get_record` names refer to current state only. 
 
 Document extraction and storage are manually requested:
 
-1. `/docnexus-document-extract` prepares `source`, refined `document`, structured `metadata`, and a proposed project-relative Markdown `file_path`; it does not persist anything.
-2. Metadata may be validated through MCP.
+1. `/docnexus-document-extract` validates metadata and writes `source.md`, `document.md`, `metadata.json`, and a completion `manifest.json` under a unique `.docnexus/drafts/<draft_id>/` directory.
+2. Extraction reports `draft_created` only after all four files have been read back and verified; the proposed managed `file_path` remains in the manifest.
 3. `/docnexus-document-add` runs CLI storage and indexing. Metadata must include at least one source-grounded entity. If the path is already managed, it asks for confirmation before issuing `--replace`.
 4. `/docnexus-document-delete` asks for destructive confirmation and then runs CLI physical deletion.
 
@@ -161,7 +162,7 @@ docnexus document delete --file docs/memory/auth.md --force
 docnexus document delete --id doc_0000000000000000 --force
 ```
 
-Deletion physically removes the managed project Markdown file, its current sidecars, SQLite row/chunks, and LadybugDB document/chunk state. There is no retained per-document deletion log.
+Deletion physically removes the managed Markdown file under `.docnexus/`, its current sidecars, SQLite row/chunks, and LadybugDB document/chunk state. There is no retained per-document deletion log.
 
 Reset the DocNexus data domain:
 
@@ -170,15 +171,21 @@ docnexus reset --force
 docnexus init
 ```
 
-For a current-format project, reset removes all registered managed target files and the complete `.docnexus/` directory. For an old or unreadable store, reset removes `.docnexus/` only because ownership of external target files cannot be determined safely.
+For a current-format project, reset removes the complete `.docnexus/` directory, including all registered managed target files. For an old or unreadable store, reset likewise removes only `.docnexus/`.
 
-To prevent path escape, document creation, deletion, and current-format reset reject managed target paths containing symbolic links and enforce containment against the project's real path.
+To prevent path escape, document creation, deletion, and current-format reset reject managed target paths containing symbolic links and enforce containment within the project's `.docnexus/` directory.
 
 ## Storage Layout
 
 ```text
-docs/memory/auth.md                  # current managed Markdown example
 .docnexus/
+  docs/memory/auth.md                # managed Markdown example (logical file_path omits .docnexus/)
+  drafts/
+    <draft_id>/
+      source.md                      # extracted source artifact
+      document.md                    # refined Markdown artifact
+      metadata.json                  # validated metadata artifact
+      manifest.json                  # written last; marks a complete draft
   project.json                       # format version marker
   index.sqlite                       # documents + file_chunks
   store.lbug                         # current graph/vector state

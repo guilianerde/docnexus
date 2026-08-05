@@ -124,7 +124,7 @@ describe("real local ONNX runtime", () => {
       operation: "created",
       chunk_count: 1
     });
-    expect(await readFile(join(projectRoot, record.file_path), "utf8")).toBe(document);
+    expect(await readFile(join(projectRoot, ".docnexus", record.file_path), "utf8")).toBe(document);
 
     const chunks = await listManagedChunks(projectRoot, record.id);
     expect(chunks).toHaveLength(1);

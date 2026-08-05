@@ -29,7 +29,7 @@ describe("project initialization", () => {
     const marker = JSON.parse(await readFile(projectMarkerPath(root), "utf8"));
 
     expect(result).toEqual({ project_root: root, initialized: true, adopted_existing_store: false });
-    expect(marker).toMatchObject({ format_version: 2, initialized_at: expect.any(String) });
+    expect(marker).toMatchObject({ format_version: 3, initialized_at: expect.any(String) });
     await expect(stat(join(root, ".docnexus", "index.sqlite"))).resolves.toBeDefined();
 
     const db = new DatabaseSync(join(root, ".docnexus", "index.sqlite"));

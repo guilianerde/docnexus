@@ -337,7 +337,7 @@ export async function getManagedRecord(
     output.source = await readFile(join(projectRoot, document.sidecar_path, "source.md"), "utf8");
   }
   if (include.includes("document")) {
-    output.document = await readFile(join(projectRoot, document.file_path), "utf8");
+    output.document = await readFile((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, "utf8");
   }
   if (include.includes("metadata")) {
     output.metadata = JSON.parse(await readFile(join(projectRoot, document.sidecar_path, "metadata.json"), "utf8")) as DocNexusMetadata;
@@ -399,7 +399,7 @@ export async function deleteManagedDocument(
   const metadata = JSON.parse(snapshot.metadata as string) as DocNexusMetadata;
   try {
     await graphWriter.deleteDocumentGraph(projectRoot, row.id);
-    await rm(join(projectRoot, row.file_path), { force: true });
+    await rm(resolved.absolutePath, { force: true });
     await rm(join(projectRoot, row.sidecar_path), { recursive: true, force: true });
     const deleteDb = openManagedDatabase(projectRoot);
     try {
@@ -476,7 +476,7 @@ export async function rebuildManagedDocuments(
       const sidecar = join(projectRoot, document.sidecar_path);
       const source = await readFile(join(sidecar, "source.md"), "utf8");
       const metadata = JSON.parse(await readFile(join(sidecar, "metadata.json"), "utf8")) as DocNexusMetadata;
-      const current = await readFile(join(projectRoot, document.file_path), "utf8");
+      const current = await readFile((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, "utf8");
       if (sha256(current) !== document.document_hash) {
         throw new Error("managed target was externally modified");
       }
@@ -534,13 +534,14 @@ async function resolveManagedTarget(projectRoot: string, filePath: string): Prom
     throw new Error("file_path must be a project-relative Markdown path");
   }
   const root = await realpath(resolve(projectRoot));
-  const absolutePath = resolve(root, filePath);
-  const relativePath = relative(root, absolutePath);
+  const managedRoot = join(root, ".docnexus");
+  const absolutePath = resolve(managedRoot, filePath);
+  const relativePath = relative(managedRoot, absolutePath);
   if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error("file_path must remain inside the project root");
+    throw new Error("file_path must remain inside the .docnexus directory");
   }
 
-  await assertNoSymbolicLinks(root, relativePath);
+  await assertNoSymbolicLinks(root, join(".docnexus", relativePath));
   return { absolutePath, relativePath: relativePath.split(sep).join("/") };
 }
 
@@ -609,7 +610,7 @@ async function writeCurrentFiles(
   document: string,
   metadataJson: string
 ): Promise<void> {
-  await atomicWrite(join(projectRoot, row.file_path), document);
+  await atomicWrite(join(storePath(projectRoot), row.file_path), document);
   const sidecar = join(projectRoot, row.sidecar_path);
   await atomicWrite(join(sidecar, "source.md"), source);
   await atomicWrite(join(sidecar, "metadata.json"), `${metadataJson}\n`);
@@ -682,7 +683,7 @@ function replaceDocumentState(projectRoot: string, row: DocumentRow, chunks: Man
 }
 
 async function restoreCurrent(projectRoot: string, row: DocumentRow, snapshot: CurrentSnapshot): Promise<void> {
-  const target = join(projectRoot, row.file_path);
+  const target = join(storePath(projectRoot), row.file_path);
   const sidecar = join(projectRoot, row.sidecar_path);
   if (snapshot.row) {
     await atomicWrite(target, snapshot.target as string);

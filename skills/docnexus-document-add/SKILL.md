@@ -5,12 +5,12 @@ description: Use when the user explicitly asks to add or update an already prepa
 
 # DocNexus Document Add
 
-Use only for persisting prepared source, refined Markdown, metadata, and a project-relative `file_path`.
+Use only for persisting prepared source, refined Markdown, metadata, and a project-relative `file_path`. DocNexus stores the managed Markdown at `.docnexus/<file_path>`.
 
 ## Workflow
 
 1. Confirm the target project is initialized with DocNexus.
-2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; metadata must include at least one source-grounded entity. Create temporary artifact files when only conversation content is available.
+2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; metadata must include at least one source-grounded entity. When `/docnexus-document-extract` produced a draft, read its verified `manifest.json` and use the three artifact paths from that manifest. Create temporary artifact files only when no extract draft exists.
 3. For a proposed new managed path, run:
 
 ```bash

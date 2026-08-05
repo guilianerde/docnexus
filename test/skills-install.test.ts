@@ -41,8 +41,13 @@ describe("installSkills", () => {
 
     expect(extract).toContain("file_path");
     expect(extract).toContain("does not store or index");
+    expect(extract).toContain(".docnexus/drafts/<draft_id>/manifest.json");
+    expect(extract).toContain("result: draft_created");
+    expect(extract).toContain("result: draft_failed");
+    expect(extract).toContain("Never report `draft_created` unless the four verified files exist");
     expect(extract).not.toContain("--source-file");
     expect(add).toContain("docnexus document add");
+    expect(add).toContain("verified `manifest.json`");
     expect(add).toContain("--replace");
     expect(add).toContain("confirm");
     expect(remove).toContain("docnexus document delete");
