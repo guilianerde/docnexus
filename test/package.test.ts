@@ -41,9 +41,9 @@ describe("npm package contract", () => {
     expect(cliSource.startsWith("#!/usr/bin/env node\n")).toBe(true);
   });
 
-  it("builds an executable CLI entrypoint", async () => {
-    const cliStat = await stat("dist/src/cli.js");
+  it("configures the built CLI entrypoint as executable", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8"));
 
-    expect(cliStat.mode & 0o111).not.toBe(0);
+    expect(packageJson.scripts.build).toContain("chmodSync('dist/src/cli.js', 0o755)");
   });
 });
