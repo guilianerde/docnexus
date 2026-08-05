@@ -8,7 +8,7 @@ Use this checklist before publishing `@rowansenne/docnexus`. A failed item block
 - [x] The maintainer selected the MIT license and added the corresponding package metadata and license file.
 - [x] The canonical repository URL and issue tracker are declared in `package.json`.
 - [x] Security reports are directed to `rowansenne@gmail.com` in `SECURITY.md`.
-- [x] Version `0.1.0` is intentional and was confirmed as unpublished before release.
+- [x] Version `0.2.0` is intentional, is not already published, and its user-visible changes are recorded in `CHANGELOG.md`.
 
 ## Automated gates
 

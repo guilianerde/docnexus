@@ -1,6 +1,6 @@
 {
   "name": "@rowansenne/docnexus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -21,6 +21,7 @@
     "skills",
     "README.md",
     "README.zh-CN.md",
+    "CHANGELOG.md",
     "LICENSE",
     "SECURITY.md",
     "docs"
@@ -44,6 +45,9 @@
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@huggingface/transformers": "^3.8.1",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "sharp": "^0.35.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

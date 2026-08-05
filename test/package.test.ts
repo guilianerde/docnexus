@@ -8,6 +8,7 @@ describe("npm package contract", () => {
     const packagedModel = await stat("models/BAAI/bge-small-zh-v1.5/onnx/model_quantized.onnx");
 
     expect(packageJson.name).toBe("@rowansenne/docnexus");
+    expect(packageJson.version).toBe("0.2.0");
     expect(packageJson.private).toBe(false);
     expect(packageJson.license).toBe("MIT");
     expect(packageJson.repository).toEqual({
@@ -25,6 +26,7 @@ describe("npm package contract", () => {
         "skills",
         "README.md",
         "README.zh-CN.md",
+        "CHANGELOG.md",
         "LICENSE",
         "SECURITY.md",
         "docs"

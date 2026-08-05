@@ -59,19 +59,24 @@ flowchart TD
 
 ```text
 <project>/
-├── <managed-document-path>       # 生成后的完整文档
 └── .docnexus/
-    ├── project.json              # 项目初始化信息
+    ├── <managed-document-path>   # 生成后的完整文档；逻辑 file_path 不含 .docnexus/
+    ├── drafts/<draft-id>/
+    │   ├── source.md             # 提炼输入
+    │   ├── document.md           # 待确认的 Markdown
+    │   ├── metadata.json         # 已校验 metadata
+    │   └── manifest.json         # 最后写入的完成标志
+    ├── project.json              # 项目初始化信息与格式版本
     ├── index.sqlite              # 托管文档与 chunk 账本
     ├── store.lbug                # LadybugDB 图和向量数据
     ├── documents/<document-id>/
-    │   ├── source.md             # 原始输入
-    │   └── metadata.json         # 完整 metadata
+    │   ├── source.md             # 当前原始输入 sidecar
+    │   └── metadata.json         # 当前完整 metadata sidecar
     └── schemas/
         └── metadata.schema.json
 ```
 
-托管路径必须位于项目内，并且路径中的既有组件不得是符号链接。写入、删除和 reset 会同时进行词法路径与真实路径校验，防止通过 symlink 访问项目外文件。
+托管路径是相对于 `.docnexus/` 的逻辑 Markdown 路径，实际文件必须位于该目录内，并且路径中的既有组件不得是符号链接。写入、删除和 reset 会同时进行词法路径与真实路径校验，防止通过 symlink 越过 `.docnexus/` 边界。
 
 ### 3.2 SQLite
 

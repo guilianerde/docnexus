@@ -129,6 +129,7 @@ async function verifyPackageContents(packageDirectory) {
   const requiredFiles = [
     "README.md",
     "README.zh-CN.md",
+    "CHANGELOG.md",
     "LICENSE",
     "SECURITY.md",
     "docs/README.md",
