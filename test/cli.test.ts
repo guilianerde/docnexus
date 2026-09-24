@@ -1,9 +1,10 @@
-import { access, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { isDirectCliInvocation, runCli, validateMcpInvocation, type RunCliDependencies } from "../src/cli.js";
+import { isDirectCliInvocation, runCli, type RunCliDependencies } from "../src/cli.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
+import { initializeProject } from "../src/project.js";
 import type { DocNexusMetadata } from "../src/types.js";
 
 const tempRoots: string[] = [];
@@ -92,9 +93,43 @@ describe("runCli", () => {
     await expect(stat(join(projectRoot, ".docnexus"))).rejects.toThrow();
   });
 
-  it("accepts only the global MCP startup form", () => {
-    expect(() => validateMcpInvocation(["mcp"])).not.toThrow();
-    expect(() => validateMcpInvocation(["mcp", "--project-root", "/tmp/project"])).toThrow("Usage: docnexus mcp");
+  it("rejects the removed MCP command and user-scoped skill installation", async () => {
+    const projectRoot = await makeRoot();
+    await initializeProject(projectRoot);
+    await expect(runCli(["mcp"], projectRoot)).rejects.toThrow("Unknown command");
+    await expect(runCli(["skills", "install", "--target", "codex", "--scope", "user"], projectRoot)).rejects.toThrow("project scope only");
+  });
+
+  it("exposes project-local read and validation commands", async () => {
+    const projectRoot = await makeRoot();
+    await initializeProject(projectRoot);
+    const inputs = await writeDocumentInputs(projectRoot, { source: "source", document: "document" });
+    const validation = JSON.parse(await runCli(["metadata", "validate", "--file", inputs.metadata], projectRoot));
+    expect(validation).toEqual({ valid: true, errors: [] });
+
+    const saved = await upsertManagedDocument(projectRoot, {
+      file_path: "docs/memory/read.md", source: "source", document: "document", metadata
+    });
+    expect(JSON.parse(await runCli(["document", "list"], projectRoot)).records).toEqual([
+      expect.objectContaining({ id: saved.id, file_path: "docs/memory/read.md" })
+    ]);
+    expect(JSON.parse(await runCli(["document", "get", "--id", saved.id, "--include", "metadata"], projectRoot)))
+      .toEqual({ id: saved.id, file_path: "docs/memory/read.md", metadata });
+    expect(JSON.parse(await runCli(["status"], projectRoot))).toMatchObject({ document_count: 1 });
+  });
+
+  it("rejects input files outside the project", async () => {
+    const projectRoot = await makeRoot();
+    const otherRoot = await makeRoot();
+    await initializeProject(projectRoot);
+    const outside = join(otherRoot, "metadata.json");
+    await writeFile(outside, JSON.stringify(metadata));
+    await expect(runCli(["metadata", "validate", "--file", outside], projectRoot))
+      .rejects.toThrow("input path must be inside the project");
+    const linked = join(projectRoot, "linked-metadata.json");
+    await symlink(outside, linked);
+    await expect(runCli(["metadata", "validate", "--file", linked], projectRoot))
+      .rejects.toThrow("input path must be inside the project");
   });
 
   it("treats symlinked argv[1] as direct CLI invocation", () => {

@@ -2,6 +2,14 @@
 
 All notable user-visible changes to DocNexus are recorded here.
 
+## 0.3.0 - 2026-09-24
+
+- Use project-installed skills and CLI without an MCP service or user-level skill installation.
+- Add CLI commands for metadata validation, document listing and reading, and project status.
+- Require CLI input files and model import sources to remain inside the target project.
+- Keep the existing `.docnexus/` database and document format for in-place migration.
+- Update the `sharp` override to 0.35.4 or newer within the 0.35 series to clear the production dependency audit.
+
 ## 0.2.0 - 2026-08-05
 
 - Store managed Markdown files inside `.docnexus/` while preserving their project-relative logical paths.

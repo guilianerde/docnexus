@@ -1,15 +1,15 @@
 # DocNexus 当前状态与实现路线图
 
-更新日期：2026-07-18
+更新日期：2026-09-24
 
 ## 当前定位
 
-DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务。当前版本以手动触发为边界：Skills 负责内容提炼与最终回答，CLI 负责文档写入、召回和维护，MCP 提供读取、metadata 校验与状态查询。系统不调用外部 LLM，默认 embedding 和图谱数据均保存在本地。
+DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务。当前版本以手动触发为边界：Skills 负责内容提炼与最终回答，项目本地 CLI 负责文档写入、召回、维护、读取、metadata 校验与状态查询。系统不调用外部 LLM，默认 embedding 和图谱数据均保存在本地。
 
 ## 已实现基线
 
 - npm 包 `@rowansenne/docnexus` 与 `docnexus` CLI。
-- 每个项目独立的 `.docnexus/` 数据域，以及一次全局注册、每次显式传 `project_root` 的 MCP 服务。
+- 每个项目独立的 `.docnexus/` 数据域、项目内 npm CLI 和项目 skills，无 MCP 服务。
 - `init`、`doctor`、skills 安装、embedding 模型覆盖安装、文档新增/替换/删除、recall、索引重建、图谱审计/修复和 reset。
 - `.docnexus/` 内的单版本托管 Markdown、已校验 extract 草稿包、当前 source/metadata sidecars、SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
 - 随 npm 包发布并以 local-only 模式加载的 `BAAI/bge-small-zh-v1.5` 量化 ONNX 模型。
@@ -24,7 +24,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
 
 - 不自动捕获对话，不监听文件变化。
 - 不保留托管文档历史版本；替换和删除只维护当前状态。
-- 不在 MCP 内调用 LLM 或生成最终答案。
+- 不在 CLI 内调用 LLM 或生成最终答案。
 - 不支持外部 embedding/LLM 供应商。
 - 图谱上下文限定为受控的一跳证据，不提供任意深度图推理。
 - `index rebuild` 只重建已登记的托管文档，不导入普通 Markdown 文件。
@@ -47,9 +47,9 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
 
 3. 真实运行时端到端测试
    - 使用随包 ONNX 模型，而不是 hash 或 mock pipeline，覆盖首次加载、中文/英文输入、文档写入和召回。
-   - 覆盖 npm 全局安装或 tarball 安装后的 MCP 启动与 tool 调用。
+   - 覆盖项目本地 tarball 安装后的 CLI 调用。
    - 验收：离线环境下完整主流程稳定通过，且不会尝试网络下载模型。
-   - 状态：已完成。真实 q8 ONNX E2E 覆盖 add、recall、图谱上下文和 MCP 读取，网络请求哨兵为零。
+   - 状态：已完成。真实 q8 ONNX E2E 覆盖 add、recall、图谱上下文和 CLI 读取，网络请求哨兵为零。
 
 ### P1：稳定性与规模能力
 

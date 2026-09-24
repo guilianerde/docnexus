@@ -10,7 +10,6 @@ const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const smokeRoot = await mkdtemp(join(tmpdir(), "docnexus-tarball-smoke-"));
 const packDirectory = join(smokeRoot, "pack");
-const installDirectory = join(smokeRoot, "install");
 const projectDirectory = join(smokeRoot, "project");
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 const sourceManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
@@ -19,7 +18,6 @@ const packageNameParts = sourceManifest.name.split("/");
 try {
   await Promise.all([
     mkdir(packDirectory, { recursive: true }),
-    mkdir(installDirectory, { recursive: true }),
     mkdir(projectDirectory, { recursive: true })
   ]);
 
@@ -34,12 +32,12 @@ try {
   const tarballPath = join(packDirectory, filename);
   await run(
     npmExecutable,
-    ["install", "--no-audit", "--no-fund", "--package-lock=false", "--prefix", installDirectory, tarballPath],
+    ["install", "--no-audit", "--no-fund", "--package-lock=false", "--prefix", projectDirectory, tarballPath],
     { cwd: smokeRoot }
   );
 
-  const packageDirectory = join(installDirectory, "node_modules", ...packageNameParts);
-  const cliPath = join(installDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
+  const packageDirectory = join(projectDirectory, "node_modules", ...packageNameParts);
+  const cliPath = join(projectDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
   const installedPackagePath = await realpath(packageDirectory);
   const installedCliPath = await realpath(cliPath);
   const workspacePath = await realpath(repositoryRoot);
@@ -58,6 +56,9 @@ try {
 
   const initialized = await runJson(cliPath, ["init"], projectDirectory, cliEnvironment);
   assert(initialized.initialized === true, "init did not report an initialized project");
+
+  const skills = await runJson(cliPath, ["skills", "install", "--target", "codex"], projectDirectory, cliEnvironment);
+  assert(skills.destination === join(await realpath(projectDirectory), ".agents", "skills"), "skills were not installed in the project");
 
   const doctor = await runJson(cliPath, ["doctor"], projectDirectory, cliEnvironment);
   assert(doctor.checks?.project?.initialized === true, "doctor did not recognize the initialized project");
@@ -108,6 +109,9 @@ try {
   );
   assert(added.operation === "created", "document add did not create the managed document");
 
+  const listed = await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment);
+  assert(listed.records?.[0]?.id === added.id, "project-local document list did not find the document");
+
   const recalled = await runJson(
     cliPath,
     ["recall", "installed DocNexus tarball", "--limit", "1"],
@@ -134,6 +138,7 @@ async function verifyPackageContents(packageDirectory) {
     "SECURITY.md",
     "docs/README.md",
     "docs/architecture/overview.zh-CN.md",
+    "docs/architecture/project-skills-migration.zh-CN.md",
     "docs/product/mvp.zh-CN.md",
     "docs/product/mvp.en.md",
     "docs/roadmap/current.zh-CN.md",

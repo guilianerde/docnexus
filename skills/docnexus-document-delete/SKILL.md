@@ -15,8 +15,8 @@ Use only for explicit destructive removal of a current managed document.
 4. Only after explicit confirmation run one command:
 
 ```bash
-docnexus document delete --file <file_path> --force
-docnexus document delete --id <document_id> --force
+./node_modules/.bin/docnexus document delete --file <file_path> --force
+./node_modules/.bin/docnexus document delete --id <document_id> --force
 ```
 
 5. Report the deleted `id` and `file_path`.

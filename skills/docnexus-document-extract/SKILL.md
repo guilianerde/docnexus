@@ -15,13 +15,12 @@ Use only when the user explicitly requests DocNexus document extraction or refin
 4. Produce a non-empty refined Markdown `document` with sections appropriate to the material.
 5. Produce `metadata` with `title`, `summary`, `tags`, `entities`, and `relationships` matching the DocNexus schema.
 6. Propose a project-relative Markdown `file_path`, such as `docs/memory/auth.md`; when added, DocNexus stores it at `.docnexus/<file_path>`.
-7. Call MCP `validate_metadata` with the initialized project's absolute `project_root` and `metadata`. Do not create a successful draft when validation fails.
-8. Create a unique, previously nonexistent `.docnexus/drafts/<draft_id>/` directory. Use a readable ID such as `draft_20260805T140501Z_auth` and never overwrite an existing draft.
-9. Write these artifacts:
+7. Create a unique, previously nonexistent `.docnexus/drafts/<draft_id>/` directory. Use a readable ID such as `draft_20260805T140501Z_auth` and never overwrite an existing draft.
+8. Write these artifacts:
    - `source.md`: the preserved source.
    - `document.md`: the refined Markdown document.
-   - `metadata.json`: the validated metadata as JSON.
-   - `manifest.json`: the completion manifest defined below. Write this file last.
+   - `metadata.json`: the proposed metadata as JSON.
+9. Run `./node_modules/.bin/docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json` from the project root. Do not create a successful draft when validation fails. Write `manifest.json` only after validation succeeds.
 10. Read all four files back. Verify that `source.md` and `document.md` are non-empty, both JSON files parse, metadata still validates, and every manifest path and `file_path` matches the created draft.
 11. Only after verification, report the required success result for review or use by `/docnexus-document-add`.
 
@@ -69,6 +68,7 @@ If any step fails, report `result: draft_failed`, the failed step, the error, an
 - Do not run `docnexus document add` in this workflow.
 - Do not write, overwrite, delete, index, or graph-store a managed document. Draft files are the only allowed writes.
 - Do not place draft artifacts outside `.docnexus/drafts/<draft_id>/`.
+- Keep every referenced source file and generated artifact inside the project directory.
 - Do not overwrite an existing draft directory or report paths that were not verified on disk.
 - Do not invent entities or relationships absent from the source.
 - Include at least one source-grounded entity; drafts without an entity cannot be stored or recalled.

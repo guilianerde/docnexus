@@ -4,7 +4,7 @@
 
 DocNexus 是一款面向 Codex、Claude 等编码智能体的本地项目记忆服务。智能体先提炼用户选定的原始内容；DocNexus 再按项目路径保存一份当前托管 Markdown 文档，并召回带引用文件的结构化 Graph RAG 上下文。
 
-本项目参考 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) 的智能体工作流风格，当前聚焦手动触发、项目本地存储、一份全局注册的 MCP 服务以及随包提供的 skills。
+本项目参考 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) 的智能体工作流风格，当前聚焦手动触发、项目本地存储、项目内安装的 skills 与 CLI。
 
 ## 能力
 
@@ -12,112 +12,42 @@ DocNexus 是一款面向 Codex、Claude 等编码智能体的本地项目记忆�
 - `docnexus-document-add` 通过 CLI 新增或更新可召回的托管文档，覆盖前向用户确认。
 - `docnexus-document-delete` 在用户确认后通过 CLI 物理删除托管文档。
 - `docnexus-recall` 通过 CLI 检索归集后的上下文，并基于参考文件回答。
-- MCP 向智能体提供当前文档读取、metadata 校验和状态查询 tools。
 - CLI 提供项目初始化、运行诊断、skills 安装、文档变更、召回、索引维护、图谱审计/修复和 reset。
 - 默认使用本地 embedding 模型 `BAAI/bge-small-zh-v1.5`，并以 local-only 模式加载。
 - SQLite 保存当前托管文档/chunks，LadybugDB 保存当前图谱和向量状态。
 
 DocNexus 不调用外部 LLM 提供商。提炼和最终回答始终由智能体完成。
 
-## 架构
+## 架构与部署
+
+每个项目在自己的目录中保存 skills、运行依赖、参考材料、草稿、产出、SQLite 数据库与 LadybugDB 图谱。无需 MCP 注册，也不安装用户级 skills。需要 Node.js 22.13.0 或更高版本及 npm。
 
 ```text
-Agent / User
-  |
-  | 手动调用 document 或 recall skill
-  v
-Skills
-  - 提炼 document + metadata
-  - 确认后新增/删除托管文档
-  - 基于归集召回上下文回答
-  |
-  v
-全局 MCP 服务                      CLI
-  - 每次显式传 project_root        - recall / 维护 / reset
-  - 读取 / 校验 / 状态             - document add / delete
-  |                                |
-  +---------------+----------------+
-                  v
-项目本地 .docnexus/
-  - 已校验的 extract 草稿包
-  - SQLite documents + file_chunks
-  - LadybugDB 图谱/向量状态
-  - 当前 source 与 metadata sidecars
+<project>/
+  node_modules/@rowansenne/docnexus/   # 项目内 CLI 和随包模型
+  .agents/skills/docnexus-*/          # Codex skills（按需）
+  .claude/skills/docnexus-*/          # Claude skills（按需）
+  .docnexus/                          # DocNexus 持久化数据
+    drafts/                           # source、提炼文档、metadata、manifest
+    index.sqlite                      # 文档与 chunk 账本
+    store.lbug                        # 图谱与向量状态
+    documents/                        # 当前 source 与 metadata sidecars
+    models/                           # 可选的项目模型覆盖
 ```
 
-## 安装与初始化
-
-需要 Node.js 22.13.0 或更高版本及 npm；这是 `node:sqlite` 无需实验性启动参数即可使用的最低版本。
-
-只安装一次可执行程序：
+在每个目标项目目录执行：
 
 ```bash
-npm install -g @rowansenne/docnexus
+npm install --save-dev @rowansenne/docnexus
+./node_modules/.bin/docnexus init
+./node_modules/.bin/docnexus skills install --target codex
+./node_modules/.bin/docnexus skills install --target claude
+./node_modules/.bin/docnexus doctor
 ```
 
-在每个需要独立记忆空间的项目中初始化并按需安装 skills：
+只安装实际使用的 skill 目标。已有 `.docnexus/` 项目保留原数据，安装项目本地依赖和 skills 即可，无需 reset。旧的全局 DocNexus MCP 注册需在智能体客户端配置中另行移除。
 
-```bash
-cd /path/to/your-project
-docnexus init
-docnexus doctor
-docnexus skills install --target codex
-docnexus skills install --target claude
-```
-
-不进行全局安装时：
-
-```bash
-npx -y @rowansenne/docnexus init
-npx -y @rowansenne/docnexus skills install --target codex
-```
-
-每个已初始化项目都拥有独立的 `.docnexus/` 数据域，文档、embedding 和图谱状态不会跨项目共享。
-
-## 一次注册 MCP
-
-客户端按需启动 MCP 进程。每次 tool 调用必须提供已初始化项目的绝对路径 `project_root`。
-
-Codex：
-
-```bash
-codex mcp add docnexus -- docnexus mcp
-```
-
-```toml
-[mcp_servers.docnexus]
-command = "docnexus"
-args = ["mcp"]
-```
-
-Claude Code：
-
-```bash
-claude mcp add --transport stdio docnexus -- docnexus mcp
-```
-
-```json
-{
-  "mcpServers": {
-    "docnexus": {
-      "command": "docnexus",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-## MCP Tools
-
-| Tool | 用途 |
-| --- | --- |
-| `list_records` | 按 tag 可选过滤，列出当前托管文档。 |
-| `get_record` | 读取当前文档的 source、Markdown 和/或 metadata。 |
-| `status` | 返回当前托管文档存储状态。 |
-| `validate_metadata` | CLI 写入前校验已准备的 metadata。 |
-| `index_status` | 返回当前文档数和 chunk 数。 |
-
-保留的 `list_records` 和 `get_record` 名称仅表示当前状态，不会留存旧版本。文档写入和删除改由 skills 显式驱动 CLI 执行。
+迁移前的评估与步骤见[项目 Skills 架构评估与迁移](./docs/architecture/project-skills-migration.zh-CN.md)。
 
 ## 文档与召回工作流
 
@@ -131,26 +61,30 @@ claude mcp add --transport stdio docnexus -- docnexus mcp
 召回由用户手动触发：
 
 ```bash
-docnexus recall "本地 embedding 和 LadybugDB 的关系" --limit 5
+./node_modules/.bin/docnexus recall "本地 embedding 和 LadybugDB 的关系" --limit 5
 ```
 
 召回返回按向量相关性排序的 `results[]` 与按文档归集的 `context_groups[]`。每组通过当前 `document_id` 标识并引用其托管路径，可包含有界的邻近 chunks 与一跳图谱支持证据。metadata 和 graph context 是强依赖；每份写入文档必须声明至少一个实体，系统不会返回缺失这些内容的降级结果。
 
 ## CLI 命令
 
-除 reset 外，以下命令在已初始化项目中执行：
+在已初始化的项目目录使用本地 CLI；文档输入文件必须位于项目内：
 
 ```bash
-docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json
-docnexus document add --file docs/memory/auth.md --source-file /tmp/source.md --document-file /tmp/auth.md --metadata-file /tmp/metadata.json --replace
-docnexus doctor
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5 --replace
-docnexus index status
-docnexus index rebuild --force
-docnexus graph audit
-docnexus graph repair --force
-docnexus recall "query" --limit 5
+./node_modules/.bin/docnexus document add --file docs/memory/auth.md --source-file .docnexus/drafts/example/source.md --document-file .docnexus/drafts/example/document.md --metadata-file .docnexus/drafts/example/metadata.json
+./node_modules/.bin/docnexus document add --file docs/memory/auth.md --source-file .docnexus/drafts/example/source.md --document-file .docnexus/drafts/example/document.md --metadata-file .docnexus/drafts/example/metadata.json --replace
+./node_modules/.bin/docnexus doctor
+./node_modules/.bin/docnexus metadata validate --file .docnexus/drafts/example/metadata.json
+./node_modules/.bin/docnexus document list
+./node_modules/.bin/docnexus document get --id <document_id> --include source,document,metadata
+./node_modules/.bin/docnexus status
+./node_modules/.bin/docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5
+./node_modules/.bin/docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5 --replace
+./node_modules/.bin/docnexus index status
+./node_modules/.bin/docnexus index rebuild --force
+./node_modules/.bin/docnexus graph audit
+./node_modules/.bin/docnexus graph repair --force
+./node_modules/.bin/docnexus recall "query" --limit 5
 ```
 
 `index rebuild --force` 仅用于维护：它从已注册的当前托管文档及当前 sidecars 重建派生状态，不会导入未托管文件。
@@ -158,8 +92,8 @@ docnexus recall "query" --limit 5
 已有托管路径必须在用户确认覆盖后使用 `--replace`。在用户确认删除后，按路径或 ID 物理删除当前托管文档：
 
 ```bash
-docnexus document delete --file docs/memory/auth.md --force
-docnexus document delete --id doc_0000000000000000 --force
+./node_modules/.bin/docnexus document delete --file docs/memory/auth.md --force
+./node_modules/.bin/docnexus document delete --id doc_0000000000000000 --force
 ```
 
 删除会移除 `.docnexus/` 内的托管 Markdown 文件、当前 sidecars、SQLite 行/chunks 以及 LadybugDB 文档/chunk 状态，不保留单文档删除记录。
@@ -167,8 +101,8 @@ docnexus document delete --id doc_0000000000000000 --force
 重置 DocNexus 数据域：
 
 ```bash
-docnexus reset --force
-docnexus init
+./node_modules/.bin/docnexus reset --force
+./node_modules/.bin/docnexus init
 ```
 
 对于当前格式项目，reset 删除完整 `.docnexus/` 目录，其中包含所有已登记的托管目标文件。对于旧格式或无法读取的数据域，reset 同样只删除 `.docnexus/`。
@@ -208,12 +142,12 @@ docnexus init
 BAAI/bge-small-zh-v1.5
 ```
 
-DocNexus 会将 Transformers.js 配置为 `local_files_only`，并禁用远程模型加载。npm 包会包含 `models/BAAI/bge-small-zh-v1.5/` 下的量化 ONNX 模型资产，所以用户安装包时会同时下载默认模型。运行时 DocNexus 优先读取当前项目 `.docnexus/models/` 中的覆盖模型，再回退到包内 `models/` 目录。正常安装不需要执行 `docnexus embeddings install`。
+DocNexus 会将 Transformers.js 配置为 `local_files_only`，并禁用远程模型加载。npm 包会包含 `models/BAAI/bge-small-zh-v1.5/` 下的量化 ONNX 模型资产，所以用户安装包时会同时下载默认模型。运行时 DocNexus 优先读取当前项目 `.docnexus/models/` 中的覆盖模型，再回退到包内 `models/` 目录。正常安装不需要执行 `./node_modules/.bin/docnexus embeddings install`。
 
 如果需要覆盖随包模型，可将已准备好的 Transformers.js 本地模型目录安装到当前项目：
 
 ```bash
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+./node_modules/.bin/docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5
 ```
 
 来源目录必须包含 `config.json`、`tokenizer.json` 以及 q8 资产 `onnx/model_quantized.onnx`。覆盖已有项目模型必须显式传 `--replace`。
@@ -224,7 +158,7 @@ docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
 DOCNEXUS_EMBEDDER=hash npm test
 ```
 
-`docnexus graph audit` 检查当前 SQLite 文档与 LadybugDB 状态的偏离。`docnexus graph repair --force` 删除陈旧图文档和孤立概念并重建向量索引。缺失或 chunk 数不一致的当前文档状态由 `docnexus index rebuild --force` 重建。
+`./node_modules/.bin/docnexus graph audit` 检查当前 SQLite 文档与 LadybugDB 状态的偏离。`./node_modules/.bin/docnexus graph repair --force` 删除陈旧图文档和孤立概念并重建向量索引。缺失或 chunk 数不一致的当前文档状态由 `./node_modules/.bin/docnexus index rebuild --force` 重建。
 
 ## 开发
 
@@ -233,7 +167,6 @@ npm install
 npm test
 npm run typecheck
 npm run build
-node dist/src/cli.js mcp
 ```
 
 ## 当前范围
@@ -241,8 +174,8 @@ node dist/src/cli.js mcp
 已实现：
 
 - Scoped npm 分发与逐项目初始化。
-- 一份全局 MCP 注册，每次调用显式传入 `project_root`。
-- `docnexus doctor` 运行环境诊断。
+- 项目内安装的 skills 与 CLI，不依赖 MCP 注册。
+- `./node_modules/.bin/docnexus doctor` 运行环境诊断。
 - 项目本地 embedding 模型资产安装。
 - Skills 驱动的提炼与对话召回。
 - 单版本当前托管文档存储、物理删除和 reset。
@@ -253,7 +186,7 @@ node dist/src/cli.js mcp
 
 - 自动捕获或文件监听。
 - 外部模型供应商接入。
-- MCP 内部生成最终答案。
+- CLI 内部生成最终答案。
 - 更深层多跳图推理。
 
 架构、产品说明、发布指南和后续优先级统一收录在[文档中心](./docs/README.md)，其中[当前路线图](./docs/roadmap/current.zh-CN.md)持续维护实现状态。

@@ -78,15 +78,9 @@ describe("installSkills", () => {
     expect(result.destination).toBe(join(projectRoot, ".claude", "skills"));
   });
 
-  it("allows user scope without an initialized project", async () => {
+  it("rejects installation without an initialized project", async () => {
     const source = await makePackagedSkills();
-    const home = await makeRoot("docnexus-skills-home-");
-
-    const codex = await installSkills({ target: "codex", scope: "user", homeDir: home, packagedSkillsRoot: source });
-    const claude = await installSkills({ target: "claude", scope: "user", homeDir: home, packagedSkillsRoot: source });
-
-    expect(codex.destination).toBe(join(home, ".agents", "skills"));
-    expect(claude.destination).toBe(join(home, ".claude", "skills"));
+    await expect(installSkills({ target: "codex", packagedSkillsRoot: source })).rejects.toThrow("project root is required");
   });
 
   it("rejects project installation before initialization and invalid options", async () => {
@@ -94,7 +88,7 @@ describe("installSkills", () => {
     const source = await makePackagedSkills();
 
     await expect(installSkills({ target: "codex", projectRoot: root, packagedSkillsRoot: source })).rejects.toThrow("Run \"docnexus init\"");
-    await expect(installSkills({ target: "cursor" as never, scope: "user", packagedSkillsRoot: source })).rejects.toThrow("target must be codex or claude");
+    await expect(installSkills({ target: "cursor" as never, packagedSkillsRoot: source })).rejects.toThrow("target must be codex or claude");
   });
 
   it("documents CLI mutations instead of MCP mutation tools", async () => {

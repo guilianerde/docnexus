@@ -1,19 +1,22 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { runDoctor } from "./doctor.js";
 import { installEmbeddingModel } from "./embedding-models.js";
 import { auditGraph, repairGraph } from "./graph-maintenance.js";
 import {
   deleteManagedDocument,
   getManagedIndexStatus,
+  getManagedRecord,
+  getManagedStatus,
   listManagedDocuments,
+  listManagedRecords,
   rebuildManagedDocuments,
   upsertManagedDocument
 } from "./managed-documents.js";
-import { runMcpServer } from "./mcp.js";
+import { validateMetadata } from "./metadata.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
 import { recall } from "./recall.js";
 import { resetProjectData } from "./reset.js";
@@ -60,15 +63,44 @@ export async function runCli(
     if (target !== "codex" && target !== "claude") {
       throw new Error("--target must be codex or claude");
     }
-    const scope = options.scope ?? "project";
-    if (scope !== "project" && scope !== "user") {
-      throw new Error("--scope must be project or user");
+    if (options.scope) {
+      throw new Error("skills install supports project scope only; omit --scope");
     }
-    return json(await installSkills({ target, scope, projectRoot }));
+    return json(await installSkills({ target, projectRoot }));
   }
 
-  if (command === "index" || command === "graph" || command === "recall" || command === "document" || command === "embeddings") {
+  if (command === "index" || command === "graph" || command === "recall" || command === "document" || command === "embeddings" || command === "metadata" || command === "status") {
     await requireInitializedProject(projectRoot);
+  }
+
+  if (command === "status") {
+    return json(await getManagedStatus(projectRoot));
+  }
+
+  if (command === "metadata" && subcommand === "validate") {
+    const options = parseOptions(rest);
+    if (!options.file) {
+      throw new Error("metadata validate requires --file");
+    }
+    return json(validateMetadata(JSON.parse(await readProjectFile(projectRoot, options.file))));
+  }
+
+  if (command === "document" && subcommand === "list") {
+    const options = parseOptions(rest);
+    const limit = options.limit === undefined ? undefined : positiveInteger(options.limit, "limit");
+    return json(await listManagedRecords(projectRoot, { limit, tag: options.tag }));
+  }
+
+  if (command === "document" && subcommand === "get") {
+    const options = parseOptions(rest);
+    if (!options.id) {
+      throw new Error("document get requires --id");
+    }
+    const include = options.include?.split(",");
+    if (include?.some((item) => !["source", "document", "metadata"].includes(item))) {
+      throw new Error("--include must list source,document,metadata");
+    }
+    return json(await getManagedRecord(projectRoot, options.id, include as ("source" | "document" | "metadata")[] | undefined));
   }
 
   if (command === "embeddings" && subcommand === "install") {
@@ -77,7 +109,7 @@ export async function runCli(
     if (!options.from) {
       throw new Error("embeddings install requires --from");
     }
-    return json(await installEmbeddingModel(projectRoot, { sourcePath: options.from, replace }));
+    return json(await installEmbeddingModel(projectRoot, { sourcePath: await projectContainedPath(projectRoot, options.from), replace }));
   }
 
   if (command === "document" && subcommand === "delete") {
@@ -108,9 +140,9 @@ export async function runCli(
     return json(
       await upsertManagedDocument(projectRoot, {
         file_path: options.file,
-        source: await readFile(options["source-file"], "utf8"),
-        document: await readFile(options["document-file"], "utf8"),
-        metadata: JSON.parse(await readFile(options["metadata-file"], "utf8")) as DocNexusMetadata
+        source: await readProjectFile(projectRoot, options["source-file"]),
+        document: await readProjectFile(projectRoot, options["document-file"]),
+        metadata: JSON.parse(await readProjectFile(projectRoot, options["metadata-file"])) as DocNexusMetadata
       })
     );
   }
@@ -151,11 +183,14 @@ docnexus --project-root path/to/project init
 docnexus doctor
 docnexus skills install --target codex
 docnexus skills install --target claude
-docnexus skills install --target codex --scope user
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5 --replace
-docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json
-docnexus document add --file path/to/file.md --source-file /path/to/source.md --document-file /path/to/refined.md --metadata-file /path/to/metadata.json --replace
+docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
+docnexus document list [--limit 50] [--tag tag]
+docnexus document get --id <document_id> [--include source,document,metadata]
+docnexus status
+docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5
+docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5 --replace
+docnexus document add --file path/to/file.md --source-file .docnexus/drafts/<draft_id>/source.md --document-file .docnexus/drafts/<draft_id>/document.md --metadata-file .docnexus/drafts/<draft_id>/metadata.json
+docnexus document add --file path/to/file.md --source-file .docnexus/drafts/<draft_id>/source.md --document-file .docnexus/drafts/<draft_id>/document.md --metadata-file .docnexus/drafts/<draft_id>/metadata.json --replace
 docnexus document delete --file path/to/file.md --force
 docnexus document delete --id doc_0000000000000000 --force
 docnexus reset --force
@@ -200,18 +235,29 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-export function validateMcpInvocation(argv: string[]): void {
-  if (argv.length !== 1 || argv[0] !== "mcp") {
-    throw new Error("Usage: docnexus mcp");
+function positiveInteger(value: string, name: string): number {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number <= 0) {
+    throw new Error(`${name} must be a positive integer`);
   }
+  return number;
+}
+
+async function readProjectFile(projectRoot: string, path: string): Promise<string> {
+  return readFile(await projectContainedPath(projectRoot, path), "utf8");
+}
+
+async function projectContainedPath(projectRoot: string, path: string): Promise<string> {
+  const root = await realpath(projectRoot);
+  const target = await realpath(isAbsolute(path) ? path : resolve(root, path));
+  const inside = relative(root, target);
+  if (inside.startsWith(`..${sep}`) || inside === ".." || isAbsolute(inside)) {
+    throw new Error(`input path must be inside the project: ${path}`);
+  }
+  return target;
 }
 
 export async function runMain(argv: string[], cwd = process.cwd()): Promise<void> {
-  if (argv[0] === "mcp") {
-    validateMcpInvocation(argv);
-    await runMcpServer();
-    return;
-  }
   process.stdout.write(await runCli(argv, cwd));
 }
 

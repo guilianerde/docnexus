@@ -9,18 +9,17 @@ DocNexus 是一个面向本地项目的文档记忆与 Graph RAG 工具。它将
 - 文件系统中的可读文档与完整 metadata；
 - SQLite 中的托管文档账本和 chunk 索引；
 - LadybugDB 中的向量、概念和图关系；
-- 供用户直接操作的 CLI；
-- 供 Agent 查询项目状态和文档的 MCP 服务。
+- 供项目内 skills 调用的本地 CLI。
 
-所有数据默认保存在项目根目录下的 `.docnexus/`，不同项目之间通过显式项目根路径隔离。
+持久化数据保存在项目根目录下的 `.docnexus/`；skills 安装在项目的 `.agents/skills/` 或 `.claude/skills/`，CLI 和默认模型作为项目本地 npm 依赖。
 
 ## 2. 组件关系
 
 ```mermaid
 flowchart TD
     U["用户 / Agent"]
+    SKILLS["项目 Skills"]
     CLI["DocNexus CLI"]
-    MCP["MCP 服务（stdio）"]
     MANAGER["托管文档服务"]
     META["Metadata 校验"]
     EMBED["本地 Embedding 运行时"]
@@ -28,12 +27,10 @@ flowchart TD
     LBUG["LadybugDB：store.lbug"]
     FILES["文件系统：文档与 sidecar"]
 
-    U --> CLI
-    U --> MCP
+    U --> SKILLS
+    SKILLS --> CLI
     CLI --> MANAGER
     CLI --> EMBED
-    MCP --> MANAGER
-    MCP --> META
     MANAGER --> META
     MANAGER --> EMBED
     MANAGER --> SQLITE
@@ -44,7 +41,6 @@ flowchart TD
 主要代码入口：
 
 - CLI：[`src/cli.ts`](../../src/cli.ts)
-- MCP：[`src/mcp.ts`](../../src/mcp.ts)
 - 托管文档：[`src/managed-documents.ts`](../../src/managed-documents.ts)
 - Metadata 校验：[`src/metadata.ts`](../../src/metadata.ts)
 - Embedding：[`src/embedder-real.ts`](../../src/embedder-real.ts)
@@ -174,7 +170,7 @@ LadybugDB 中的更新采用整文档替换：
 
 ## 5. 召回流程
 
-召回由 CLI 发起，当前尚未注册为 MCP 工具。
+召回由项目内 CLI 发起。
 
 ```mermaid
 flowchart TD
@@ -234,29 +230,9 @@ LadybugDB 返回距离，DocNexus 将其转换为相似度：`score = 1 - distan
 + 关联文档提供支持证据
 ```
 
-## 6. MCP 服务边界
+## 6. 项目 Skills 与 CLI 边界
 
-MCP 通过 stdio 对外提供全局服务。每次调用都必须传入绝对路径 `project_root`，服务会验证该路径对应一个已初始化的 DocNexus 项目，然后再路由到托管文档层。
-
-当前注册工具：
-
-| 工具 | 能力 |
-| --- | --- |
-| `list_records` | 列出文档摘要，支持标签和数量限制 |
-| `get_record` | 按 ID 获取 source、document 或 metadata |
-| `status` | 查询项目初始化状态、存储路径和文档数 |
-| `index_status` | 查询文档数和 chunk 数 |
-| `validate_metadata` | 在写入前校验 metadata |
-
-MCP 当前是只读查询与校验网关，不执行以下操作：
-
-- 文档 add、delete；
-- reset、rebuild；
-- embedding 生成；
-- 图数据库写入；
-- recall 召回。
-
-这些写操作和召回能力目前由 CLI 调用。
+项目 skills 在项目目录内运行本地 `./node_modules/.bin/docnexus`。CLI 提供 `document list/get`、`status`、`index status` 与 `metadata validate --file` 等只读或校验命令；新增、删除、召回和维护也通过 CLI 执行。文档输入、metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
 
 ## 7. 一致性与数据权威边界
 
@@ -277,7 +253,7 @@ Chunk 文本和 embedding 当前同时写入 SQLite 与 LadybugDB。这是有意
 - 文件系统、SQLite 和 LadybugDB 之间依赖补偿恢复，尚无真正的跨存储原子提交；
 - 图扩展固定为一跳，尚未加入多跳深度、边权重或路径评分；
 - relationship description 尚未保存为图边属性；
-- MCP 尚未开放 recall，因此 Agent 不能通过 MCP 直接执行 Graph RAG 召回；
+- Agent 通过项目内 CLI 执行 Graph RAG 召回；
 - 缺少针对大规模文档集的检索质量与延迟基准。
 
 这些限制属于后续演进方向，不影响当前本地文档管理和基础 Graph RAG 流程。

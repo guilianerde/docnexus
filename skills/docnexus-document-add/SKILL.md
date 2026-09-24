@@ -10,17 +10,17 @@ Use only for persisting prepared source, refined Markdown, metadata, and a proje
 ## Workflow
 
 1. Confirm the target project is initialized with DocNexus.
-2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; metadata must include at least one source-grounded entity. When `/docnexus-document-extract` produced a draft, read its verified `manifest.json` and use the three artifact paths from that manifest. Create temporary artifact files only when no extract draft exists.
+2. Obtain the prepared `source`, `document`, `metadata`, and target `file_path`; metadata must include at least one source-grounded entity. When `/docnexus-document-extract` produced a draft, read its verified `manifest.json` and use the three artifact paths from that manifest. When no extract draft exists, create input files under `.docnexus/drafts/` in this project.
 3. For a proposed new managed path, run:
 
 ```bash
-docnexus document add --file <file_path> --source-file <source_path> --document-file <document_path> --metadata-file <metadata_path>
+./node_modules/.bin/docnexus document add --file <file_path> --source-file <source_path> --document-file <document_path> --metadata-file <metadata_path>
 ```
 
 4. If CLI reports that the path is already managed and requires `--replace`, stop and ask the user to confirm replacement. Only after explicit confirmation run:
 
 ```bash
-docnexus document add --file <file_path> --source-file <source_path> --document-file <document_path> --metadata-file <metadata_path> --replace
+./node_modules/.bin/docnexus document add --file <file_path> --source-file <source_path> --document-file <document_path> --metadata-file <metadata_path> --replace
 ```
 
 5. Report the returned `id`, `file_path`, `operation`, and `chunk_count`.

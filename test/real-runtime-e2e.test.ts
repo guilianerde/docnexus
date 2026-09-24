@@ -10,7 +10,6 @@ import {
   resolveEmbeddingModelsRoot
 } from "../src/embedding-models.js";
 import { listManagedChunks } from "../src/managed-documents.js";
-import { callTool } from "../src/mcp.js";
 
 const tempRoots: string[] = [];
 const previousEmbedder = process.env.DOCNEXUS_EMBEDDER;
@@ -149,17 +148,11 @@ describe("real local ONNX runtime", () => {
       }
     });
 
-    await expect(callTool("status", { project_root: projectRoot })).resolves.toMatchObject({
+    expect(JSON.parse(await runCli(["status"], projectRoot))).toMatchObject({
       initialized: true,
       document_count: 1
     });
-    await expect(
-      callTool("get_record", {
-        project_root: projectRoot,
-        id: record.id,
-        include: ["document", "metadata"]
-      })
-    ).resolves.toMatchObject({
+    expect(JSON.parse(await runCli(["document", "get", "--id", record.id, "--include", "document,metadata"], projectRoot))).toMatchObject({
       id: record.id,
       file_path: "docs/memory/local-onnx.md",
       document,

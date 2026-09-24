@@ -16,10 +16,10 @@ Do not trigger automatically for every question. DocNexus recall is manually req
 3. Run recall from an initialized DocNexus project:
 
 ```bash
-docnexus recall "<query>" --limit 5
+./node_modules/.bin/docnexus recall "<query>" --limit 5
 ```
 
-4. If the command reports that the project is not initialized, tell the user to run `docnexus init` in the project before retrying. Do not fall back to a repository-local `dist/src/cli.js` path.
+4. If the command reports that the project is not initialized, tell the user to run `./node_modules/.bin/docnexus init` in the project before retrying. Do not fall back to a global CLI or another repository's `dist/src/cli.js` path.
 5. Parse the JSON output.
 6. Read `results[]` as the primary ranked chunk evidence list. Each result points to a current managed document group through `document_ref.document_id` and `document_ref.group_id`.
 7. Read `context_groups[]` as the complete answer context. Each group consolidates one current managed document, its primary matched chunks, nearby same-document chunks, and one-hop graph evidence.
