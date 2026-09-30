@@ -11,7 +11,7 @@ DocNexus 是一个面向本地项目的文档记忆与 Graph RAG 工具。它将
 - LadybugDB 中的向量、概念和图关系；
 - 供项目内 skills 调用的本地 CLI。
 
-持久化数据保存在项目根目录下的 `.docnexus/`；skills 安装在项目的 `.agents/skills/` 或 `.claude/skills/`，CLI 和默认模型作为项目本地 npm 依赖。
+DocNexus 在项目中拥有的全部内容位于可见的 `docnexus/` 工作区：skills、草稿、托管文档（library）与派生数据（store）。智能体通过 `.claude/skills/` 或 `.agents/skills/` 中指向 `docnexus/skills/` 的链接发现 skills；CLI 和默认模型作为项目本地 npm 依赖。skills 分工与流水线编排见[Skills 工作区与功能编排](./skills-workspace.zh-CN.md)。
 
 ## 2. 组件关系
 
@@ -24,7 +24,7 @@ flowchart TD
     META["Metadata 校验"]
     EMBED["本地 Embedding 运行时"]
     SQLITE["SQLite：index.sqlite"]
-    LBUG["LadybugDB：store.lbug"]
+    LBUG["LadybugDB：graph.lbug"]
     FILES["文件系统：文档与 sidecar"]
 
     U --> SKILLS
@@ -55,28 +55,31 @@ flowchart TD
 
 ```text
 <project>/
-└── .docnexus/
-    ├── <managed-document-path>   # 生成后的完整文档；逻辑 file_path 不含 .docnexus/
+└── docnexus/
+    ├── project.json              # 项目初始化信息与格式版本（4）
+    ├── skills/                   # 项目 skills
     ├── drafts/<draft-id>/
     │   ├── source.md             # 提炼输入
     │   ├── document.md           # 待确认的 Markdown
-    │   ├── metadata.json         # 已校验 metadata
-    │   └── manifest.json         # 最后写入的完成标志
-    ├── project.json              # 项目初始化信息与格式版本
-    ├── index.sqlite              # 托管文档与 chunk 账本
-    ├── store.lbug                # LadybugDB 图和向量数据
-    ├── documents/<document-id>/
-    │   ├── source.md             # 当前原始输入 sidecar
-    │   └── metadata.json         # 当前完整 metadata sidecar
-    └── schemas/
-        └── metadata.schema.json
+    │   ├── metadata.json         # metadata
+    │   └── manifest.json         # draft seal 写入：校验结果与产物哈希
+    ├── library/<file_path>.md    # 托管文档；逻辑 file_path 相对 library/
+    ├── schemas/
+    │   └── metadata.schema.json
+    └── store/
+        ├── index.sqlite          # 托管文档与 chunk 账本
+        ├── graph.lbug            # LadybugDB 图和向量数据
+        ├── models/               # 可选的项目模型覆盖
+        └── documents/<document-id>/
+            ├── source.md         # 当前原始输入 sidecar
+            └── metadata.json     # 当前完整 metadata sidecar
 ```
 
-托管路径是相对于 `.docnexus/` 的逻辑 Markdown 路径，实际文件必须位于该目录内，并且路径中的既有组件不得是符号链接。写入、删除和 reset 会同时进行词法路径与真实路径校验，防止通过 symlink 越过 `.docnexus/` 边界。
+托管路径是相对于 `docnexus/library/` 的逻辑 Markdown 路径，实际文件必须位于该目录内，并且路径中的既有组件不得是符号链接。写入、删除和草稿封存会同时进行词法路径与真实路径校验，防止通过 symlink 越过 `docnexus/` 边界。
 
 ### 3.2 SQLite
 
-SQLite 位于 `.docnexus/index.sqlite`，作为管理账本和可恢复的 chunk 数据源。
+SQLite 位于 `docnexus/store/index.sqlite`，作为管理账本和可恢复的 chunk 数据源。
 
 #### `documents`
 
@@ -108,7 +111,7 @@ SQLite 位于 `.docnexus/index.sqlite`，作为管理账本和可恢复的 chunk
 
 ### 3.3 LadybugDB
 
-LadybugDB 位于 `.docnexus/store.lbug`，是嵌入式属性图数据库，不依赖独立数据库服务。DocNexus 在每次操作中打开本地数据库、执行 Cypher 查询并关闭连接。
+LadybugDB 位于 `docnexus/store/graph.lbug`，是嵌入式属性图数据库，不依赖独立数据库服务。DocNexus 在每次操作中打开本地数据库、执行 Cypher 查询并关闭连接。
 
 节点模型：
 
@@ -145,6 +148,7 @@ sequenceDiagram
     participant S as SQLite
     participant L as LadybugDB
 
+    C->>C: 读取 ready 草稿并核对封存哈希
     C->>M: add / update 文档
     M->>M: 校验项目路径和 symlink
     M->>M: 校验 metadata（至少一个 entity）
@@ -232,7 +236,7 @@ LadybugDB 返回距离，DocNexus 将其转换为相似度：`score = 1 - distan
 
 ## 6. 项目 Skills 与 CLI 边界
 
-项目 skills 在项目目录内运行本地 `./node_modules/.bin/docnexus`。CLI 提供 `document list/get`、`status`、`index status` 与 `metadata validate --file` 等只读或校验命令；新增、删除、召回和维护也通过 CLI 执行。文档输入、metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
+项目 skills 位于 `docnexus/skills/`，在项目目录内运行本地 `./node_modules/.bin/docnexus`。入口 skill `docnexus` 负责路由与流水线编排；CLI 负责可校验的契约：`draft new/seal` 分配与封存草稿，`document add --draft` 入库并把草稿标记为 `ingested`，其余为读取、召回与维护命令。metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
 
 ## 7. 一致性与数据权威边界
 

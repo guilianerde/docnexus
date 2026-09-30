@@ -1,8 +1,10 @@
 import { resolve } from "node:path";
 import { checkEmbeddingRuntime } from "./embedder-default.js";
 import { checkLadybugVectorIndex } from "./ladybug-store.js";
-import { getManagedSchemaTables, storePath } from "./managed-documents.js";
+import { workspacePath } from "./layout.js";
+import { getManagedSchemaTables } from "./managed-documents.js";
 import { requireInitializedProject } from "./project.js";
+import { inspectSkills, type SkillsState } from "./skills.js";
 
 type EmbeddingCheck = Awaited<ReturnType<typeof checkEmbeddingRuntime>>;
 
@@ -20,8 +22,10 @@ interface NodeCheck extends BaseCheck {
 interface ProjectCheck extends BaseCheck {
   initialized: boolean;
   project_root: string;
-  store_path?: string;
+  workspace_path?: string;
 }
+
+interface SkillsCheck extends BaseCheck, Partial<SkillsState> {}
 
 interface SqliteCheck extends BaseCheck {
   tables?: string[];
@@ -42,6 +46,7 @@ export interface DoctorOutput {
   checks: {
     node: NodeCheck;
     project: ProjectCheck;
+    skills: SkillsCheck;
     sqlite: SqliteCheck;
     ladybug: LadybugCheck;
     embedding: EmbeddingCheck;
@@ -61,11 +66,12 @@ export async function runDoctor(
   const root = resolve(projectRoot);
   const node = await checkNodeRuntime();
   const project = await checkProject(root);
+  const skills = project.ok ? await checkSkills(root) : skippedCheck("project is not initialized");
   const sqlite = project.ok ? await checkSqlite(root) : skippedCheck("project is not initialized");
   const ladybug = project.ok ? await checkLadybug(root, dependencies) : skippedCheck("project is not initialized");
   const embedding = await dependencies.checkEmbeddingRuntime(root);
-  const recommendations = buildRecommendations(root, { node, project, sqlite, ladybug, embedding });
-  const allOk = [node, project, sqlite, ladybug, embedding].every((check) => check.ok);
+  const recommendations = buildRecommendations(root, { node, project, skills, sqlite, ladybug, embedding });
+  const allOk = [node, project, skills, sqlite, ladybug, embedding].every((check) => check.ok);
 
   return {
     result: allOk ? "ok" : "issues_found",
@@ -73,6 +79,7 @@ export async function runDoctor(
     checks: {
       node,
       project,
+      skills,
       sqlite,
       ladybug,
       embedding
@@ -106,7 +113,7 @@ async function checkProject(projectRoot: string): Promise<ProjectCheck> {
       ok: true,
       initialized: true,
       project_root: root,
-      store_path: storePath(root)
+      workspace_path: workspacePath(root)
     };
   } catch (error) {
     return {
@@ -116,6 +123,18 @@ async function checkProject(projectRoot: string): Promise<ProjectCheck> {
       message: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+async function checkSkills(projectRoot: string): Promise<SkillsCheck> {
+  const state = await inspectSkills(projectRoot);
+  const linked = Object.values(state.links).some((link) => link.missing.length === 0);
+  return {
+    ok: state.missing.length === 0,
+    ...state,
+    message: state.missing.length > 0
+      ? `missing skills: ${state.missing.join(", ")}`
+      : linked ? undefined : "skills are not linked into any agent directory"
+  };
 }
 
 async function checkSqlite(projectRoot: string): Promise<SqliteCheck> {
@@ -157,6 +176,7 @@ function buildRecommendations(
   checks: {
     node: NodeCheck;
     project: ProjectCheck;
+    skills: SkillsCheck;
     sqlite: SqliteCheck;
     ladybug: LadybugCheck;
     embedding: EmbeddingCheck;
@@ -168,6 +188,12 @@ function buildRecommendations(
   }
   if (!checks.project.initialized) {
     recommendations.push(`Run "docnexus init" in ${projectRoot}.`);
+  }
+  if (checks.skills.ok === false && !checks.skills.skipped) {
+    recommendations.push("Run docnexus skills sync to restore the project skills.");
+  }
+  if (checks.skills.links && Object.values(checks.skills.links).every((link) => link.missing.length > 0)) {
+    recommendations.push("Run docnexus skills link --target claude (or codex, all) so your agent can discover the skills.");
   }
   if (checks.sqlite.ok === false && !checks.sqlite.skipped) {
     recommendations.push("Run docnexus reset --force and docnexus init if the SQLite store cannot be repaired.");

@@ -7,6 +7,16 @@ import type { Embedder } from "./embedder.js";
 import { relationshipsToEdges } from "./graph-mapping.js";
 import { sha256, stableJson } from "./hash.js";
 import { createChunkId, createDocumentId } from "./ids.js";
+import {
+  databasePath,
+  libraryPath,
+  schemasPath,
+  sidecarRelativePath,
+  sidecarsPath,
+  storePath,
+  WORKSPACE_DIRNAME,
+  workspacePath
+} from "./layout.js";
 import { assertValidMetadata, metadataSchema } from "./metadata.js";
 import type { DocNexusMetadata, ManagedChunk, ManagedDocument, StoreStatus, StoredRecordSummary } from "./types.js";
 
@@ -37,22 +47,6 @@ export const CURRENT_SCHEMA_SQL = `
     UNIQUE (document_id, chunk_index)
   );
 `;
-
-export function storePath(projectRoot: string): string {
-  return join(projectRoot, ".docnexus");
-}
-
-export function documentsPath(projectRoot: string): string {
-  return join(storePath(projectRoot), "documents");
-}
-
-export function databasePath(projectRoot: string): string {
-  return join(storePath(projectRoot), "index.sqlite");
-}
-
-function schemasPath(projectRoot: string): string {
-  return join(storePath(projectRoot), "schemas");
-}
 
 export function openManagedDatabase(projectRoot: string): DatabaseSync {
   return new DatabaseSync(databasePath(projectRoot));
@@ -176,7 +170,8 @@ const defaultGraphWriter: ManagedGraphWriter = {
 };
 
 export async function ensureManagedStore(projectRoot: string): Promise<void> {
-  await mkdir(documentsPath(projectRoot), { recursive: true });
+  await mkdir(sidecarsPath(projectRoot), { recursive: true });
+  await mkdir(libraryPath(projectRoot), { recursive: true });
   await mkdir(schemasPath(projectRoot), { recursive: true });
   await writeFile(join(schemasPath(projectRoot), "metadata.schema.json"), `${stableJson(metadataSchema)}\n`);
 
@@ -221,7 +216,6 @@ export async function upsertManagedDocument(
   const now = new Date().toISOString();
   const id = existing?.id ?? createDocumentId();
   const metadataJson = stableJson(input.metadata);
-  const sidecarRelativePath = `.docnexus/documents/${id}`;
   const row: DocumentRow = {
     id,
     file_path: resolved.relativePath,
@@ -233,7 +227,7 @@ export async function upsertManagedDocument(
     metadata_hash: sha256(metadataJson),
     created_at: existing?.created_at ?? now,
     updated_at: now,
-    sidecar_path: sidecarRelativePath
+    sidecar_path: sidecarRelativePath(id)
   };
   const chunks: ManagedChunk[] = [];
   for (const chunk of chunkText(input.document)) {
@@ -349,6 +343,8 @@ export async function getManagedStatus(projectRoot: string): Promise<StoreStatus
   const documents = await listManagedDocuments(projectRoot);
   return {
     project_root: projectRoot,
+    workspace_path: workspacePath(projectRoot),
+    library_path: libraryPath(projectRoot),
     store_path: storePath(projectRoot),
     initialized: true,
     document_count: documents.length
@@ -436,16 +432,6 @@ export async function deleteManagedDocument(
   return { id: row.id, file_path: row.file_path, deleted: true };
 }
 
-export async function listManagedTargetPathsForReset(projectRoot: string): Promise<string[]> {
-  const db = openManagedDatabase(projectRoot);
-  try {
-    return (db.prepare("SELECT file_path FROM documents ORDER BY file_path ASC").all() as unknown as Array<{ file_path: string }>)
-      .map((row) => row.file_path);
-  } finally {
-    db.close();
-  }
-}
-
 export async function getManagedIndexStatus(projectRoot: string): Promise<ManagedIndexStatusOutput> {
   const db = openManagedDatabase(projectRoot);
   try {
@@ -505,15 +491,6 @@ export async function rebuildManagedDocuments(
   };
 }
 
-export async function removeManagedTargetForReset(projectRoot: string, filePath: string): Promise<void> {
-  const target = await resolveManagedTarget(projectRoot, filePath);
-  await rm(target.absolutePath, { force: true });
-}
-
-export async function validateManagedTargetForReset(projectRoot: string, filePath: string): Promise<void> {
-  await resolveManagedTarget(projectRoot, filePath);
-}
-
 export async function getManagedSchemaTables(projectRoot: string): Promise<string[]> {
   const db = openManagedDatabase(projectRoot);
   try {
@@ -534,18 +511,32 @@ async function resolveManagedTarget(projectRoot: string, filePath: string): Prom
     throw new Error("file_path must be a project-relative Markdown path");
   }
   const root = await realpath(resolve(projectRoot));
-  const managedRoot = join(root, ".docnexus");
+  const managedRoot = libraryPath(root);
   const absolutePath = resolve(managedRoot, filePath);
   const relativePath = relative(managedRoot, absolutePath);
   if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    throw new Error("file_path must remain inside the .docnexus directory");
+    throw new Error(`file_path must remain inside the ${WORKSPACE_DIRNAME}/library directory`);
   }
 
-  await assertNoSymbolicLinks(root, join(".docnexus", relativePath));
+  await assertNoSymbolicLinks(root, join(WORKSPACE_DIRNAME, "library", relativePath));
   return { absolutePath, relativePath: relativePath.split(sep).join("/") };
 }
 
-async function assertNoSymbolicLinks(root: string, relativePath: string): Promise<void> {
+/** Validates a logical managed path and returns its normalized library-relative form. */
+export async function normalizeManagedFilePath(projectRoot: string, filePath: string): Promise<string> {
+  return (await resolveManagedTarget(projectRoot, filePath)).relativePath;
+}
+
+export async function isManagedFilePath(projectRoot: string, filePath: string): Promise<boolean> {
+  const db = openManagedDatabase(projectRoot);
+  try {
+    return getDocumentRowByPath(db, filePath) !== undefined;
+  } finally {
+    db.close();
+  }
+}
+
+export async function assertNoSymbolicLinks(root: string, relativePath: string): Promise<void> {
   let current = root;
   for (const segment of relativePath.split(sep)) {
     current = join(current, segment);
@@ -610,7 +601,7 @@ async function writeCurrentFiles(
   document: string,
   metadataJson: string
 ): Promise<void> {
-  await atomicWrite(join(storePath(projectRoot), row.file_path), document);
+  await atomicWrite(join(libraryPath(projectRoot), row.file_path), document);
   const sidecar = join(projectRoot, row.sidecar_path);
   await atomicWrite(join(sidecar, "source.md"), source);
   await atomicWrite(join(sidecar, "metadata.json"), `${metadataJson}\n`);
@@ -683,7 +674,7 @@ function replaceDocumentState(projectRoot: string, row: DocumentRow, chunks: Man
 }
 
 async function restoreCurrent(projectRoot: string, row: DocumentRow, snapshot: CurrentSnapshot): Promise<void> {
-  const target = join(storePath(projectRoot), row.file_path);
+  const target = join(libraryPath(projectRoot), row.file_path);
   const sidecar = join(projectRoot, row.sidecar_path);
   if (snapshot.row) {
     await atomicWrite(target, snapshot.target as string);

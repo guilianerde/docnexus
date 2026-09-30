@@ -12,7 +12,7 @@ import {
   type RecallPrimaryMatch,
   type RecallSupportingCandidate
 } from "./recall-groups.js";
-import { storePath } from "./managed-documents.js";
+import { graphStorePath, storePath } from "./layout.js";
 
 const require = createRequire(import.meta.url);
 // LadybugDB otherwise requests its default 8 TB mmap address range on every open.
@@ -110,7 +110,7 @@ const schemaStatements = [
 ];
 
 export function ladybugStorePath(projectRoot: string): string {
-  return join(storePath(projectRoot), "store.lbug");
+  return graphStorePath(projectRoot);
 }
 
 export async function isLadybugAvailable(): Promise<boolean> {

@@ -54,26 +54,25 @@ try {
   const cliEnvironment = { ...process.env, DOCNEXUS_EMBEDDER: "hash" };
   delete cliEnvironment.NODE_PATH;
 
-  const initialized = await runJson(cliPath, ["init"], projectDirectory, cliEnvironment);
+  const initialized = await runJson(cliPath, ["init", "--agent", "codex"], projectDirectory, cliEnvironment);
   assert(initialized.initialized === true, "init did not report an initialized project");
-
-  const skills = await runJson(cliPath, ["skills", "install", "--target", "codex"], projectDirectory, cliEnvironment);
-  assert(skills.destination === join(await realpath(projectDirectory), ".agents", "skills"), "skills were not installed in the project");
+  assert(initialized.workspace === join(await realpath(projectDirectory), "docnexus"), "init did not create the docnexus workspace");
+  await stat(join(projectDirectory, "docnexus", "skills", "docnexus", "SKILL.md"));
+  await stat(join(projectDirectory, ".agents", "skills", "docnexus", "SKILL.md"));
 
   const doctor = await runJson(cliPath, ["doctor"], projectDirectory, cliEnvironment);
   assert(doctor.checks?.project?.initialized === true, "doctor did not recognize the initialized project");
   assert(doctor.checks?.node?.sqlite_available === true, "doctor did not detect node:sqlite");
 
-  const inputsDirectory = join(projectDirectory, "inputs");
-  await mkdir(inputsDirectory, { recursive: true });
-  const sourcePath = join(inputsDirectory, "source.md");
-  const documentPath = join(inputsDirectory, "document.md");
-  const metadataPath = join(inputsDirectory, "metadata.json");
+  const draft = await runJson(cliPath, ["draft", "new", "--slug", "smoke"], projectDirectory, cliEnvironment);
   await Promise.all([
-    writeFile(sourcePath, "The installed DocNexus tarball provides local project memory."),
-    writeFile(documentPath, "# Installed package\n\nThe installed DocNexus tarball provides local project memory."),
+    writeFile(join(projectDirectory, draft.artifacts.source), "The installed DocNexus tarball provides local project memory."),
     writeFile(
-      metadataPath,
+      join(projectDirectory, draft.artifacts.document),
+      "# Installed package\n\nThe installed DocNexus tarball provides local project memory."
+    ),
+    writeFile(
+      join(projectDirectory, draft.artifacts.metadata),
       JSON.stringify({
         title: "Installed package smoke test",
         summary: "Verifies document storage and recall through the CLI installed from the release tarball.",
@@ -90,23 +89,15 @@ try {
     )
   ]);
 
-  const added = await runJson(
+  const sealed = await runJson(
     cliPath,
-    [
-      "document",
-      "add",
-      "--file",
-      "docs/memory/release-smoke.md",
-      "--source-file",
-      sourcePath,
-      "--document-file",
-      documentPath,
-      "--metadata-file",
-      metadataPath
-    ],
+    ["draft", "seal", "--id", draft.draft_id, "--file", "release/smoke.md"],
     projectDirectory,
     cliEnvironment
   );
+  assert(sealed.result === "draft_ready", "draft seal did not report a ready draft");
+
+  const added = await runJson(cliPath, ["document", "add", "--draft", draft.draft_id], projectDirectory, cliEnvironment);
   assert(added.operation === "created", "document add did not create the managed document");
 
   const listed = await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment);
@@ -120,7 +111,7 @@ try {
   );
   assert(recalled.results?.length === 1, "recall did not return the installed-package document");
   assert(
-    recalled.context_groups?.[0]?.document?.path === "docs/memory/release-smoke.md",
+    recalled.context_groups?.[0]?.document?.path === "release/smoke.md",
     "recall did not cite the managed document from the smoke project"
   );
 
@@ -138,15 +129,16 @@ async function verifyPackageContents(packageDirectory) {
     "SECURITY.md",
     "docs/README.md",
     "docs/architecture/overview.zh-CN.md",
-    "docs/architecture/project-skills-migration.zh-CN.md",
     "docs/product/mvp.zh-CN.md",
     "docs/product/mvp.en.md",
     "docs/roadmap/current.zh-CN.md",
     "docs/operations/release-checklist.md",
-    "skills/docnexus-document-add/SKILL.md",
-    "skills/docnexus-document-delete/SKILL.md",
-    "skills/docnexus-document-extract/SKILL.md",
+    "skills/docnexus/SKILL.md",
+    "skills/docnexus-extract/SKILL.md",
+    "skills/docnexus-ingest/SKILL.md",
     "skills/docnexus-recall/SKILL.md",
+    "skills/docnexus-library/SKILL.md",
+    "skills/docnexus-maintain/SKILL.md",
     "models/README.md",
     "models/BAAI/bge-small-zh-v1.5/README.model.md",
     "models/BAAI/bge-small-zh-v1.5/config.json",

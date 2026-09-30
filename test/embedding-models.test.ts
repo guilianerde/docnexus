@@ -42,7 +42,7 @@ describe("embedding model assets", () => {
 
     expect(output).toEqual({
       model: DEFAULT_EMBEDDING_MODEL,
-      installed_path: join(projectRoot, ".docnexus", "models", "BAAI", "bge-small-zh-v1.5"),
+      installed_path: join(projectRoot, "docnexus", "store", "models", "BAAI", "bge-small-zh-v1.5"),
       replaced: false
     });
     await expect(stat(join(output.installed_path, "tokenizer.json"))).resolves.toBeDefined();

@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_EMBEDDING_MODEL } from "./embedding-config.js";
+import { projectModelsPath } from "./layout.js";
 
 export { DEFAULT_EMBEDDING_MODEL };
 
@@ -19,7 +20,7 @@ export interface InstallEmbeddingModelOutput {
 }
 
 export function projectEmbeddingModelsPath(projectRoot: string): string {
-  return join(resolve(projectRoot), ".docnexus", "models");
+  return projectModelsPath(resolve(projectRoot));
 }
 
 export function bundledEmbeddingModelsPath(): string {

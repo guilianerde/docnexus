@@ -26,7 +26,7 @@ npm run audit:prod
 
 - [ ] Tests, typechecking, build, and package dry run pass on every supported Node.js version.
 - [ ] The test run includes `test/real-runtime-e2e.test.ts`; it must use the packaged ONNX model with remote loading disabled rather than the hash embedder or a mocked pipeline.
-- [ ] The tarball smoke passes on Node.js 24. It must install the generated `.tgz` inside a temporary project and run its local `docnexus` bin through `init`, project skills installation, `doctor`, `document add`, `document list`, and `recall`.
+- [ ] The tarball smoke passes on Node.js 24. It must install the generated `.tgz` inside a temporary project and run its local `docnexus` bin through `init --agent codex` (workspace and skill links), `doctor`, `draft new`, `draft seal`, `document add --draft`, `document list`, and `recall`.
 - [ ] The tarball contains both root READMEs, the current `docs/` set, every bundled skill, the default model manifest/tokenizer/config, and the quantized ONNX model.
 - [ ] Production dependency audit has no unreviewed critical or high severity finding. Any accepted finding records its package path, exposure analysis, mitigation, owner, and review date.
 - [ ] The separate offline real-model end-to-end gate passes with remote model loading disabled; the hash embedder smoke does not replace this gate.

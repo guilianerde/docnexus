@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { runDoctor } from "./doctor.js";
+import { createDraft, discardDraft, listDrafts, loadSealedDraft, markDraftIngested, sealDraft, type DraftStatus } from "./drafts.js";
 import { installEmbeddingModel } from "./embedding-models.js";
 import { auditGraph, repairGraph } from "./graph-maintenance.js";
 import {
@@ -11,17 +12,17 @@ import {
   getManagedIndexStatus,
   getManagedRecord,
   getManagedStatus,
-  listManagedDocuments,
+  isManagedFilePath,
   listManagedRecords,
   rebuildManagedDocuments,
   upsertManagedDocument
 } from "./managed-documents.js";
+import { libraryRelativePath } from "./layout.js";
 import { validateMetadata } from "./metadata.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
 import { recall } from "./recall.js";
 import { resetProjectData } from "./reset.js";
-import { installSkills } from "./skills-install.js";
-import type { DocNexusMetadata } from "./types.js";
+import { linkSkills, parseSkillsTargets, syncSkills } from "./skills.js";
 
 export interface RunCliDependencies {
   auditGraph?: typeof auditGraph;
@@ -46,7 +47,9 @@ export async function runCli(
   const projectRoot = invocation.projectRoot;
 
   if (command === "init") {
-    return json(await initializeProject(projectRoot));
+    const options = parseOptions(invocation.argv.slice(1));
+    const agents = options.agent === undefined || options.agent === "none" ? [] : parseSkillsTargets(options.agent);
+    return json(await initializeProject(projectRoot, { agents }));
   }
 
   if (command === "reset") {
@@ -57,24 +60,59 @@ export async function runCli(
     return json(await activeDependencies.doctor(projectRoot));
   }
 
-  if (command === "skills" && subcommand === "install") {
-    const options = parseOptions(rest);
-    const target = options.target;
-    if (target !== "codex" && target !== "claude") {
-      throw new Error("--target must be codex or claude");
-    }
-    if (options.scope) {
-      throw new Error("skills install supports project scope only; omit --scope");
-    }
-    return json(await installSkills({ target, projectRoot }));
-  }
-
-  if (command === "index" || command === "graph" || command === "recall" || command === "document" || command === "embeddings" || command === "metadata" || command === "status") {
+  if (["index", "graph", "recall", "document", "draft", "embeddings", "metadata", "status", "skills"].includes(command)) {
     await requireInitializedProject(projectRoot);
   }
 
+  if (command === "skills" && subcommand === "sync") {
+    return json(await syncSkills(projectRoot));
+  }
+
+  if (command === "skills" && subcommand === "link") {
+    const options = parseOptions(rest);
+    const links = [];
+    for (const target of parseSkillsTargets(options.target)) {
+      links.push(await linkSkills(projectRoot, target));
+    }
+    return json({ links });
+  }
+
   if (command === "status") {
-    return json(await getManagedStatus(projectRoot));
+    const { drafts } = await listDrafts(projectRoot);
+    const draftCounts = { open: 0, ready: 0, ingested: 0, invalid: 0 };
+    for (const draft of drafts) {
+      draftCounts[draft.status] += 1;
+    }
+    return json({ ...(await getManagedStatus(projectRoot)), drafts: draftCounts });
+  }
+
+  if (command === "draft" && subcommand === "new") {
+    return json(await createDraft(projectRoot, { slug: parseOptions(rest).slug }));
+  }
+
+  if (command === "draft" && subcommand === "seal") {
+    const options = parseOptions(rest);
+    if (!options.id || !options.file) {
+      throw new Error("draft seal requires --id and --file");
+    }
+    return json(await sealDraft(projectRoot, { draftId: options.id, filePath: options.file }));
+  }
+
+  if (command === "draft" && subcommand === "list") {
+    const status = parseOptions(rest).status;
+    if (status !== undefined && !["open", "ready", "ingested", "invalid"].includes(status)) {
+      throw new Error("--status must be open, ready, ingested, or invalid");
+    }
+    return json(await listDrafts(projectRoot, { status: status as DraftStatus | undefined }));
+  }
+
+  if (command === "draft" && subcommand === "discard") {
+    const force = rest.includes("--force");
+    const options = parseOptions(rest.filter((arg) => arg !== "--force"));
+    if (!options.id) {
+      throw new Error("draft discard requires --id");
+    }
+    return json(await discardDraft(projectRoot, { draftId: options.id, force }));
   }
 
   if (command === "metadata" && subcommand === "validate") {
@@ -130,21 +168,21 @@ export async function runCli(
   if (command === "document" && subcommand === "add") {
     const replace = rest.includes("--replace");
     const options = parseOptions(rest.filter((arg) => arg !== "--replace"));
-    if (!options.file || !options["source-file"] || !options["document-file"] || !options["metadata-file"]) {
-      throw new Error("document add requires --file, --source-file, --document-file, and --metadata-file");
+    if (!options.draft) {
+      throw new Error("document add requires --draft <draft_id>");
     }
-    const existing = (await listManagedDocuments(projectRoot)).some((document) => document.file_path === options.file);
-    if (existing && !replace) {
+    const draft = await loadSealedDraft(projectRoot, options.draft);
+    if (!replace && (await isManagedFilePath(projectRoot, draft.manifest.file_path))) {
       throw new Error("document add requires --replace for an existing managed document");
     }
-    return json(
-      await upsertManagedDocument(projectRoot, {
-        file_path: options.file,
-        source: await readProjectFile(projectRoot, options["source-file"]),
-        document: await readProjectFile(projectRoot, options["document-file"]),
-        metadata: JSON.parse(await readProjectFile(projectRoot, options["metadata-file"])) as DocNexusMetadata
-      })
-    );
+    const result = await upsertManagedDocument(projectRoot, {
+      file_path: draft.manifest.file_path,
+      source: draft.source,
+      document: draft.document,
+      metadata: draft.metadata
+    });
+    await markDraftIngested(projectRoot, draft.manifest.draft_id, result.id);
+    return json({ ...result, draft_id: draft.manifest.draft_id, library_path: libraryRelativePath(result.file_path) });
   }
 
   if (command === "index" && subcommand === "rebuild") {
@@ -178,28 +216,41 @@ export async function runCli(
   }
 
   throw new Error(`Unknown command. Usage:
-docnexus init
-docnexus --project-root path/to/project init
-docnexus doctor
-docnexus skills install --target codex
-docnexus skills install --target claude
-docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
-docnexus document list [--limit 50] [--tag tag]
-docnexus document get --id <document_id> [--include source,document,metadata]
-docnexus status
-docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5
-docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5 --replace
-docnexus document add --file path/to/file.md --source-file .docnexus/drafts/<draft_id>/source.md --document-file .docnexus/drafts/<draft_id>/document.md --metadata-file .docnexus/drafts/<draft_id>/metadata.json
-docnexus document add --file path/to/file.md --source-file .docnexus/drafts/<draft_id>/source.md --document-file .docnexus/drafts/<draft_id>/document.md --metadata-file .docnexus/drafts/<draft_id>/metadata.json --replace
-docnexus document delete --file path/to/file.md --force
-docnexus document delete --id doc_0000000000000000 --force
-docnexus reset --force
-docnexus index rebuild --force
-docnexus graph audit
-docnexus graph repair --force
-docnexus recall "local memory" --limit 5
-docnexus index status`);
+${USAGE}`);
 }
+
+const USAGE = `Setup
+  docnexus init [--agent claude|codex|all]
+  docnexus --project-root path/to/project init
+  docnexus skills sync
+  docnexus skills link --target claude|codex|all
+  docnexus doctor
+  docnexus status
+
+Capture (extract -> seal -> ingest)
+  docnexus draft new [--slug auth]
+  docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
+  docnexus draft seal --id <draft_id> --file <library_path.md>
+  docnexus document add --draft <draft_id> [--replace]
+  docnexus draft list [--status open|ready|ingested|invalid]
+  docnexus draft discard --id <draft_id> --force
+
+Recall
+  docnexus recall "local memory" --limit 5
+
+Library
+  docnexus document list [--limit 50] [--tag tag]
+  docnexus document get --id <document_id> [--include source,document,metadata]
+  docnexus document delete --file <library_path.md> --force
+  docnexus document delete --id doc_0000000000000000 --force
+
+Maintenance
+  docnexus index status
+  docnexus index rebuild --force
+  docnexus graph audit
+  docnexus graph repair --force
+  docnexus embeddings install --from models/BAAI/bge-small-zh-v1.5 [--replace]
+  docnexus reset --force`;
 
 function parseInvocation(argv: string[], cwd: string): { argv: string[]; projectRoot: string } {
   if (argv[0] !== "--project-root") {

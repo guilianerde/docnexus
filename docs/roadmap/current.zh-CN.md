@@ -1,24 +1,25 @@
 # DocNexus 当前状态与实现路线图
 
-更新日期：2026-09-24
+更新日期：2026-09-30
 
 ## 当前定位
 
-DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务。当前版本以手动触发为边界：Skills 负责内容提炼与最终回答，项目本地 CLI 负责文档写入、召回、维护、读取、metadata 校验与状态查询。系统不调用外部 LLM，默认 embedding 和图谱数据均保存在本地。
+DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务。当前版本以手动触发为边界，skills 是唯一交互入口：入口 skill `docnexus` 负责路由与流水线编排，工作流 skills 负责提炼、审阅与回答，项目本地 CLI 负责草稿封存、入库、召回、维护与状态查询。系统不调用外部 LLM，默认 embedding 和图谱数据均保存在本地。
 
 ## 已实现基线
 
 - npm 包 `@rowansenne/docnexus` 与 `docnexus` CLI。
-- 每个项目独立的 `.docnexus/` 数据域、项目内 npm CLI 和项目 skills，无 MCP 服务。
-- `init`、`doctor`、skills 安装、embedding 模型覆盖安装、文档新增/替换/删除、recall、索引重建、图谱审计/修复和 reset。
-- `.docnexus/` 内的单版本托管 Markdown、已校验 extract 草稿包、当前 source/metadata sidecars、SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
+- 每个项目独立的可见 `docnexus/` 工作区（skills、drafts、library、schemas、store），项目内 npm CLI，skills 通过链接暴露给智能体，无 MCP 服务。
+- `init --agent`、`doctor`、skills 同步/链接、草稿分配/封存/列出/丢弃、embedding 模型覆盖安装、按草稿入库/替换/删除、recall、索引重建、图谱审计/修复和 reset。
+- 入口编排 skill 与 extract、ingest、recall、library、maintain 五个工作流 skill。
+- `docnexus/library/` 中的单版本托管 Markdown、带哈希的已封存草稿、`docnexus/store/` 中的 sidecars、SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
 - 随 npm 包发布并以 local-only 模式加载的 `BAAI/bge-small-zh-v1.5` 量化 ONNX 模型。
 - 按 chunk 向量相关性排序、按文档归集、包含相邻 chunk 与一跳图谱证据的召回结果。
 - 写入前 metadata 强校验：每份文档至少包含一个基于来源的实体，以保证图谱召回前提成立。
-- 托管路径安全校验：逻辑目标必须是相对于 `.docnexus/` 的 Markdown 路径，实际路径不得越过该目录且不得包含符号链接；add、delete 和 reset 使用相同规则。
+- 托管路径安全校验：逻辑目标必须是相对于 `docnexus/library/` 的 Markdown 路径，实际路径不得越过该目录且不得包含符号链接；草稿目录使用相同规则。
 - 文件、SQLite 与 LadybugDB 变更失败时的补偿恢复，以及外部修改检测。
 
-当前验证基线：19 个测试文件、104 个测试通过；类型检查和构建通过。
+当前验证基线：18 个测试文件全部通过；类型检查和构建通过。
 
 ## 当前明确边界
 

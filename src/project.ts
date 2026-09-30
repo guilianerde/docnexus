@@ -1,22 +1,30 @@
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { ensureManagedStore, storePath } from "./managed-documents.js";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { draftsPath, libraryPath, projectMarkerPath, WORKSPACE_DIRNAME, workspacePath } from "./layout.js";
+import { ensureManagedStore } from "./managed-documents.js";
+import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
 
-export const PROJECT_FORMAT_VERSION = 3;
+export { projectMarkerPath };
+
+export const PROJECT_FORMAT_VERSION = 4;
 
 interface ProjectMarker {
   format_version: number;
   initialized_at: string;
 }
 
-export interface InitializeProjectOutput {
-  project_root: string;
-  initialized: true;
-  adopted_existing_store: boolean;
+export interface InitializeProjectInput {
+  agents?: SkillsTarget[];
+  packagedSkillsRoot?: string;
 }
 
-export function projectMarkerPath(projectRoot: string): string {
-  return join(storePath(projectRoot), "project.json");
+export interface InitializeProjectOutput {
+  project_root: string;
+  workspace: string;
+  initialized: true;
+  created: boolean;
+  skills: readonly string[];
+  links: LinkSkillsOutput[];
 }
 
 async function assertProjectDirectory(projectRoot: string): Promise<string> {
@@ -58,25 +66,61 @@ export async function requireInitializedProject(projectRoot: string): Promise<st
   return root;
 }
 
-export async function initializeProject(projectRoot: string): Promise<InitializeProjectOutput> {
+/**
+ * Creates the `docnexus/` workspace (skills, drafts, library, store) and optionally links the skills
+ * into agent directories. Re-running on an initialized project refreshes skills and links only.
+ */
+export async function initializeProject(
+  projectRoot: string,
+  input: InitializeProjectInput = {}
+): Promise<InitializeProjectOutput> {
   const root = await assertProjectDirectory(projectRoot);
   const marker = await readMarker(root);
-  if (marker) {
-    return { project_root: root, initialized: true, adopted_existing_store: false };
-  }
-  const existingStore = await access(storePath(root)).then(() => true).catch(() => false);
-  if (existingStore) {
-    throw new Error(
-      `uninitialized DocNexus data exists at ${storePath(root)}; run "docnexus reset --force" and then "docnexus init"`
-    );
+  if (!marker) {
+    const entries = await readdir(workspacePath(root)).catch(() => []);
+    if (entries.length > 0) {
+      throw new Error(
+        `${workspacePath(root)} already exists and is not a DocNexus workspace; move it before running "docnexus init"`
+      );
+    }
+    await mkdir(workspacePath(root), { recursive: true });
+    await mkdir(draftsPath(root), { recursive: true });
+    await mkdir(libraryPath(root), { recursive: true });
+    await ensureManagedStore(root);
+    await writeFile(workspaceReadmePath(root), WORKSPACE_README);
   }
 
-  await mkdir(storePath(root), { recursive: true });
-  await ensureManagedStore(root);
-  await writeFile(
-    projectMarkerPath(root),
-    `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString() }, null, 2)}\n`,
-    { flag: "wx" }
-  );
-  return { project_root: root, initialized: true, adopted_existing_store: false };
+  const skills = await syncSkills(root, input.packagedSkillsRoot);
+  const links: LinkSkillsOutput[] = [];
+  for (const agent of input.agents ?? []) {
+    links.push(await linkSkills(root, agent));
+  }
+
+  if (!marker) {
+    await writeFile(
+      projectMarkerPath(root),
+      `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString() }, null, 2)}\n`,
+      { flag: "wx" }
+    );
+  }
+  return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links };
 }
+
+function workspaceReadmePath(projectRoot: string): string {
+  return resolve(workspacePath(projectRoot), "README.md");
+}
+
+const WORKSPACE_README = `# ${WORKSPACE_DIRNAME}/
+
+DocNexus project workspace. Everything DocNexus owns for this project lives here.
+
+| Path | Purpose |
+| --- | --- |
+| \`skills/\` | Project skills. Start from \`skills/docnexus/SKILL.md\`. |
+| \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
+| \`library/\` | Managed Markdown documents recalled by DocNexus. Edit them only through DocNexus. |
+| \`schemas/\` | Metadata JSON schema used by the skills. |
+| \`store/\` | Derived state: SQLite ledger, LadybugDB graph, sidecars, optional models. |
+
+Run \`./node_modules/.bin/docnexus status\` for an overview.
+`;

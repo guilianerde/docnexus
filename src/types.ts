@@ -65,6 +65,8 @@ export interface StoredRecordSummary {
 
 export interface StoreStatus {
   project_root: string;
+  workspace_path: string;
+  library_path: string;
   store_path: string;
   initialized: boolean;
   document_count: number;

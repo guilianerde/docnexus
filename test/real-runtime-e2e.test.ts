@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -57,12 +57,12 @@ describe("real local ONNX runtime", () => {
 
     const initialized = JSON.parse(await runCli(["init"], projectRoot));
     expect(initialized).toMatchObject({ project_root: projectRoot, initialized: true });
-    await expect(stat(join(projectRoot, ".docnexus", "models"))).rejects.toThrow();
+    await expect(stat(join(projectRoot, "docnexus", "store", "models"))).rejects.toThrow();
 
-    const inputsRoot = join(projectRoot, "inputs");
-    const sourcePath = join(inputsRoot, "source.md");
-    const documentPath = join(inputsRoot, "document.md");
-    const metadataPath = join(inputsRoot, "metadata.json");
+    const draft = JSON.parse(await runCli(["draft", "new", "--slug", "onnx"], projectRoot));
+    const sourcePath = join(projectRoot, draft.artifacts.source);
+    const documentPath = join(projectRoot, draft.artifacts.document);
+    const metadataPath = join(projectRoot, draft.artifacts.metadata);
     const source = "DocNexus must load its bundled ONNX model locally. DocNexus 必须离线加载随包 ONNX 模型。";
     const document = [
       "# DocNexus 本地检索",
@@ -95,35 +95,19 @@ describe("real local ONNX runtime", () => {
         }
       ]
     };
-    await mkdir(inputsRoot, { recursive: true });
     await writeFile(sourcePath, source);
     await writeFile(documentPath, document);
     await writeFile(metadataPath, JSON.stringify(metadata));
 
-    const record = JSON.parse(
-      await runCli(
-        [
-          "document",
-          "add",
-          "--file",
-          "docs/memory/local-onnx.md",
-          "--source-file",
-          sourcePath,
-          "--document-file",
-          documentPath,
-          "--metadata-file",
-          metadataPath
-        ],
-        projectRoot
-      )
-    );
+    await runCli(["draft", "seal", "--id", draft.draft_id, "--file", "docs/memory/local-onnx.md"], projectRoot);
+    const record = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
 
     expect(record).toMatchObject({
       file_path: "docs/memory/local-onnx.md",
       operation: "created",
       chunk_count: 1
     });
-    expect(await readFile(join(projectRoot, ".docnexus", record.file_path), "utf8")).toBe(document);
+    expect(await readFile(join(projectRoot, "docnexus", "library", record.file_path), "utf8")).toBe(document);
 
     const chunks = await listManagedChunks(projectRoot, record.id);
     expect(chunks).toHaveLength(1);

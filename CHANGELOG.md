@@ -2,6 +2,19 @@
 
 All notable user-visible changes to DocNexus are recorded here.
 
+## 0.4.0 - 2026-09-30
+
+Breaking release. Projects created by earlier versions are not migrated; see `docs/architecture/skills-workspace.zh-CN.md`.
+
+- Move every DocNexus asset into a visible `docnexus/` workspace created by `init`: `skills/`, `drafts/`, `library/`, `schemas/`, and `store/`. The project format advances to version 4 and `.docnexus/` is no longer read.
+- Store managed documents at `docnexus/library/<file_path>` and derived state (SQLite ledger, `graph.lbug`, sidecars, model overrides) under `docnexus/store/`.
+- Reorganize the skills around an entry skill `docnexus` that routes requests and orchestrates the capture pipeline, plus `docnexus-extract`, `docnexus-ingest`, `docnexus-recall`, `docnexus-library`, and `docnexus-maintain`.
+- Replace `skills install` with skills synced into `docnexus/skills/` by `init`/`skills sync` and exposed to agents through `init --agent` or `skills link --target claude|codex|all`.
+- Add `draft new`, `draft seal`, `draft list`, and `draft discard`. Sealing validates artifacts and metadata, records hashes, and writes the manifest.
+- `document add` now takes `--draft <draft_id>` only, rejects drafts modified after sealing, and marks ingested drafts.
+- `status` reports draft counts; `doctor` checks workspace skills and agent links.
+- `reset --force` removes the whole workspace and the skill links pointing into it, and refuses a `docnexus/` folder without a DocNexus marker.
+
 ## 0.3.0 - 2026-09-24
 
 - Use project-installed skills and CLI without an MCP service or user-level skill installation.

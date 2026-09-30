@@ -41,6 +41,19 @@ async function writeDocumentInputs(
   return paths;
 }
 
+async function sealDraft(
+  projectRoot: string,
+  filePath: string,
+  input: { source: string; document: string; metadata?: DocNexusMetadata }
+): Promise<{ draft_id: string; artifacts: { source: string; document: string; metadata: string } }> {
+  const draft = JSON.parse(await runCli(["draft", "new", "--slug", "test"], projectRoot));
+  await writeFile(join(projectRoot, draft.artifacts.source), input.source);
+  await writeFile(join(projectRoot, draft.artifacts.document), input.document);
+  await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify(input.metadata ?? metadata));
+  await runCli(["draft", "seal", "--id", draft.draft_id, "--file", filePath], projectRoot);
+  return draft;
+}
+
 async function writeModelDir(projectRoot: string): Promise<string> {
   const directory = join(projectRoot, "model-source");
   await mkdir(join(directory, "onnx"), { recursive: true });
@@ -72,8 +85,22 @@ describe("runCli", () => {
 
     const output = JSON.parse(await runCli(["init"], projectRoot));
 
-    expect(output).toMatchObject({ project_root: projectRoot, initialized: true });
-    await expect(stat(join(projectRoot, ".docnexus", "project.json"))).resolves.toBeDefined();
+    expect(output).toMatchObject({ project_root: projectRoot, initialized: true, created: true, links: [] });
+    await expect(stat(join(projectRoot, "docnexus", "project.json"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, "docnexus", "skills", "docnexus", "SKILL.md"))).resolves.toBeDefined();
+  });
+
+  it("links skills into agent directories during init and on demand", async () => {
+    const projectRoot = await makeRoot();
+
+    const output = JSON.parse(await runCli(["init", "--agent", "claude"], projectRoot));
+
+    expect(output.links).toEqual([expect.objectContaining({ target: "claude", linked: expect.arrayContaining(["docnexus"]) })]);
+    await expect(stat(join(projectRoot, ".claude", "skills", "docnexus", "SKILL.md"))).resolves.toBeDefined();
+    const linked = JSON.parse(await runCli(["skills", "link", "--target", "all"], projectRoot));
+    expect(linked.links.map((link: { target: string }) => link.target)).toEqual(["claude", "codex"]);
+    await expect(stat(join(projectRoot, ".agents", "skills", "docnexus-recall", "SKILL.md"))).resolves.toBeDefined();
+    await expect(runCli(["skills", "link", "--target", "cursor"], projectRoot)).rejects.toThrow("target must be claude, codex, or all");
   });
 
   it("resolves the global project-root option before the command", async () => {
@@ -83,21 +110,22 @@ describe("runCli", () => {
     const output = JSON.parse(await runCli(["--project-root", projectRoot, "init"], cwd));
 
     expect(output.project_root).toBe(projectRoot);
-    await expect(stat(join(projectRoot, ".docnexus", "project.json"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, "docnexus", "project.json"))).resolves.toBeDefined();
   });
 
   it("rejects project data commands before initialization", async () => {
     const projectRoot = await makeRoot();
 
     await expect(runCli(["index", "status"], projectRoot)).rejects.toThrow("Run \"docnexus init\"");
-    await expect(stat(join(projectRoot, ".docnexus"))).rejects.toThrow();
+    await expect(stat(join(projectRoot, "docnexus"))).rejects.toThrow();
   });
 
-  it("rejects the removed MCP command and user-scoped skill installation", async () => {
+  it("rejects removed commands", async () => {
     const projectRoot = await makeRoot();
     await initializeProject(projectRoot);
     await expect(runCli(["mcp"], projectRoot)).rejects.toThrow("Unknown command");
-    await expect(runCli(["skills", "install", "--target", "codex", "--scope", "user"], projectRoot)).rejects.toThrow("project scope only");
+    await expect(runCli(["skills", "install", "--target", "codex"], projectRoot)).rejects.toThrow("Unknown command");
+    await expect(runCli(["document", "add", "--file", "a.md"], projectRoot)).rejects.toThrow("--draft");
   });
 
   it("exposes project-local read and validation commands", async () => {
@@ -115,7 +143,10 @@ describe("runCli", () => {
     ]);
     expect(JSON.parse(await runCli(["document", "get", "--id", saved.id, "--include", "metadata"], projectRoot)))
       .toEqual({ id: saved.id, file_path: "docs/memory/read.md", metadata });
-    expect(JSON.parse(await runCli(["status"], projectRoot))).toMatchObject({ document_count: 1 });
+    expect(JSON.parse(await runCli(["status"], projectRoot))).toMatchObject({
+      document_count: 1,
+      drafts: { open: 0, ready: 0, ingested: 0, invalid: 0 }
+    });
   });
 
   it("rejects input files outside the project", async () => {
@@ -143,12 +174,6 @@ describe("runCli", () => {
     expect(isDirectCliInvocation(moduleUrl, "/usr/local/bin/docnexus", fakeRealpath)).toBe(true);
   });
 
-  it("requires a supported skills target", async () => {
-    const projectRoot = await makeRoot();
-
-    await expect(runCli(["skills", "install", "--target", "cursor"], projectRoot)).rejects.toThrow("--target must be codex or claude");
-  });
-
   it("runs doctor without requiring project initialization", async () => {
     const projectRoot = await makeRoot();
     const dependencies: RunCliDependencies = {
@@ -166,6 +191,11 @@ describe("runCli", () => {
             initialized: false,
             project_root: projectRoot,
             message: "DocNexus project is not initialized"
+          },
+          skills: {
+            ok: false,
+            skipped: true,
+            message: "project is not initialized"
           },
           sqlite: {
             ok: false,
@@ -215,7 +245,7 @@ describe("runCli", () => {
 
     expect(installed).toMatchObject({
       model: "BAAI/bge-small-zh-v1.5",
-      installed_path: join(projectRoot, ".docnexus", "models", "BAAI", "bge-small-zh-v1.5"),
+      installed_path: join(projectRoot, "docnexus", "store", "models", "BAAI", "bge-small-zh-v1.5"),
       replaced: false
     });
     await expect(runCli(["embeddings", "install", "--from", sourcePath], projectRoot)).rejects.toThrow(
@@ -226,68 +256,81 @@ describe("runCli", () => {
     );
   });
 
-  it("creates a managed document from prepared artifact files", async () => {
+  it("ingests a sealed draft into the library and marks it ingested", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
-    const inputs = await writeDocumentInputs(projectRoot, {
+    const draft = await sealDraft(projectRoot, "docs/memory/auth.md", {
       source: "Original selected content.",
       document: "# Current document\n\nFirst version."
     });
+    expect(JSON.parse(await runCli(["draft", "list", "--status", "ready"], projectRoot)).drafts).toEqual([
+      { draft_id: draft.draft_id, status: "ready", file_path: "docs/memory/auth.md" }
+    ]);
 
-    const output = JSON.parse(
-      await runCli(
-        [
-          "document",
-          "add",
-          "--file",
-          "docs/memory/auth.md",
-          "--source-file",
-          inputs.source,
-          "--document-file",
-          inputs.document,
-          "--metadata-file",
-          inputs.metadata
-        ],
-        projectRoot
-      )
-    );
+    const output = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
 
-    expect(output).toMatchObject({ file_path: "docs/memory/auth.md", operation: "created", chunk_count: 1 });
-    await expect(access(join(projectRoot, ".docnexus/docs/memory/auth.md"))).resolves.toBeUndefined();
+    expect(output).toMatchObject({
+      file_path: "docs/memory/auth.md",
+      library_path: "docnexus/library/docs/memory/auth.md",
+      draft_id: draft.draft_id,
+      operation: "created",
+      chunk_count: 1
+    });
+    await expect(access(join(projectRoot, "docnexus/library/docs/memory/auth.md"))).resolves.toBeUndefined();
+    expect(JSON.parse(await runCli(["draft", "list"], projectRoot)).drafts).toEqual([
+      { draft_id: draft.draft_id, status: "ingested", file_path: "docs/memory/auth.md", document_id: output.id }
+    ]);
+    await expect(runCli(["document", "add", "--draft", draft.draft_id], projectRoot)).rejects.toThrow("is ingested");
+    await expect(runCli(["draft", "discard", "--id", draft.draft_id], projectRoot)).rejects.toThrow("--force");
+    await runCli(["draft", "discard", "--id", draft.draft_id, "--force"], projectRoot);
+    expect(JSON.parse(await runCli(["draft", "list"], projectRoot)).drafts).toEqual([]);
+  });
+
+  it("rejects invalid, unsealed, and modified drafts", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    const draft = JSON.parse(await runCli(["draft", "new"], projectRoot));
+    expect(draft.draft_id).toMatch(/^draft_\d{8}T\d{6}Z$/);
+    await expect(runCli(["document", "add", "--draft", draft.draft_id], projectRoot)).rejects.toThrow("is not sealed");
+    await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot)).rejects.toThrow("missing: source.md");
+    await writeFile(join(projectRoot, draft.artifacts.source), "source");
+    await writeFile(join(projectRoot, draft.artifacts.document), "# Doc");
+    await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify({ ...metadata, entities: [] }));
+    await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot)).rejects.toThrow("at least one entity");
+    await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify(metadata));
+    await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "../a.md"], projectRoot)).rejects.toThrow("docnexus/library");
+    await expect(runCli(["draft", "seal", "--id", "../escape", "--file", "a.md"], projectRoot)).rejects.toThrow("draft id");
+    await runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot);
+    await writeFile(join(projectRoot, draft.artifacts.document), "# Doc edited after sealing");
+    await expect(runCli(["document", "add", "--draft", draft.draft_id], projectRoot)).rejects.toThrow("changed after sealing (document)");
+    expect(JSON.parse(await runCli(["status"], projectRoot)).drafts).toMatchObject({ ready: 1 });
   });
 
   it("requires explicit replace before updating a managed document", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
-    const initial = await writeDocumentInputs(projectRoot, {
+    const initial = await sealDraft(projectRoot, "docs/memory/auth.md", {
       source: "Original source.",
       document: "# Current document\n\nFirst version."
     });
-    const command = [
-      "document",
-      "add",
-      "--file",
-      "docs/memory/auth.md",
-      "--source-file",
-      initial.source,
-      "--document-file",
-      initial.document,
-      "--metadata-file",
-      initial.metadata
-    ];
-    await runCli(command, projectRoot);
-    await writeFile(initial.document, "# Current document\n\nUpdated version.");
+    await runCli(["document", "add", "--draft", initial.draft_id], projectRoot);
+    const update = JSON.parse(await runCli(["draft", "new"], projectRoot));
+    await writeFile(join(projectRoot, update.artifacts.source), "Original source.");
+    await writeFile(join(projectRoot, update.artifacts.document), "# Current document\n\nUpdated version.");
+    await writeFile(join(projectRoot, update.artifacts.metadata), JSON.stringify(metadata));
+    const sealed = JSON.parse(await runCli(["draft", "seal", "--id", update.draft_id, "--file", "docs/memory/auth.md"], projectRoot));
+    expect(sealed).toMatchObject({ result: "draft_ready", replaces_managed_document: true });
 
-    await expect(runCli(command, projectRoot)).rejects.toThrow("document add requires --replace");
+    await expect(runCli(["document", "add", "--draft", update.draft_id], projectRoot)).rejects.toThrow("document add requires --replace");
 
-    const updated = JSON.parse(await runCli([...command, "--replace"], projectRoot));
+    const updated = JSON.parse(await runCli(["document", "add", "--draft", update.draft_id, "--replace"], projectRoot));
     expect(updated).toMatchObject({ file_path: "docs/memory/auth.md", operation: "updated" });
   });
 
   it("recalls, physically deletes, and reports current document status", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
-    const inputs = await writeDocumentInputs(projectRoot, {
+    const draft = await sealDraft(projectRoot, "cli.md", {
       source: "CLI local recall content.",
       document: "CLI local recall content.",
       metadata: {
@@ -304,23 +347,7 @@ describe("runCli", () => {
         relationships: []
       }
     });
-    const record = JSON.parse(
-      await runCli(
-        [
-          "document",
-          "add",
-          "--file",
-          "cli.md",
-          "--source-file",
-          inputs.source,
-          "--document-file",
-          inputs.document,
-          "--metadata-file",
-          inputs.metadata
-        ],
-        projectRoot
-      )
-    );
+    const record = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
 
     const recalled = await runCli(["recall", "local recall", "--limit", "1"], projectRoot);
     const recallResult = JSON.parse(recalled);
@@ -366,7 +393,7 @@ describe("runCli", () => {
       id: record.id,
       deleted: true
     });
-    await expect(access(join(projectRoot, "cli.md"))).rejects.toThrow();
+    await expect(access(join(projectRoot, "docnexus/library/cli.md"))).rejects.toThrow();
   });
 
   it("returns one-hop graph and same-document supporting context without changing the primary hit", async () => {

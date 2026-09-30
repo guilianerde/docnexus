@@ -49,7 +49,7 @@ describe("runDoctor", () => {
 
   it("reports a healthy initialized local runtime", async () => {
     const projectRoot = await makeRoot();
-    await initializeProject(projectRoot);
+    await initializeProject(projectRoot, { agents: ["claude"] });
 
     const output = await runDoctor(projectRoot, healthyDependencies());
 
@@ -64,6 +64,11 @@ describe("runDoctor", () => {
           ok: true,
           initialized: true,
           project_root: projectRoot
+        },
+        skills: {
+          ok: true,
+          missing: [],
+          links: { claude: { missing: [] } }
         },
         sqlite: {
           ok: true,
@@ -106,6 +111,8 @@ describe("runDoctor", () => {
       remote_allowed: false,
       message: "local model files were not found"
     });
+    expect(output.checks.skills).toMatchObject({ ok: true, message: "skills are not linked into any agent directory" });
+    expect(output.recommendations).toContain("Run docnexus skills link --target claude (or codex, all) so your agent can discover the skills.");
     expect(output.recommendations).toContain("Install or cache the DocNexus embedding model locally, then rerun docnexus doctor.");
   });
 });

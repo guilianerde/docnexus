@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,12 +20,9 @@ const metadata = {
   relationships: []
 };
 
-async function makeRoot(initialized = true): Promise<string> {
+async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "docnexus-reset-"));
   roots.push(root);
-  if (initialized) {
-    await initializeProject(root);
-  }
   return root;
 }
 
@@ -36,59 +33,48 @@ afterEach(async () => {
 describe("reset", () => {
   it("rejects reset unless force is supplied", async () => {
     const root = await makeRoot();
+    await initializeProject(root);
     await expect(resetProjectData(root, { force: false })).rejects.toThrow("--force");
-    await expect(access(join(root, ".docnexus"))).resolves.toBeUndefined();
+    await expect(access(join(root, "docnexus"))).resolves.toBeUndefined();
   });
 
-  it("removes current-format managed target files and the full internal store", async () => {
+  it("removes the whole workspace and only the skill links pointing into it", async () => {
     const root = await makeRoot();
-    for (const file_path of ["docs/memory/a.md", "docs/memory/b.md"]) {
-      await upsertManagedDocument(
-        root,
-        { file_path, source: "raw", document: `# ${file_path}`, metadata },
-        new LocalHashEmbedder(8),
-        graphWriter
-      );
-    }
-
-    await expect(resetProjectData(root, { force: true })).resolves.toMatchObject({
-      deleted_managed_files: ["docs/memory/a.md", "docs/memory/b.md"],
-      removed_store: true
-    });
-    await expect(access(join(root, ".docnexus/docs/memory/a.md"))).rejects.toThrow();
-    await expect(access(join(root, ".docnexus"))).rejects.toThrow();
-  });
-
-  it("removes only .docnexus for an old store", async () => {
-    const root = await makeRoot(false);
-    await mkdir(join(root, ".docnexus"), { recursive: true });
-    await mkdir(join(root, "docs/memory"), { recursive: true });
-    await writeFile(join(root, ".docnexus", "project.json"), JSON.stringify({ format_version: 1, initialized_at: "old" }));
-    await writeFile(join(root, "docs/memory/legacy.md"), "outside recoverable v2 ownership");
-
-    await resetProjectData(root, { force: true });
-
-    await expect(readFile(join(root, "docs/memory/legacy.md"), "utf8")).resolves.toContain("outside recoverable");
-    await expect(access(join(root, ".docnexus"))).rejects.toThrow();
-  });
-
-  it("rejects reset before deleting through a symbolic link", async () => {
-    const root = await makeRoot();
-    const external = await mkdtemp(join(tmpdir(), "docnexus-reset-external-"));
-    roots.push(external);
+    await initializeProject(root, { agents: ["claude"] });
     await upsertManagedDocument(
       root,
-      { file_path: "docs/memory/auth.md", source: "raw", document: "# Auth", metadata },
+      { file_path: "docs/memory/a.md", source: "raw", document: "# A", metadata },
       new LocalHashEmbedder(8),
       graphWriter
     );
-    await rm(join(root, ".docnexus/docs"), { recursive: true, force: true });
-    await mkdir(join(external, "memory"), { recursive: true });
-    await writeFile(join(external, "memory", "auth.md"), "outside project");
-    await symlink(external, join(root, ".docnexus/docs"));
+    await mkdir(join(root, ".claude", "skills", "other-skill"), { recursive: true });
+    await writeFile(join(root, ".claude", "skills", "other-skill", "SKILL.md"), "keep");
 
-    await expect(resetProjectData(root, { force: true })).rejects.toThrow("must not contain symbolic links");
-    await expect(readFile(join(external, "memory", "auth.md"), "utf8")).resolves.toBe("outside project");
-    await expect(access(join(root, ".docnexus"))).resolves.toBeUndefined();
+    const result = await resetProjectData(root, { force: true });
+
+    expect(result.removed_workspace).toBe(join(root, "docnexus"));
+    expect(result.removed_links).toContain(".claude/skills/docnexus");
+    await expect(access(join(root, "docnexus"))).rejects.toThrow();
+    await expect(lstat(join(root, ".claude", "skills", "docnexus"))).rejects.toThrow();
+    await expect(readFile(join(root, ".claude", "skills", "other-skill", "SKILL.md"), "utf8")).resolves.toBe("keep");
+  });
+
+  it("refuses to delete a docnexus folder without a project marker", async () => {
+    const root = await makeRoot();
+    await expect(resetProjectData(root, { force: true })).rejects.toThrow("no DocNexus workspace");
+    await mkdir(join(root, "docnexus"), { recursive: true });
+    await writeFile(join(root, "docnexus", "notes.md"), "user content");
+
+    await expect(resetProjectData(root, { force: true })).rejects.toThrow("no DocNexus project marker");
+    await expect(readFile(join(root, "docnexus", "notes.md"), "utf8")).resolves.toBe("user content");
+  });
+
+  it("resets an unsupported project format so it can be initialized again", async () => {
+    const root = await makeRoot();
+    await mkdir(join(root, "docnexus"), { recursive: true });
+    await writeFile(join(root, "docnexus", "project.json"), JSON.stringify({ format_version: 1, initialized_at: "old" }));
+
+    await resetProjectData(root, { force: true });
+    await expect(initializeProject(root)).resolves.toMatchObject({ created: true });
   });
 });
