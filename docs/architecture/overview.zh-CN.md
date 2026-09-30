@@ -6,12 +6,13 @@
 
 DocNexus 是一个面向本地项目的文档记忆与 Graph RAG 工具。它将项目文档同时组织为：
 
-- 文件系统中的可读文档与完整 metadata；
-- SQLite 中的托管文档账本和 chunk 索引；
-- LadybugDB 中的向量、概念和图关系；
+- 文件系统中的可读文档、原始输入与完整 metadata（文本真源，可提交到 Git）；
+- 由 metadata 汇总的概念索引 `CONCEPTS.md`，供智能体常驻加载；
+- SQLite 中的托管文档账本和 chunk 索引（派生）；
+- LadybugDB 中的向量、概念和图关系（派生）；
 - 供项目内 skills 调用的本地 CLI。
 
-DocNexus 在项目中拥有的全部内容位于可见的 `docnexus/` 工作区：skills、草稿、托管文档（library）与派生数据（store）。智能体通过 `.claude/skills/` 或 `.agents/skills/` 中指向 `docnexus/skills/` 的链接发现 skills；CLI 和默认模型作为项目本地 npm 依赖。skills 分工与流水线编排见[Skills 工作区与功能编排](./skills-workspace.zh-CN.md)。
+DocNexus 在项目中拥有的全部内容位于可见的 `docnexus/` 工作区：skills、草稿、托管文档（library）、文本记录（records）、概念索引与派生数据（store）。智能体通过 `.claude/skills/` 或 `.agents/skills/` 中指向 `docnexus/skills/` 的链接发现 skills，并通过 `CLAUDE.md` / `AGENTS.md` 中的 DocNexus 区块加载概念索引；CLI 和默认模型作为项目本地 npm 依赖。skills 分工与流水线编排见[Skills 工作区与功能编排](./skills-workspace.zh-CN.md)。
 
 ## 2. 组件关系
 
@@ -25,12 +26,18 @@ flowchart TD
     EMBED["本地 Embedding 运行时"]
     SQLITE["SQLite：index.sqlite"]
     LBUG["LadybugDB：graph.lbug"]
-    FILES["文件系统：文档与 sidecar"]
+    FILES["文件系统：library + records"]
+    CONCEPTS["CONCEPTS.md"]
+    CTX["CLAUDE.md / AGENTS.md 区块"]
 
     U --> SKILLS
+    CTX --> U
+    CONCEPTS --> CTX
     SKILLS --> CLI
     CLI --> MANAGER
     CLI --> EMBED
+    CLI --> CONCEPTS
+    FILES --> CONCEPTS
     MANAGER --> META
     MANAGER --> EMBED
     MANAGER --> SQLITE
@@ -41,7 +48,14 @@ flowchart TD
 主要代码入口：
 
 - CLI：[`src/cli.ts`](../../src/cli.ts)
-- 托管文档：[`src/managed-documents.ts`](../../src/managed-documents.ts)
+- 工作区布局：[`src/layout.ts`](../../src/layout.ts)
+- 初始化与重置：[`src/project.ts`](../../src/project.ts)、[`src/reset.ts`](../../src/reset.ts)
+- 草稿封存：[`src/drafts.ts`](../../src/drafts.ts)
+- 托管文档、文本记录与索引同步：[`src/managed-documents.ts`](../../src/managed-documents.ts)
+- 概念索引：[`src/concepts.ts`](../../src/concepts.ts)
+- Skills 同步/链接与版本戳：[`src/skills.ts`](../../src/skills.ts)
+- 智能体指令区块：[`src/agent-context.ts`](../../src/agent-context.ts)
+- 诊断：[`src/doctor.ts`](../../src/doctor.ts)
 - Metadata 校验：[`src/metadata.ts`](../../src/metadata.ts)
 - Embedding：[`src/embedder-real.ts`](../../src/embedder-real.ts)
 - 图存储与召回：[`src/ladybug-store.ts`](../../src/ladybug-store.ts)
@@ -155,13 +169,16 @@ sequenceDiagram
     M->>M: 校验项目路径和 symlink
     M->>M: 校验 metadata（至少一个 entity）
     M->>E: 对每个 chunk 生成 512 维向量
-    M->>F: 原子写入文档、source、metadata
+    M->>F: 原子写入 library 文档与 records（source、metadata、record.json）
     M->>S: 事务替换 documents 与 file_chunks
     M->>L: 替换该文档的图和向量数据
     L->>L: 重建 Chunk 向量索引
+    C->>F: 重新生成 CONCEPTS.md
 ```
 
-写入前会保存当前状态快照。如果文件、SQLite 或图写入失败，托管文档服务会尝试恢复此前状态。该机制提供应用层补偿，但目前还不是跨文件系统、SQLite 和 LadybugDB 的单一原子事务。
+内容哈希全部未变时（例如重建），`record.json` 的 `updated_at` 保持不变，因此重建不会产生 Git 差异。
+
+写入前会保存当前状态快照（library 文件、records 三个文件、SQLite 行与 chunks）。如果文件、SQLite 或图写入失败，托管文档服务会尝试恢复此前状态。该机制提供应用层补偿，但目前还不是跨文件系统、SQLite 和 LadybugDB 的单一原子事务。
 
 LadybugDB 中的更新采用整文档替换：
 
@@ -174,9 +191,27 @@ LadybugDB 中的更新采用整文档替换：
 
 删除文档不会自动删除共享 Concept。图维护流程负责识别并清理不再被任何文档引用的孤立 Concept。
 
+### 4.1 索引同步
+
+`record.json` 中的三份哈希是判断状态的依据：
+
+| 情况 | 判定 | 处理 |
+| --- | --- | --- |
+| 有记录、无索引行 | `unindexed`（新克隆、删除了 `store/`） | `index sync` 以记录中的 id 与时间戳恢复身份后重新嵌入 |
+| 记录哈希或路径与索引行不同 | `outdated`（`git pull` 带来变化） | `index sync` 重新嵌入 |
+| 有索引行、无记录 | `orphaned`（记录被删除） | `index sync` 删除索引行与图数据 |
+| library 文件哈希与记录不同 | `edited`（手动编辑） | 不自动处理；`document sync` 经确认后采纳 |
+| library 文件缺失 | `missing_library` | 报告；由用户恢复文件或删除文档 |
+
+`recall` 在索引不同步时自动执行 `index sync`；`index rebuild --force` 对全部记录重新嵌入。`status`、`index status` 与 `doctor` 都报告以上状态。
+
+### 4.2 概念索引
+
+每次入库、`document sync`、删除、`index sync` 或重建后，CLI 读取全部 `records/*/metadata.json`，按"类型 + 规范化名称"合并实体，汇总描述、关系与出处文档，按出现文档数排序后写入 `CONCEPTS.md`（最多 300 条）。`docnexus concepts` 以 JSON 或 Markdown 返回完整列表，支持 `--type` 与 `--query` 过滤。概念索引只依赖文本记录，不需要 `store/`。
+
 ## 5. 召回流程
 
-召回由项目内 CLI 发起。
+召回由项目内 CLI 执行，由 `docnexus-recall` skill 触发：智能体依据常驻的 `CONCEPTS.md` 判断任务是否涉及已记录的概念、决策或约定，自行发起；用户也可以直接要求。查询优先使用概念原名，以命中图谱中的 Concept 节点。
 
 ```mermaid
 flowchart TD
@@ -261,7 +296,10 @@ Chunk 文本和 embedding 当前同时写入 SQLite 与 LadybugDB：SQLite 作�
 - 文件系统、SQLite 和 LadybugDB 之间依赖补偿恢复，尚无真正的跨存储原子提交；
 - 图扩展固定为一跳，尚未加入多跳深度、边权重或路径评分；
 - relationship description 尚未保存为图边属性；
-- Agent 通过项目内 CLI 执行 Graph RAG 召回；
+- 主动召回依赖模型遵循 skill 描述与指令区块，尚缺触发率评测；
+- `CONCEPTS.md` 超过 300 条时截断，大型知识库需按需使用 `docnexus concepts` 查询；
+- 同一项目的并发写入尚无互斥锁；
+- 新克隆首次召回需要重新嵌入全部文档，耗时与文档量成正比；
 - 缺少针对大规模文档集的检索质量与延迟基准。
 
 这些限制属于后续演进方向，不影响当前本地文档管理和基础 Graph RAG 流程。

@@ -4,7 +4,7 @@
 
 DocNexus 是一款面向 Codex、Claude 等编码智能体的本地项目记忆工具，以 **skills 为唯一交互入口**。智能体提炼用户选定的内容；DocNexus 把它保存为项目 `docnexus/` 工作区中的托管 Markdown，并召回带引用文件的 Graph RAG 上下文。
 
-本项目参考 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) 的智能体工作流风格，聚焦手动触发与项目本地存储。
+本项目参考 [GitNexus](https://github.com/abhigyanpatwari/GitNexus) 的智能体工作流风格，聚焦项目本地存储：召回由智能体自主判断，写入始终经用户确认。
 
 > 0.5.0 是破坏性更新：文本记录成为唯一真源、`store/` 变为可重建的派生数据，不兼容 0.4.x 及更早的项目。见[Skills 工作区与功能编排](./docs/architecture/skills-workspace.zh-CN.md#6-破坏性变更与升级)。
 

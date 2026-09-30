@@ -12,8 +12,10 @@ models/
         model_quantized.onnx
 ```
 
-DocNexus never downloads models at runtime. To override the packaged model in an initialized project, install a prepared local model directory with:
+DocNexus never downloads models at runtime. To override the packaged model in an initialized project, install a prepared local model directory (it must be inside the project) with:
 
 ```bash
-docnexus embeddings install --from /path/to/BAAI/bge-small-zh-v1.5
+./node_modules/.bin/docnexus embeddings install --from path/to/BAAI/bge-small-zh-v1.5
 ```
+
+The override is copied to `docnexus/store/models/` and takes precedence over this directory. `store/` is git-ignored, so each checkout installs its own override. After changing the model, run `./node_modules/.bin/docnexus index rebuild --force` so every document is re-embedded with it.

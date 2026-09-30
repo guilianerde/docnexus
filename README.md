@@ -4,7 +4,7 @@
 
 DocNexus is a local project-memory tool for coding agents such as Codex and Claude, driven **entirely through skills**. The agent refines selected material; DocNexus stores it as managed Markdown inside the project's `docnexus/` workspace and recalls grouped Graph RAG context with cited files.
 
-DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://github.com/abhigyanpatwari/GitNexus) and focuses on manual triggering and project-local storage.
+DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://github.com/abhigyanpatwari/GitNexus) and focuses on project-local storage: agents decide when to recall, and every write is confirmed by the user.
 
 > 0.5.0 is a breaking release: text records become the only source of truth and `store/` becomes rebuildable derived data. Projects from 0.4.x and earlier are not migrated. See [Skills workspace and orchestration](./docs/architecture/skills-workspace.zh-CN.md#6-破坏性变更与升级).
 

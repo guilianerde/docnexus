@@ -1,6 +1,6 @@
 # DocNexus Product Brief (MVP)
 
-DocNexus is a local project-memory tool for agents such as Codex and Claude, driven entirely through skills. Skills make judgments and generate content (refinement, review, answers); the project-local CLI enforces verifiable contracts (draft sealing, ingestion, recall, maintenance). Workflows are manually triggered.
+DocNexus is a local project-memory tool for agents such as Codex and Claude, driven entirely through skills. Skills make judgments and generate content (refinement, review, answers); the project-local CLI enforces verifiable contracts (draft sealing, ingestion, recall, maintenance). Agents trigger recall on their own from the concept index; capture, deletion, sync, and other writes are always started or confirmed by the user.
 
 ## Product Contract
 
