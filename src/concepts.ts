@@ -29,7 +29,9 @@ export async function buildConceptIndex(
   projectRoot: string,
   input: { type?: string; query?: string } = {}
 ): Promise<ConceptIndex> {
-  const records = await listRecordFiles(projectRoot);
+  // Earliest documents win the display name and description of a shared concept, so output is stable.
+  const records = (await listRecordFiles(projectRoot))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path));
   const concepts = new Map<string, ConceptEntry>();
   for (const record of records) {
     const metadata = await readRecordMetadata(projectRoot, record.id);
