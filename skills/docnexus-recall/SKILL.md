@@ -1,19 +1,34 @@
 ---
 name: docnexus-recall
-description: Use when the user explicitly asks to recall, search, or answer from DocNexus project memory, or when the docnexus entry skill routes a question to recall.
+description: Use proactively, without waiting to be asked, whenever a task in this project touches a concept listed in docnexus/CONCEPTS.md or a documented decision, component, convention, or earlier design; also when the user asks to recall, search, or answer from DocNexus project memory. Read-only.
 ---
 
 # DocNexus Recall
 
-Use this skill only when the user explicitly asks to use DocNexus recall, search project memory, retrieve indexed project context, or answer from DocNexus memory.
+Loads curated project knowledge into your working context. You decide when to use it.
 
-Do not trigger automatically for every question. DocNexus recall is manually requested.
+## When to recall
+
+Recall on your own when any of these holds:
+
+- The task names or will change something listed in `docnexus/CONCEPTS.md`.
+- You are about to make or revisit a design decision, choose between approaches, or follow a project convention.
+- The user refers to earlier decisions ("as we agreed", "the usual way", "why is X like this").
+- The user explicitly asks DocNexus or project memory.
+
+Skip recall for trivial or self-contained edits, general programming questions, and anything already recalled in this conversation. Prefer one focused recall per topic; at most three per task unless the user asks for more.
+
+## Building the query
+
+- Load `docnexus/CONCEPTS.md` first if it is not already in context. Use concept names from it verbatim in the query; they are the graph anchors.
+- Combine the concept with the intent: `"<concept> <what you need to know>"`, e.g. `"Refresh token rotation policy"`.
+- Narrow the concept list when it is long: `./node_modules/.bin/docnexus concepts --query <word>` or `--type decision`.
 
 ## Workflow
 
-1. Identify the user's recall query. Use the user's wording when possible.
+1. Build the query as above; for user questions use the user's wording.
 2. Use `5` as the default limit unless the user asks for a different number of results.
-3. Run recall from an initialized DocNexus project:
+3. Run recall from an initialized DocNexus project (it syncs a stale index automatically):
 
 ```bash
 ./node_modules/.bin/docnexus recall "<query>" --limit 5
@@ -28,6 +43,7 @@ Do not trigger automatically for every question. DocNexus recall is manually req
 10. Include a concise `References` section listing the library files used. `document.path` is relative to `docnexus/library/`; cite it as `docnexus/library/<path>`. Include the highest matched chunk index and score for each cited group when present.
 11. If recall fails, report that DocNexus could not return required Graph RAG context and hand over to `docnexus-maintain` for diagnosis.
 12. If recall returns no results, say DocNexus did not find matching current managed document context. You may still answer from the current conversation if that is useful, but keep that distinction clear.
+13. When you recalled on your own during a task, say so in one line (for example "Checked DocNexus: auth/token-rotation.md requires …") and let the recalled facts shape the work. If memory conflicts with the code or the user's request, point out the conflict instead of silently picking one.
 
 ## Output Guidance
 

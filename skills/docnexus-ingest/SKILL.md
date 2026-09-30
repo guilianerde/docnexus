@@ -35,4 +35,4 @@ Stage 3 of the capture pipeline. Stores one sealed draft as a managed document i
 
 - Never pass `--replace` without the user's explicit confirmation of the overwrite.
 - Never copy files into `docnexus/library/` or `docnexus/store/` yourself; the CLI owns them.
-- If the CLI reports `managed target was externally modified`, stop and tell the user; do not overwrite their edit.
+- If the CLI reports `managed target was externally modified`, the user edited the library file by hand. Stop, tell the user, and offer `docnexus-library` → *Adopt hand edits* before replacing it; never overwrite their edit silently.

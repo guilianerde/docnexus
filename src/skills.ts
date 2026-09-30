@@ -1,5 +1,6 @@
-import { existsSync } from "node:fs";
-import { cp, lstat, mkdir, readlink, rm, stat, symlink } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { cp, lstat, mkdir, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { installAgentContext } from "./agent-context.js";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillsPath, WORKSPACE_DIRNAME } from "./layout.js";
@@ -18,20 +19,27 @@ export const SKILL_NAMES = [
   "docnexus-maintain"
 ] as const;
 
+const VERSION_FILE = ".docnexus-skills.json";
+
 export interface SyncSkillsOutput {
   destination: string;
   synced: readonly string[];
+  version: string;
 }
 
 export interface LinkSkillsOutput {
   target: SkillsTarget;
   directory: string;
   linked: string[];
+  context_file: string;
 }
 
 export interface SkillsState {
   installed: string[];
   missing: string[];
+  version?: string;
+  package_version: string;
+  outdated: boolean;
   links: Record<SkillsTarget, { linked: string[]; missing: string[] }>;
 }
 
@@ -55,6 +63,36 @@ export function parseSkillsTargets(value: string | undefined): SkillsTarget[] {
   throw new Error("target must be claude, codex, or all");
 }
 
+/** Version of the installed DocNexus package; skills synced from it carry the same stamp. */
+export function packageVersion(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  for (const candidate of [resolve(moduleDirectory, "../../package.json"), resolve(moduleDirectory, "../package.json")]) {
+    try {
+      const manifest = JSON.parse(readFileSync(candidate, "utf8")) as { name?: string; version?: string };
+      if (manifest.name === "@rowansenne/docnexus" && manifest.version) {
+        return manifest.version;
+      }
+    } catch {
+      // Try the next layout.
+    }
+  }
+  return "0.0.0";
+}
+
+async function readSkillsVersion(projectRoot: string): Promise<string | undefined> {
+  try {
+    return (JSON.parse(await readFile(join(skillsPath(projectRoot), VERSION_FILE), "utf8")) as { version?: string }).version;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Re-syncs workspace skills when they are missing or were synced from another package version. */
+export async function ensureSkillsCurrent(projectRoot: string): Promise<SyncSkillsOutput | undefined> {
+  const state = await inspectSkills(projectRoot);
+  return state.outdated || state.missing.length > 0 ? syncSkills(projectRoot) : undefined;
+}
+
 /** Copies the packaged skills into `docnexus/skills/`, replacing previous copies of the same skills. */
 export async function syncSkills(projectRoot: string, packagedSkillsRoot = bundledSkillsRoot()): Promise<SyncSkillsOutput> {
   const destination = skillsPath(projectRoot);
@@ -63,12 +101,15 @@ export async function syncSkills(projectRoot: string, packagedSkillsRoot = bundl
     await rm(join(destination, skill), { recursive: true, force: true });
     await cp(join(packagedSkillsRoot, skill), join(destination, skill), { recursive: true });
   }
-  return { destination, synced: SKILL_NAMES };
+  const version = packageVersion();
+  await writeFile(join(destination, VERSION_FILE), `${JSON.stringify({ version }, null, 2)}\n`);
+  return { destination, synced: SKILL_NAMES, version };
 }
 
 /**
- * Exposes `docnexus/skills/<name>` to an agent by linking it from the agent's project skills directory.
- * The link is the only DocNexus entry outside `docnexus/`; the skill content itself stays in the workspace.
+ * Exposes `docnexus/skills/<name>` to an agent by linking it from the agent's project skills directory, and
+ * adds a marked DocNexus block to the agent's instructions file (CLAUDE.md or AGENTS.md) so the agent loads
+ * the concept index and recalls on its own. These are the only DocNexus entries outside `docnexus/`.
  */
 export async function linkSkills(projectRoot: string, target: SkillsTarget): Promise<LinkSkillsOutput> {
   const directory = agentSkillsDirectory(projectRoot, target);
@@ -94,7 +135,8 @@ export async function linkSkills(projectRoot: string, target: SkillsTarget): Pro
     }
     linked.push(skill);
   }
-  return { target, directory, linked };
+  const contextFile = await installAgentContext(projectRoot, target);
+  return { target, directory, linked, context_file: contextFile };
 }
 
 /** Removes agent links that point into this project's `docnexus/skills/`. Other entries are left untouched. */
@@ -129,7 +171,9 @@ export async function inspectSkills(projectRoot: string): Promise<SkillsState> {
     }
     links[target] = state;
   }
-  return { installed, missing, links };
+  const version = await readSkillsVersion(projectRoot);
+  const current = packageVersion();
+  return { installed, missing, version, package_version: current, outdated: version !== current, links };
 }
 
 async function pointsIntoWorkspace(projectRoot: string, linkPath: string): Promise<boolean> {

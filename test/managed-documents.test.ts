@@ -7,9 +7,13 @@ import {
   deleteManagedDocument,
   getManagedIndexStatus,
   getManagedSchemaTables,
+  inspectIndex,
   listManagedChunks,
   listManagedDocuments,
+  listRecordFiles,
   rebuildManagedDocuments,
+  reconcileIndex,
+  syncManagedDocument,
   upsertManagedDocument,
   type ManagedGraphWriter
 } from "../src/managed-documents.js";
@@ -81,7 +85,7 @@ describe("managed documents", () => {
     expect(result.id).toMatch(/^doc_[0-9a-f]{16}$/);
     await expect(readFile(join(root, "docnexus/library/docs/memory/auth.md"), "utf8")).resolves.toContain("Token rotation.");
     await expect(access(join(root, "docs/memory/auth.md"))).rejects.toThrow();
-    await expect(readFile(join(root, "docnexus", "store", "documents", result.id, "source.md"), "utf8")).resolves.toBe("raw source");
+    await expect(readFile(join(root, "docnexus", "records", result.id, "source.md"), "utf8")).resolves.toBe("raw source");
     expect(await listManagedDocuments(root)).toHaveLength(1);
     expect(await listManagedChunks(root, result.id)).toHaveLength(1);
     expect(graph.replaced).toEqual([result.id]);
@@ -101,7 +105,7 @@ describe("managed documents", () => {
     expect(second.id).toBe(first.id);
     expect(second.operation).toBe("updated");
     expect(await listManagedDocuments(root)).toHaveLength(1);
-    await expect(readFile(join(root, "docnexus", "store", "documents", first.id, "source.md"), "utf8")).resolves.toBe("new source");
+    await expect(readFile(join(root, "docnexus", "records", first.id, "source.md"), "utf8")).resolves.toBe("new source");
     expect(JSON.stringify(await listManagedChunks(root, first.id))).not.toContain("Old rotation");
   });
 
@@ -209,7 +213,7 @@ describe("managed documents", () => {
     ).rejects.toThrow("graph write failed");
 
     await expect(readFile(join(root, "docnexus/library/docs/memory/auth.md"), "utf8")).resolves.toContain("Original.");
-    await expect(readFile(join(root, "docnexus", "store", "documents", first.id, "source.md"), "utf8")).resolves.toBe("raw source");
+    await expect(readFile(join(root, "docnexus", "records", first.id, "source.md"), "utf8")).resolves.toBe("raw source");
     expect(JSON.stringify(await listManagedChunks(root, first.id))).toContain("Original.");
     expect(restored).toEqual(["# Authentication\n\nOriginal."]);
   });
@@ -255,7 +259,7 @@ describe("managed documents", () => {
     });
 
     await expect(access(join(root, "docnexus/library/docs/memory/auth.md"))).rejects.toThrow();
-    await expect(access(join(root, "docnexus", "store", "documents", created.id))).rejects.toThrow();
+    await expect(access(join(root, "docnexus", "records", created.id))).rejects.toThrow();
     expect(await listManagedDocuments(root)).toEqual([]);
     expect(await listManagedChunks(root, created.id)).toEqual([]);
     expect(graph.deleted).toEqual([created.id]);
@@ -281,6 +285,72 @@ describe("managed documents", () => {
     const result = await rebuildManagedDocuments(root, { force: true }, new LocalHashEmbedder(8), makeWriter().writer);
 
     expect(result.result).toBe("completed_with_errors");
-    expect(result.failed_documents[0]?.error).toContain("externally modified");
+    expect(result.failed_documents[0]?.error).toContain("edited after ingestion");
+  });
+
+  it("writes a text record that fully describes the current document", async () => {
+    const root = await makeRoot();
+    const created = await writeManaged(root);
+
+    const [record] = await listRecordFiles(root);
+    expect(record).toMatchObject({ id: created.id, file_path: "docs/memory/auth.md", title: "Authentication" });
+    await expect(readFile(join(root, "docnexus", "records", created.id, "metadata.json"), "utf8")).resolves.toContain("Token rotation");
+    await expect(inspectIndex(root)).resolves.toMatchObject({ in_sync: true, edited: [], unindexed: [], orphaned: [] });
+  });
+
+  it("rebuilds a deleted store from text records without changing them", async () => {
+    const root = await makeRoot();
+    const created = await writeManaged(root);
+    const recordBefore = await readFile(join(root, "docnexus", "records", created.id, "record.json"), "utf8");
+    await rm(join(root, "docnexus", "store"), { recursive: true, force: true });
+    await initializeProject(root);
+
+    await expect(inspectIndex(root)).resolves.toMatchObject({ in_sync: false, unindexed: [created.id] });
+    const graph = makeWriter();
+    await expect(reconcileIndex(root, { all: false }, new LocalHashEmbedder(8), graph.writer)).resolves.toMatchObject({
+      result: "completed",
+      rebuilt_documents: 1
+    });
+
+    expect(graph.replaced).toEqual([created.id]);
+    expect(await listManagedDocuments(root)).toEqual([expect.objectContaining({ id: created.id, file_path: "docs/memory/auth.md" })]);
+    await expect(readFile(join(root, "docnexus", "records", created.id, "record.json"), "utf8")).resolves.toBe(recordBefore);
+    await expect(inspectIndex(root)).resolves.toMatchObject({ in_sync: true });
+  });
+
+  it("removes index entries whose record was deleted, as after a git pull", async () => {
+    const root = await makeRoot();
+    const created = await writeManaged(root);
+    await rm(join(root, "docnexus", "records", created.id), { recursive: true });
+    await rm(join(root, "docnexus/library/docs/memory/auth.md"));
+    const graph = makeWriter();
+
+    await expect(reconcileIndex(root, { all: false }, new LocalHashEmbedder(8), graph.writer)).resolves.toMatchObject({
+      removed_documents: 1,
+      failed_documents: []
+    });
+    expect(graph.deleted).toEqual([created.id]);
+    expect(await listManagedDocuments(root)).toEqual([]);
+  });
+
+  it("adopts a hand edit of a library file with optional new metadata", async () => {
+    const root = await makeRoot();
+    const created = await writeManaged(root);
+    const edited = "# Authentication\n\nTokens rotate every hour.";
+    await writeFile(join(root, "docnexus/library/docs/memory/auth.md"), edited);
+    await expect(inspectIndex(root)).resolves.toMatchObject({ edited: [created.id] });
+
+    const result = await syncManagedDocument(
+      root,
+      { file_path: "docs/memory/auth.md", metadata: { ...metadata, summary: "Hourly token rotation." } },
+      new LocalHashEmbedder(8),
+      makeWriter().writer
+    );
+
+    expect(result).toMatchObject({ id: created.id, operation: "updated", metadata_updated: true });
+    expect((await listManagedChunks(root, created.id))[0]?.text).toContain("every hour");
+    await expect(readFile(join(root, "docnexus", "records", created.id, "source.md"), "utf8")).resolves.toBe("raw source");
+    await expect(inspectIndex(root)).resolves.toMatchObject({ in_sync: true, edited: [] });
+    await expect(syncManagedDocument(root, { id: "doc_missing" })).rejects.toThrow("not found");
   });
 });

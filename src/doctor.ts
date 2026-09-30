@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { checkEmbeddingRuntime } from "./embedder-default.js";
 import { checkLadybugVectorIndex } from "./ladybug-store.js";
 import { workspacePath } from "./layout.js";
-import { getManagedSchemaTables } from "./managed-documents.js";
+import { getManagedSchemaTables, type IndexDrift, inspectIndex } from "./managed-documents.js";
 import { requireInitializedProject } from "./project.js";
 import { inspectSkills, type SkillsState } from "./skills.js";
 
@@ -27,6 +27,8 @@ interface ProjectCheck extends BaseCheck {
 
 interface SkillsCheck extends BaseCheck, Partial<SkillsState> {}
 
+interface IndexCheck extends BaseCheck, Partial<IndexDrift> {}
+
 interface SqliteCheck extends BaseCheck {
   tables?: string[];
 }
@@ -48,6 +50,7 @@ export interface DoctorOutput {
     project: ProjectCheck;
     skills: SkillsCheck;
     sqlite: SqliteCheck;
+    index: IndexCheck;
     ladybug: LadybugCheck;
     embedding: EmbeddingCheck;
   };
@@ -68,10 +71,11 @@ export async function runDoctor(
   const project = await checkProject(root);
   const skills = project.ok ? await checkSkills(root) : skippedCheck("project is not initialized");
   const sqlite = project.ok ? await checkSqlite(root) : skippedCheck("project is not initialized");
+  const index = project.ok && sqlite.ok ? await checkIndex(root) : skippedCheck("project or SQLite store is unavailable");
   const ladybug = project.ok ? await checkLadybug(root, dependencies) : skippedCheck("project is not initialized");
   const embedding = await dependencies.checkEmbeddingRuntime(root);
-  const recommendations = buildRecommendations(root, { node, project, skills, sqlite, ladybug, embedding });
-  const allOk = [node, project, skills, sqlite, ladybug, embedding].every((check) => check.ok);
+  const recommendations = buildRecommendations(root, { node, project, skills, sqlite, index, ladybug, embedding });
+  const allOk = [node, project, skills, sqlite, index, ladybug, embedding].every((check) => check.ok);
 
   return {
     result: allOk ? "ok" : "issues_found",
@@ -81,6 +85,7 @@ export async function runDoctor(
       project,
       skills,
       sqlite,
+      index,
       ladybug,
       embedding
     },
@@ -129,12 +134,28 @@ async function checkSkills(projectRoot: string): Promise<SkillsCheck> {
   const state = await inspectSkills(projectRoot);
   const linked = Object.values(state.links).some((link) => link.missing.length === 0);
   return {
-    ok: state.missing.length === 0,
+    ok: state.missing.length === 0 && !state.outdated,
     ...state,
     message: state.missing.length > 0
       ? `missing skills: ${state.missing.join(", ")}`
-      : linked ? undefined : "skills are not linked into any agent directory"
+      : state.outdated
+        ? `skills were synced from ${state.version ?? "an unknown version"}; package is ${state.package_version}`
+        : linked ? undefined : "skills are not linked into any agent directory"
   };
+}
+
+async function checkIndex(projectRoot: string): Promise<IndexCheck> {
+  try {
+    const drift = await inspectIndex(projectRoot);
+    const problems = [
+      drift.in_sync ? undefined : "index is out of sync with docnexus/records",
+      drift.edited.length > 0 ? `${drift.edited.length} library file(s) edited after ingestion` : undefined,
+      drift.missing_library.length > 0 ? `${drift.missing_library.length} library file(s) missing` : undefined
+    ].filter(Boolean);
+    return { ok: problems.length === 0, ...drift, message: problems.length > 0 ? problems.join("; ") : undefined };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 async function checkSqlite(projectRoot: string): Promise<SqliteCheck> {
@@ -178,6 +199,7 @@ function buildRecommendations(
     project: ProjectCheck;
     skills: SkillsCheck;
     sqlite: SqliteCheck;
+    index: IndexCheck;
     ladybug: LadybugCheck;
     embedding: EmbeddingCheck;
   }
@@ -188,6 +210,12 @@ function buildRecommendations(
   }
   if (!checks.project.initialized) {
     recommendations.push(`Run "docnexus init" in ${projectRoot}.`);
+  }
+  if (checks.index.in_sync === false) {
+    recommendations.push("Run docnexus index sync to rebuild derived state from docnexus/records.");
+  }
+  if (checks.index.edited && checks.index.edited.length > 0) {
+    recommendations.push(`Adopt hand-edited library files with docnexus document sync --id <id> (${checks.index.edited.join(", ")}).`);
   }
   if (checks.skills.ok === false && !checks.skills.skipped) {
     recommendations.push("Run docnexus skills sync to restore the project skills.");

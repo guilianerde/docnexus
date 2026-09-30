@@ -14,7 +14,11 @@ DocNexus 是面向 Codex、Claude 等智能体的本地项目记忆工具，以 
 - `document delete ... --force` 经确认后物理删除 library 文件与全部派生状态。
 - `reset --force` 删除整个 `docnexus/` 与指向它的 skill 链接；无 DocNexus 标记的同名目录会被拒绝。
 - `index rebuild --force` 只维护已登记的托管文档，不承担导入。
-- `doctor` 检查 Node/SQLite、项目初始化、skills 与链接、SQLite schema、LadybugDB 向量索引和本地 embedding。
+- `records/<id>/` 中的 source、metadata 与 `record.json` 连同 `library/` 构成文本真源；`store/` 是派生数据，`index sync` 可从文本完全重建，`recall` 发现不同步时自动执行。
+- 用户可手动编辑 `library/` 文件；`document sync` 经确认后采纳编辑并可更新 metadata。
+- 每次变更后重新生成 `CONCEPTS.md`；`init --agent` 在 `CLAUDE.md`/`AGENTS.md` 写入区块，使智能体加载概念索引并自主召回。召回只读，写入仍需用户同意。
+- skills 带包版本戳，版本不一致时自动刷新。
+- `doctor` 检查 Node/SQLite、项目初始化、skills 版本与链接、SQLite schema、索引同步状态、LadybugDB 向量索引和本地 embedding。
 
 ## 部署
 
@@ -29,7 +33,7 @@ npm install --save-dev @rowansenne/docnexus
 
 1. `/docnexus` 预检 `status`，按意图路由。
 2. 捕获：`docnexus-extract`（`draft new` → 写产物 → `draft seal`）→ 用户审阅 → `docnexus-ingest`（`document add --draft`）。
-3. 召回：`docnexus-recall` 运行 `recall`，基于 `context_groups[]` 回答并引用 `docnexus/library/<path>`。
+3. 召回：智能体依据 `CONCEPTS.md` 自主判断，或按用户要求运行 `docnexus-recall`，基于 `context_groups[]` 工作或回答并引用 `docnexus/library/<path>`。
 4. 管理：`docnexus-library` 列出、查看、删除文档与草稿。
 5. 维护：`docnexus-maintain` 诊断后按需修复、重建或重置。
 

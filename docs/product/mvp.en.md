@@ -14,7 +14,11 @@ DocNexus is a local project-memory tool for agents such as Codex and Claude, dri
 - `document delete ... --force` physically removes the library file and all derived state after confirmation.
 - `reset --force` removes the whole `docnexus/` workspace and the skill links into it; a same-named folder without a DocNexus marker is refused.
 - `index rebuild --force` maintains registered managed documents only; it is not an import route.
-- `doctor` checks Node/SQLite, initialization, skills and links, SQLite schema, the LadybugDB vector index, and local embeddings.
+- `records/<id>/` (source, metadata, `record.json`) plus `library/` form the text source of truth; `store/` is derived, `index sync` rebuilds it entirely from text, and `recall` does so automatically when it is stale.
+- Users may edit `library/` files by hand; `document sync` adopts the edit after confirmation and can refresh metadata.
+- `CONCEPTS.md` is regenerated after every change; `init --agent` adds a block to `CLAUDE.md`/`AGENTS.md` so the agent loads the concept index and recalls on its own. Recall is read-only; writes still need consent.
+- Skills carry a package version stamp and refresh automatically when it differs.
+- `doctor` checks Node/SQLite, initialization, skills version and links, SQLite schema, index sync state, the LadybugDB vector index, and local embeddings.
 
 ## Deployment
 
@@ -29,7 +33,7 @@ npm install --save-dev @rowansenne/docnexus
 
 1. `/docnexus` runs a `status` preflight and routes by intent.
 2. Capture: `docnexus-extract` (`draft new` → write artifacts → `draft seal`) → user review → `docnexus-ingest` (`document add --draft`).
-3. Recall: `docnexus-recall` runs `recall`, answers from `context_groups[]`, and cites `docnexus/library/<path>`.
+3. Recall: the agent decides on its own from `CONCEPTS.md`, or on request, runs `docnexus-recall`, works or answers from `context_groups[]`, and cites `docnexus/library/<path>`.
 4. Library: `docnexus-library` lists, shows, and deletes documents and drafts.
 5. Maintenance: `docnexus-maintain` diagnoses, then repairs, rebuilds, or resets as needed.
 

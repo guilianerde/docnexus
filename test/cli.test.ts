@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -197,6 +197,11 @@ describe("runCli", () => {
             skipped: true,
             message: "project is not initialized"
           },
+          index: {
+            ok: false,
+            skipped: true,
+            message: "project is not initialized"
+          },
           sqlite: {
             ok: false,
             skipped: true,
@@ -304,6 +309,42 @@ describe("runCli", () => {
     await writeFile(join(projectRoot, draft.artifacts.document), "# Doc edited after sealing");
     await expect(runCli(["document", "add", "--draft", draft.draft_id], projectRoot)).rejects.toThrow("changed after sealing (document)");
     expect(JSON.parse(await runCli(["status"], projectRoot)).drafts).toMatchObject({ ready: 1 });
+  });
+
+  it("recovers memory from committed text files and adopts hand edits", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init", "--agent", "claude"], projectRoot);
+    await expect(readFile(join(projectRoot, "CLAUDE.md"), "utf8")).resolves.toContain("@docnexus/CONCEPTS.md");
+    const draft = await sealDraft(projectRoot, "auth/rotation.md", {
+      source: "Refresh tokens rotate on every use.",
+      document: "# Rotation\n\nRefresh tokens rotate on every use.",
+      metadata: { ...metadata, entities: [{ name: "Refresh token", type: "concept", description: "Rotating credential." }] }
+    });
+    const added = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
+    await expect(readFile(join(projectRoot, "docnexus", "CONCEPTS.md"), "utf8")).resolves.toContain("**Refresh token**");
+    expect(JSON.parse(await runCli(["concepts", "--type", "concept"], projectRoot)).concepts).toEqual([
+      expect.objectContaining({ name: "Refresh token", documents: ["auth/rotation.md"] })
+    ]);
+    await expect(readFile(join(projectRoot, "docnexus", ".gitignore"), "utf8")).resolves.toBe("store/\n");
+
+    // Simulate a fresh clone: only the git-tracked text survives.
+    await rm(join(projectRoot, "docnexus", "store"), { recursive: true, force: true });
+    expect(JSON.parse(await runCli(["status"], projectRoot)).index).toMatchObject({ in_sync: false, unindexed: 1 });
+    const recalled = JSON.parse(await runCli(["recall", "refresh token rotation", "--limit", "1"], projectRoot));
+    expect(recalled.context_groups[0].document).toMatchObject({ document_id: added.id, path: "auth/rotation.md" });
+    expect(JSON.parse(await runCli(["status"], projectRoot)).index).toMatchObject({ in_sync: true });
+
+    await writeFile(join(projectRoot, "docnexus/library/auth/rotation.md"), "# Rotation\n\nRefresh tokens rotate hourly.");
+    expect(JSON.parse(await runCli(["status"], projectRoot)).index.edited_library_files).toEqual([added.id]);
+    const synced = JSON.parse(await runCli(["document", "sync", "--id", added.id], projectRoot));
+    expect(synced).toMatchObject({ id: added.id, operation: "updated", metadata_updated: false });
+    const after = JSON.parse(await runCli(["recall", "rotate hourly", "--limit", "1"], projectRoot));
+    expect(after.results[0].matched_chunk.text).toContain("hourly");
+    expect(JSON.parse(await runCli(["index", "sync"], projectRoot))).toMatchObject({ processed_documents: 0, failed_documents: [] });
+
+    const reset = JSON.parse(await runCli(["reset", "--force"], projectRoot));
+    expect(reset.cleaned_context_files).toEqual(["CLAUDE.md"]);
+    await expect(readFile(join(projectRoot, "CLAUDE.md"), "utf8")).rejects.toThrow();
   });
 
   it("requires explicit replace before updating a managed document", async () => {

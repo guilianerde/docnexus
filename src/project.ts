@@ -1,12 +1,13 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { writeConceptIndex } from "./concepts.js";
 import { draftsPath, libraryPath, projectMarkerPath, WORKSPACE_DIRNAME, workspacePath } from "./layout.js";
 import { ensureManagedStore } from "./managed-documents.js";
 import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
 
 export { projectMarkerPath };
 
-export const PROJECT_FORMAT_VERSION = 4;
+export const PROJECT_FORMAT_VERSION = 5;
 
 interface ProjectMarker {
   format_version: number;
@@ -88,7 +89,13 @@ export async function initializeProject(
     await mkdir(libraryPath(root), { recursive: true });
     await ensureManagedStore(root);
     await writeFile(workspaceReadmePath(root), WORKSPACE_README);
+    await writeFile(resolve(workspacePath(root), ".gitignore"), "store/\n");
+  } else {
+    // A cloned workspace carries text files only; recreate the derived store and empty folders.
+    await mkdir(draftsPath(root), { recursive: true });
+    await ensureManagedStore(root);
   }
+  await writeConceptIndex(root);
 
   const skills = await syncSkills(root, input.packagedSkillsRoot);
   const links: LinkSkillsOutput[] = [];
@@ -118,9 +125,14 @@ DocNexus project workspace. Everything DocNexus owns for this project lives here
 | --- | --- |
 | \`skills/\` | Project skills. Start from \`skills/docnexus/SKILL.md\`. |
 | \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
-| \`library/\` | Managed Markdown documents recalled by DocNexus. Edit them only through DocNexus. |
+| \`library/\` | Managed Markdown documents. You may edit them; adopt edits with \`docnexus document sync\`. |
+| \`records/\` | Per-document source, metadata, and \`record.json\`; the text source of truth. |
+| \`CONCEPTS.md\` | Generated concept index that agents load while working. |
 | \`schemas/\` | Metadata JSON schema used by the skills. |
-| \`store/\` | Derived state: SQLite ledger, LadybugDB graph, sidecars, optional models. |
+| \`store/\` | Derived state (SQLite, LadybugDB graph, optional models). Safe to ignore in Git. |
+
+Everything except \`store/\` is plain text and can be committed. After cloning or pulling, run
+\`./node_modules/.bin/docnexus index sync\` to rebuild \`store/\` from the text files.
 
 Run \`./node_modules/.bin/docnexus status\` for an overview.
 `;

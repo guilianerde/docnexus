@@ -4,7 +4,7 @@
 
 1. [产品说明（中文）](./product/mvp.zh-CN.md)：了解产品定位、使用边界和主要工作流。
 2. [当前架构](./architecture/overview.zh-CN.md)：了解组件关系、数据存储和写入/召回流程。
-3. [Skills 工作区与功能编排](./architecture/skills-workspace.zh-CN.md)：了解 `docnexus/` 工作区、skills 分工、捕获流水线与破坏性变更。
+3. [Skills 工作区与功能编排](./architecture/skills-workspace.zh-CN.md)：了解 `docnexus/` 工作区、skills 分工、捕获流水线、自主召回、Git 同步与破坏性变更。
 4. [当前路线图](./roadmap/current.zh-CN.md)：查看已实现能力和下一步优先级。
 5. [发布检查清单](./operations/release-checklist.md)：执行发布前验证。
 

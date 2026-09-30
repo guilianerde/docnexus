@@ -56,7 +56,8 @@ flowchart TD
 ```text
 <project>/
 └── docnexus/
-    ├── project.json              # 项目初始化信息与格式版本（4）
+    ├── project.json              # 项目初始化信息与格式版本（5）
+    ├── CONCEPTS.md               # 由 records 汇总生成的概念索引
     ├── skills/                   # 项目 skills
     ├── drafts/<draft-id>/
     │   ├── source.md             # 提炼输入
@@ -64,22 +65,23 @@ flowchart TD
     │   ├── metadata.json         # metadata
     │   └── manifest.json         # draft seal 写入：校验结果与产物哈希
     ├── library/<file_path>.md    # 托管文档；逻辑 file_path 相对 library/
+    ├── records/<document-id>/    # 文本真源（可提交）
+    │   ├── source.md             # 当前原始输入
+    │   ├── metadata.json         # 当前完整 metadata
+    │   └── record.json           # 身份、时间戳与内容哈希
     ├── schemas/
     │   └── metadata.schema.json
-    └── store/
+    └── store/                    # 派生数据，git-ignore，可由 records 重建
         ├── index.sqlite          # 托管文档与 chunk 账本
         ├── graph.lbug            # LadybugDB 图和向量数据
-        ├── models/               # 可选的项目模型覆盖
-        └── documents/<document-id>/
-            ├── source.md         # 当前原始输入 sidecar
-            └── metadata.json     # 当前完整 metadata sidecar
+        └── models/               # 可选的项目模型覆盖
 ```
 
 托管路径是相对于 `docnexus/library/` 的逻辑 Markdown 路径，实际文件必须位于该目录内，并且路径中的既有组件不得是符号链接。写入、删除和草稿封存会同时进行词法路径与真实路径校验，防止通过 symlink 越过 `docnexus/` 边界。
 
 ### 3.2 SQLite
 
-SQLite 位于 `docnexus/store/index.sqlite`，作为管理账本和可恢复的 chunk 数据源。
+SQLite 位于 `docnexus/store/index.sqlite`，是由 `records/` 派生的管理账本和 chunk 数据源；删除后可用 `index sync` 重建。
 
 #### `documents`
 
@@ -93,7 +95,7 @@ SQLite 位于 `docnexus/store/index.sqlite`，作为管理账本和可恢复的 
 | `document_hash` | 生成文档哈希，用于检测外部修改 |
 | `metadata_hash` | 完整 metadata 哈希 |
 | `created_at`、`updated_at` | 创建与更新时间 |
-| `sidecar_path` | `source.md` 和 `metadata.json` 所在目录 |
+| `sidecar_path` | 记录目录 `docnexus/records/<id>`（source、metadata、record.json） |
 
 #### `file_chunks`
 
@@ -236,20 +238,22 @@ LadybugDB 返回距离，DocNexus 将其转换为相似度：`score = 1 - distan
 
 ## 6. 项目 Skills 与 CLI 边界
 
-项目 skills 位于 `docnexus/skills/`，在项目目录内运行本地 `./node_modules/.bin/docnexus`。入口 skill `docnexus` 负责路由与流水线编排；CLI 负责可校验的契约：`draft new/seal` 分配与封存草稿，`document add --draft` 入库并把草稿标记为 `ingested`，其余为读取、召回与维护命令。metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
+项目 skills 位于 `docnexus/skills/`，在项目目录内运行本地 `./node_modules/.bin/docnexus`。入口 skill `docnexus` 负责路由与流水线编排，`docnexus-recall` 由智能体依据 `CONCEPTS.md` 自主触发；CLI 负责可校验的契约：`draft new/seal` 分配与封存草稿，`document add --draft` 入库并把草稿标记为 `ingested`，其余为读取、召回与维护命令。metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
 
 ## 7. 一致性与数据权威边界
 
 | 数据 | 主要保存位置 | 用途 |
 | --- | --- | --- |
-| 原始输入 | `source.md` | 重建和审计 |
-| 完整生成文档 | 项目目标路径 | 用户和工具直接读取 |
-| 完整 metadata | `metadata.json` | entities、relationships 和描述的完整记录 |
-| 文档管理状态 | SQLite `documents` | 清单、哈希、路径和更新时间 |
-| chunk 与向量副本 | SQLite `file_chunks` | 管理、恢复和重建 |
+| 原始输入 | `records/<id>/source.md` | 重建和审计（真源） |
+| 完整生成文档 | `library/<file_path>` | 用户和工具直接读取（真源） |
+| 完整 metadata | `records/<id>/metadata.json` | entities、relationships 和描述（真源） |
+| 身份与哈希 | `records/<id>/record.json` | 文档 id、路径、时间戳；判断同步与手动编辑（真源） |
+| 概念索引 | `CONCEPTS.md` | 由 metadata 汇总，供智能体加载 |
+| 文档管理状态 | SQLite `documents` | 清单、哈希、路径和更新时间（派生） |
+| chunk 与向量副本 | SQLite `file_chunks` | 管理和补偿恢复（派生） |
 | 图与检索向量 | LadybugDB | 实际 Graph RAG 召回 |
 
-Chunk 文本和 embedding 当前同时写入 SQLite 与 LadybugDB。这是有意的数据冗余：SQLite 作为管理与恢复账本，LadybugDB 作为在线召回执行层。
+Chunk 文本和 embedding 当前同时写入 SQLite 与 LadybugDB：SQLite 作为管理与补偿恢复账本，LadybugDB 作为在线召回执行层。两者都可由文本真源完全重建。
 
 ## 8. 当前限制与后续关注点
 

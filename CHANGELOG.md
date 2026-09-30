@@ -2,6 +2,19 @@
 
 All notable user-visible changes to DocNexus are recorded here.
 
+## 0.5.0 - 2026-09-30
+
+Breaking release. Projects created by 0.4.x and earlier are not migrated; run `docnexus reset --force` and `docnexus init` again.
+
+- Make text the only source of truth: each document keeps `source.md`, `metadata.json`, and a new `record.json` under `docnexus/records/<id>/`. `store/` is fully derived and git-ignored, so `docnexus/` can be committed and shared.
+- Add `index sync` to rebuild derived state from records after a clone or `git pull`; `recall` runs it automatically when the index is stale. `index rebuild --force` now re-embeds every record from text and leaves unchanged records byte-identical.
+- Add `document sync --id|--file [--metadata-file]` to adopt hand edits of library files; `status` and `doctor` list edited and missing library files.
+- Generate `docnexus/CONCEPTS.md` from all records after every change and add `docnexus concepts [--type] [--query] [--format]`.
+- `init --agent` and `skills link` add a marked DocNexus block to `CLAUDE.md` (with `@docnexus/CONCEPTS.md`) or `AGENTS.md`, so agents load the concept index and recall on their own; `reset` removes the block.
+- Make `docnexus-recall` proactive: agents recall when a task touches a known concept, decision, or convention, without being asked. Writes still require user consent.
+- Stamp synced skills with the package version; any command refreshes outdated workspace skills automatically, and `doctor` reports version drift.
+- Project format version 5.
+
 ## 0.4.0 - 2026-09-30
 
 Breaking release. Projects created by earlier versions are not migrated; see `docs/architecture/skills-workspace.zh-CN.md`.

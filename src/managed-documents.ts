@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { chunkText } from "./chunker.js";
 import { createDefaultEmbedder } from "./embedder-default.js";
@@ -10,9 +10,9 @@ import { createChunkId, createDocumentId } from "./ids.js";
 import {
   databasePath,
   libraryPath,
+  recordRelativePath,
+  recordsPath,
   schemasPath,
-  sidecarRelativePath,
-  sidecarsPath,
   storePath,
   WORKSPACE_DIRNAME,
   workspacePath
@@ -67,6 +67,25 @@ export interface ManagedDocumentWriteResult {
   updated_at: string;
 }
 
+/** Identity and hashes of one managed document, stored as `docnexus/records/<id>/record.json`. */
+export interface RecordFile {
+  id: string;
+  file_path: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  source_hash: string;
+  document_hash: string;
+  metadata_hash: string;
+}
+
+export interface UpsertOptions {
+  /** Accept the current library file even when it differs from the last ingested content. */
+  acceptLibraryEdit?: boolean;
+  /** Restore this record's identity when the index has no row for it yet (fresh clone, rebuild). */
+  identity?: RecordFile;
+}
+
 export interface ManagedGraphWriteInput {
   document: ManagedDocument;
   chunks: ManagedChunk[];
@@ -100,6 +119,7 @@ export interface RebuildManagedDocumentsOutput {
   result: "completed" | "completed_with_errors";
   processed_documents: number;
   rebuilt_documents: number;
+  removed_documents: number;
   failed_documents: Array<{ document_id: string; file_path: string; error: string }>;
   started_at: string;
   finished_at: string;
@@ -135,6 +155,7 @@ interface CurrentSnapshot {
   target?: string;
   source?: string;
   metadata?: string;
+  record?: string;
 }
 
 const defaultGraphWriter: ManagedGraphWriter = {
@@ -170,7 +191,8 @@ const defaultGraphWriter: ManagedGraphWriter = {
 };
 
 export async function ensureManagedStore(projectRoot: string): Promise<void> {
-  await mkdir(sidecarsPath(projectRoot), { recursive: true });
+  await mkdir(storePath(projectRoot), { recursive: true });
+  await mkdir(recordsPath(projectRoot), { recursive: true });
   await mkdir(libraryPath(projectRoot), { recursive: true });
   await mkdir(schemasPath(projectRoot), { recursive: true });
   await writeFile(join(schemasPath(projectRoot), "metadata.schema.json"), `${stableJson(metadataSchema)}\n`);
@@ -188,7 +210,8 @@ export async function upsertManagedDocument(
   projectRoot: string,
   input: ManagedDocumentWriteInput,
   embedder: Embedder = createDefaultEmbedder(projectRoot),
-  graphWriter: ManagedGraphWriter = defaultGraphWriter
+  graphWriter: ManagedGraphWriter = defaultGraphWriter,
+  options: UpsertOptions = {}
 ): Promise<ManagedDocumentWriteResult> {
   if (typeof input.source !== "string" || typeof input.document !== "string" || !input.metadata) {
     throw new Error("source, document, and metadata are required");
@@ -205,29 +228,41 @@ export async function upsertManagedDocument(
     db.close();
   }
 
+  const identity = options.identity?.file_path === resolved.relativePath ? options.identity : undefined;
+  const prior = existing ?? identity;
   const currentTarget = await readIfExists(resolved.absolutePath);
-  if (!existing && currentTarget !== undefined) {
+  if (!prior && currentTarget !== undefined) {
     throw new Error("unmanaged file already exists at file_path");
   }
-  if (existing && (currentTarget === undefined || sha256(currentTarget) !== existing.document_hash)) {
-    throw new Error("managed target was externally modified");
+  if (prior && currentTarget === undefined) {
+    throw new Error("managed library file is missing; delete the document or restore the file");
+  }
+  if (prior && !options.acceptLibraryEdit && sha256(currentTarget as string) !== prior.document_hash) {
+    throw new Error("managed target was externally modified; run \"docnexus document sync\" to adopt the edit");
   }
 
   const now = new Date().toISOString();
-  const id = existing?.id ?? createDocumentId();
+  const id = prior?.id ?? createDocumentId();
   const metadataJson = stableJson(input.metadata);
+  const hashes = {
+    source_hash: sha256(input.source),
+    document_hash: sha256(input.document),
+    metadata_hash: sha256(metadataJson)
+  };
+  const unchanged = prior !== undefined
+    && prior.source_hash === hashes.source_hash
+    && prior.document_hash === hashes.document_hash
+    && prior.metadata_hash === hashes.metadata_hash;
   const row: DocumentRow = {
     id,
     file_path: resolved.relativePath,
     title: input.metadata.title,
     summary: input.metadata.summary,
     tags_json: JSON.stringify(input.metadata.tags),
-    source_hash: sha256(input.source),
-    document_hash: sha256(input.document),
-    metadata_hash: sha256(metadataJson),
-    created_at: existing?.created_at ?? now,
-    updated_at: now,
-    sidecar_path: sidecarRelativePath(id)
+    ...hashes,
+    created_at: prior?.created_at ?? now,
+    updated_at: unchanged ? (prior as RecordFile).updated_at : now,
+    sidecar_path: recordRelativePath(id)
   };
   const chunks: ManagedChunk[] = [];
   for (const chunk of chunkText(input.document)) {
@@ -280,9 +315,9 @@ export async function upsertManagedDocument(
   return {
     id,
     file_path: row.file_path,
-    operation: existing ? "updated" : "created",
+    operation: prior ? "updated" : "created",
     chunk_count: chunks.length,
-    updated_at: now
+    updated_at: row.updated_at
   };
 }
 
@@ -443,6 +478,160 @@ export async function getManagedIndexStatus(projectRoot: string): Promise<Manage
   }
 }
 
+export interface IndexDrift {
+  record_count: number;
+  indexed_count: number;
+  /** Records with no index row (new files, fresh clone). */
+  unindexed: string[];
+  /** Records whose hashes differ from the index row (changed by git pull or another checkout). */
+  outdated: string[];
+  /** Index rows whose record no longer exists. */
+  orphaned: string[];
+  /** Records whose library file was edited after ingestion; adopt with `document sync`. */
+  edited: string[];
+  /** Records whose library file is missing. */
+  missing_library: string[];
+  in_sync: boolean;
+}
+
+export async function listRecordFiles(projectRoot: string): Promise<RecordFile[]> {
+  const entries = await readdir(recordsPath(projectRoot), { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  });
+  const records: RecordFile[] = [];
+  for (const entry of entries.filter((value) => value.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    const content = await readIfExists(join(recordsPath(projectRoot), entry.name, "record.json"));
+    if (content === undefined) {
+      continue;
+    }
+    const record = JSON.parse(content) as RecordFile;
+    if (record.id !== entry.name) {
+      throw new Error(`record ${entry.name} has a mismatched id`);
+    }
+    records.push(record);
+  }
+  return records;
+}
+
+export async function readRecordMetadata(projectRoot: string, documentId: string): Promise<DocNexusMetadata> {
+  return JSON.parse(await readFile(join(projectRoot, recordRelativePath(documentId), "metadata.json"), "utf8")) as DocNexusMetadata;
+}
+
+export async function inspectIndex(projectRoot: string): Promise<IndexDrift> {
+  const records = await listRecordFiles(projectRoot);
+  const rows = new Map((await listManagedDocuments(projectRoot)).map((row) => [row.id, row]));
+  const drift: IndexDrift = {
+    record_count: records.length,
+    indexed_count: rows.size,
+    unindexed: [],
+    outdated: [],
+    orphaned: [...rows.keys()].filter((id) => !records.some((record) => record.id === id)),
+    edited: [],
+    missing_library: [],
+    in_sync: true
+  };
+  for (const record of records) {
+    const row = rows.get(record.id);
+    if (!row) {
+      drift.unindexed.push(record.id);
+    } else if (
+      row.file_path !== record.file_path
+      || row.source_hash !== record.source_hash
+      || row.document_hash !== record.document_hash
+      || row.metadata_hash !== record.metadata_hash
+    ) {
+      drift.outdated.push(record.id);
+    }
+    const library = await readIfExists(join(libraryPath(projectRoot), record.file_path));
+    if (library === undefined) {
+      drift.missing_library.push(record.id);
+    } else if (sha256(library) !== record.document_hash) {
+      drift.edited.push(record.id);
+    }
+  }
+  drift.in_sync = drift.unindexed.length + drift.outdated.length + drift.orphaned.length === 0;
+  return drift;
+}
+
+/**
+ * Brings the derived store in line with the text records. With `all`, every record is re-embedded
+ * and re-graphed; otherwise only unindexed and outdated records are processed.
+ */
+export async function reconcileIndex(
+  projectRoot: string,
+  options: { all: boolean },
+  embedder: Embedder = createDefaultEmbedder(projectRoot),
+  graphWriter: ManagedGraphWriter = defaultGraphWriter
+): Promise<RebuildManagedDocumentsOutput> {
+  const startedAt = new Date().toISOString();
+  const drift = await inspectIndex(projectRoot);
+  const records = await listRecordFiles(projectRoot);
+  const failures: RebuildManagedDocumentsOutput["failed_documents"] = [];
+  let removed = 0;
+
+  for (const id of drift.orphaned) {
+    try {
+      await graphWriter.deleteDocumentGraph(projectRoot, id);
+      deleteDocumentRows(projectRoot, id);
+      removed += 1;
+    } catch (error) {
+      failures.push({ document_id: id, file_path: "", error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const pending = options.all
+    ? records
+    : records.filter((record) => drift.unindexed.includes(record.id) || drift.outdated.includes(record.id));
+  let rebuilt = 0;
+  for (const record of pending) {
+    try {
+      const directory = join(projectRoot, recordRelativePath(record.id));
+      const source = await readFile(join(directory, "source.md"), "utf8");
+      const metadataJson = await readFile(join(directory, "metadata.json"), "utf8");
+      const document = await readIfExists(join(libraryPath(projectRoot), record.file_path));
+      if (document === undefined) {
+        throw new Error("managed library file is missing");
+      }
+      if (sha256(document) !== record.document_hash) {
+        throw new Error("library file was edited after ingestion; run \"docnexus document sync\" to adopt the edit");
+      }
+      if (sha256(source) !== record.source_hash) {
+        throw new Error("record source.md does not match record.json");
+      }
+      const metadata = JSON.parse(metadataJson) as DocNexusMetadata;
+      if (sha256(stableJson(metadata)) !== record.metadata_hash) {
+        throw new Error("record metadata.json does not match record.json");
+      }
+      await upsertManagedDocument(
+        projectRoot,
+        { file_path: record.file_path, source, document, metadata },
+        embedder,
+        graphWriter,
+        { identity: record }
+      );
+      rebuilt += 1;
+    } catch (error) {
+      failures.push({
+        document_id: record.id,
+        file_path: record.file_path,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  return {
+    result: failures.length > 0 ? "completed_with_errors" : "completed",
+    processed_documents: pending.length,
+    rebuilt_documents: rebuilt,
+    removed_documents: removed,
+    failed_documents: failures,
+    started_at: startedAt,
+    finished_at: new Date().toISOString()
+  };
+}
+
 export async function rebuildManagedDocuments(
   projectRoot: string,
   options: { force: boolean },
@@ -452,43 +641,41 @@ export async function rebuildManagedDocuments(
   if (!options.force) {
     throw new Error("rebuild requires --force");
   }
-  const startedAt = new Date().toISOString();
-  const documents = await listManagedDocuments(projectRoot);
-  const failures: RebuildManagedDocumentsOutput["failed_documents"] = [];
-  let rebuilt = 0;
+  return reconcileIndex(projectRoot, { all: true }, embedder, graphWriter);
+}
 
-  for (const document of documents) {
-    try {
-      const sidecar = join(projectRoot, document.sidecar_path);
-      const source = await readFile(join(sidecar, "source.md"), "utf8");
-      const metadata = JSON.parse(await readFile(join(sidecar, "metadata.json"), "utf8")) as DocNexusMetadata;
-      const current = await readFile((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, "utf8");
-      if (sha256(current) !== document.document_hash) {
-        throw new Error("managed target was externally modified");
-      }
-      await upsertManagedDocument(
-        projectRoot,
-        { file_path: document.file_path, source, document: current, metadata },
-        embedder,
-        graphWriter
-      );
-      rebuilt += 1;
-    } catch (error) {
-      failures.push({
-        document_id: document.id,
-        file_path: document.file_path,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
+/** Adopts a hand edit of a library file as the new current document, optionally with refreshed metadata. */
+export async function syncManagedDocument(
+  projectRoot: string,
+  input: { id?: string; file_path?: string; metadata?: DocNexusMetadata },
+  embedder: Embedder = createDefaultEmbedder(projectRoot),
+  graphWriter: ManagedGraphWriter = defaultGraphWriter
+): Promise<ManagedDocumentWriteResult & { metadata_updated: boolean }> {
+  if (Number(Boolean(input.id)) + Number(Boolean(input.file_path)) !== 1) {
+    throw new Error("provide exactly one of id or file_path");
   }
-  return {
-    result: failures.length > 0 ? "completed_with_errors" : "completed",
-    processed_documents: documents.length,
-    rebuilt_documents: rebuilt,
-    failed_documents: failures,
-    started_at: startedAt,
-    finished_at: new Date().toISOString()
-  };
+  const filePath = input.file_path === undefined ? undefined : await normalizeManagedFilePath(projectRoot, input.file_path);
+  const record = (await listRecordFiles(projectRoot)).find((value) => value.id === input.id || value.file_path === filePath);
+  if (!record) {
+    throw new Error("managed document not found");
+  }
+  const directory = join(projectRoot, recordRelativePath(record.id));
+  const document = await readIfExists(join(libraryPath(projectRoot), record.file_path));
+  if (document === undefined) {
+    throw new Error("managed library file is missing; delete the document or restore the file");
+  }
+  if (document.trim().length === 0) {
+    throw new Error("managed library file is empty");
+  }
+  const metadata = input.metadata ?? (JSON.parse(await readFile(join(directory, "metadata.json"), "utf8")) as DocNexusMetadata);
+  const result = await upsertManagedDocument(
+    projectRoot,
+    { file_path: record.file_path, source: await readFile(join(directory, "source.md"), "utf8"), document, metadata },
+    embedder,
+    graphWriter,
+    { acceptLibraryEdit: true, identity: record }
+  );
+  return { ...result, metadata_updated: input.metadata !== undefined };
 }
 
 export async function getManagedSchemaTables(projectRoot: string): Promise<string[]> {
@@ -574,23 +761,36 @@ async function snapshotCurrent(
   existing: DocumentRow | undefined,
   target: string | undefined
 ): Promise<CurrentSnapshot> {
-  if (!existing) {
-    return { chunks: [], target };
+  let chunks: ChunkRow[] = [];
+  if (existing) {
+    const db = openManagedDatabase(projectRoot);
+    try {
+      chunks = db.prepare("SELECT * FROM file_chunks WHERE document_id = ? ORDER BY chunk_index").all(existing.id) as unknown as ChunkRow[];
+    } finally {
+      db.close();
+    }
   }
-  const db = openManagedDatabase(projectRoot);
-  let chunks: ChunkRow[];
-  try {
-    chunks = db.prepare("SELECT * FROM file_chunks WHERE document_id = ? ORDER BY chunk_index").all(existing.id) as unknown as ChunkRow[];
-  } finally {
-    db.close();
-  }
-  const sidecar = join(projectRoot, existing.sidecar_path);
+  const directory = join(projectRoot, row.sidecar_path);
   return {
     row: existing,
     chunks,
     target,
-    source: await readIfExists(join(sidecar, "source.md")),
-    metadata: await readIfExists(join(sidecar, "metadata.json"))
+    source: await readIfExists(join(directory, "source.md")),
+    metadata: await readIfExists(join(directory, "metadata.json")),
+    record: await readIfExists(join(directory, "record.json"))
+  };
+}
+
+function toRecordFile(row: DocumentRow): RecordFile {
+  return {
+    id: row.id,
+    file_path: row.file_path,
+    title: row.title,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    source_hash: row.source_hash,
+    document_hash: row.document_hash,
+    metadata_hash: row.metadata_hash
   };
 }
 
@@ -602,9 +802,10 @@ async function writeCurrentFiles(
   metadataJson: string
 ): Promise<void> {
   await atomicWrite(join(libraryPath(projectRoot), row.file_path), document);
-  const sidecar = join(projectRoot, row.sidecar_path);
-  await atomicWrite(join(sidecar, "source.md"), source);
-  await atomicWrite(join(sidecar, "metadata.json"), `${metadataJson}\n`);
+  const directory = join(projectRoot, row.sidecar_path);
+  await atomicWrite(join(directory, "source.md"), source);
+  await atomicWrite(join(directory, "metadata.json"), `${metadataJson}\n`);
+  await atomicWrite(join(directory, "record.json"), `${JSON.stringify(toRecordFile(row), null, 2)}\n`);
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {
@@ -674,22 +875,34 @@ function replaceDocumentState(projectRoot: string, row: DocumentRow, chunks: Man
 }
 
 async function restoreCurrent(projectRoot: string, row: DocumentRow, snapshot: CurrentSnapshot): Promise<void> {
-  const target = join(libraryPath(projectRoot), row.file_path);
-  const sidecar = join(projectRoot, row.sidecar_path);
+  const directory = join(projectRoot, row.sidecar_path);
+  await restoreFile(join(libraryPath(projectRoot), row.file_path), snapshot.target);
+  await restoreFile(join(directory, "source.md"), snapshot.source);
+  await restoreFile(join(directory, "metadata.json"), snapshot.metadata);
+  await restoreFile(join(directory, "record.json"), snapshot.record);
+  if (snapshot.source === undefined && snapshot.metadata === undefined && snapshot.record === undefined) {
+    await rm(directory, { recursive: true, force: true });
+  }
   if (snapshot.row) {
-    await atomicWrite(target, snapshot.target as string);
-    await atomicWrite(join(sidecar, "source.md"), snapshot.source as string);
-    await atomicWrite(join(sidecar, "metadata.json"), snapshot.metadata as string);
-    const chunks = snapshot.chunks.map(fromChunkRow);
-    replaceDocumentState(projectRoot, snapshot.row, chunks);
+    replaceDocumentState(projectRoot, snapshot.row, snapshot.chunks.map(fromChunkRow));
     return;
   }
-  await rm(target, { force: true });
-  await rm(sidecar, { recursive: true, force: true });
+  deleteDocumentRows(projectRoot, row.id);
+}
+
+async function restoreFile(path: string, content: string | undefined): Promise<void> {
+  if (content === undefined) {
+    await rm(path, { force: true });
+    return;
+  }
+  await atomicWrite(path, content);
+}
+
+function deleteDocumentRows(projectRoot: string, documentId: string): void {
   const db = openManagedDatabase(projectRoot);
   try {
-    db.prepare("DELETE FROM file_chunks WHERE document_id = ?").run(row.id);
-    db.prepare("DELETE FROM documents WHERE id = ?").run(row.id);
+    db.prepare("DELETE FROM file_chunks WHERE document_id = ?").run(documentId);
+    db.prepare("DELETE FROM documents WHERE id = ?").run(documentId);
   } finally {
     db.close();
   }

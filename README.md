@@ -6,7 +6,7 @@ DocNexus is a local project-memory tool for coding agents such as Codex and Clau
 
 DocNexus is inspired by the agent-facing workflow style of [GitNexus](https://github.com/abhigyanpatwari/GitNexus) and focuses on manual triggering and project-local storage.
 
-> 0.4.0 is a breaking release: the data folder moves from `.docnexus/` to `docnexus/`, the skills are reorganized, and older projects are not migrated. See [Skills workspace and orchestration](./docs/architecture/skills-workspace.zh-CN.md#4-破坏性变更与升级).
+> 0.5.0 is a breaking release: text records become the only source of truth and `store/` becomes rebuildable derived data. Projects from 0.4.x and earlier are not migrated. See [Skills workspace and orchestration](./docs/architecture/skills-workspace.zh-CN.md#6-破坏性变更与升级).
 
 ## Quick start
 
@@ -18,7 +18,7 @@ npm install --save-dev @rowansenne/docnexus
 ./node_modules/.bin/docnexus doctor
 ```
 
-Then use `/docnexus` in your agent: "remember this design note", "what does DocNexus say about auth?", "list DocNexus documents".
+Then just work: the agent reads `docnexus/CONCEPTS.md` and recalls on its own when a task touches a recorded concept. You can also say "remember this design note", "what does DocNexus say about auth?", or "list DocNexus documents".
 
 ## Workspace
 
@@ -27,14 +27,30 @@ Then use `/docnexus` in your agent: "remember this design note", "what does DocN
 ```text
 docnexus/
   project.json          # format marker
-  skills/               # project skills (source of truth)
+  CONCEPTS.md           # generated concept index for agents to load
+  skills/               # project skills (refreshed automatically per package version)
   drafts/<draft_id>/    # extraction drafts: source.md, document.md, metadata.json, manifest.json
-  library/              # managed documents (readable output)
+  library/              # managed documents (readable output, hand-editable)
+  records/<id>/         # source.md, metadata.json, record.json — the text source of truth
   schemas/              # metadata.schema.json
-  store/                # index.sqlite, graph.lbug, sidecars, optional models/
+  store/                # derived: index.sqlite, graph.lbug, optional models/ (git-ignored)
 ```
 
-`--agent` links `.claude/skills/` or `.agents/skills/` entries to `docnexus/skills/`; these links are the only DocNexus entries outside the workspace.
+`--agent claude|codex` links `.claude/skills/` or `.agents/skills/` entries to `docnexus/skills/`, and adds a marked DocNexus block to `CLAUDE.md` or `AGENTS.md` so the agent loads the concept index and recalls on its own. These are the only DocNexus entries outside the workspace; `reset` removes them.
+
+## Autonomous recall and concept loading
+
+- After every ingest, sync, or delete, DocNexus regenerates `docnexus/CONCEPTS.md`: entity names by type, one-line descriptions, relations, and the documents that define them.
+- Claude loads it through `@docnexus/CONCEPTS.md` in `CLAUDE.md`; Codex is told by `AGENTS.md` to read it at the start of each task.
+- `docnexus-recall` is proactive: when a task touches a listed concept, an earlier decision, or a convention, the agent recalls by itself and says what it relied on. Recall is read-only.
+- `docnexus concepts --query <word> --type <type>` narrows a long concept list.
+- Writes still need consent: the agent may offer to capture a new decision but never stores it on its own.
+
+## Git and multiple machines
+
+Everything in `docnexus/` except `store/` is plain text and can be committed. After a clone or `git pull`, `recall` runs `index sync` automatically (or run it yourself); it rebuilds `store/` from `records/`.
+
+Library documents may be edited by hand. `status` lists edited files, and `docnexus document sync --id <id>` adopts the edit (optionally with `--metadata-file`), keeping the original source.
 
 ## Skill orchestration
 
@@ -43,9 +59,9 @@ docnexus/
 | `docnexus` | Entry point: preflight, intent routing, capture pipeline |
 | `docnexus-extract` | Refine source material into a sealed draft |
 | `docnexus-ingest` | Store a sealed draft in the library and index it |
-| `docnexus-recall` | Answer from recalled context, citing `docnexus/library/` files |
-| `docnexus-library` | List, show, or delete documents; list or discard drafts |
-| `docnexus-maintain` | Diagnose, repair, rebuild, reset |
+| `docnexus-recall` | Recall proactively or on request; answer citing `docnexus/library/` files |
+| `docnexus-library` | List concepts and documents, adopt hand edits, delete documents, list or discard drafts |
+| `docnexus-maintain` | Diagnose, sync, repair, rebuild, reset |
 
 "Remember this" requests run the capture pipeline:
 
@@ -78,17 +94,20 @@ Skills call the project-local CLI; input files must resolve inside the project.
 ./node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
 ./node_modules/.bin/docnexus draft discard --id <draft_id> --force
 
-# Recall
+# Recall and concepts
 ./node_modules/.bin/docnexus recall "local embedding and LadybugDB" --limit 5
+./node_modules/.bin/docnexus concepts [--type component] [--query auth] [--format json|md]
 
 # Library
 ./node_modules/.bin/docnexus document list [--limit 50] [--tag tag]
 ./node_modules/.bin/docnexus document get --id <document_id> --include source,document,metadata
+./node_modules/.bin/docnexus document sync --id <document_id> [--metadata-file <path>]
 ./node_modules/.bin/docnexus document delete --file auth/token-rotation.md --force
 ./node_modules/.bin/docnexus document delete --id doc_0000000000000000 --force
 
 # Maintenance
 ./node_modules/.bin/docnexus index status
+./node_modules/.bin/docnexus index sync
 ./node_modules/.bin/docnexus index rebuild --force
 ./node_modules/.bin/docnexus graph audit
 ./node_modules/.bin/docnexus graph repair --force
@@ -98,9 +117,10 @@ Skills call the project-local CLI; input files must resolve inside the project.
 
 - `file_path` is a Markdown path relative to `docnexus/library/`. One path is one current document; updates replace it in place with no history.
 - Recall returns vector-ranked `results[]` and document-level `context_groups[]` with neighboring chunks and one-hop graph evidence. Every document must declare at least one entity; there is no reduced fallback.
-- `index rebuild --force` only reprocesses registered managed documents; it never imports unmanaged files.
-- Deletion removes the library file, sidecars, SQLite rows/chunks, and LadybugDB state.
-- `reset --force` removes the whole `docnexus/` workspace and the skill links pointing into it; a same-named folder without a DocNexus marker is refused.
+- `index sync` processes only new, changed, or deleted records; `index rebuild --force` re-embeds every record. Both only handle documents recorded in `records/`; neither imports unmanaged files.
+- Deletion removes the library file, the record directory, SQLite rows/chunks, and LadybugDB state.
+- `reset --force` removes the whole `docnexus/` workspace, the skill links into it, and the DocNexus block in `CLAUDE.md`/`AGENTS.md`; a same-named folder without a DocNexus marker is refused.
+- Skills carry a package version stamp; after upgrading the npm package, the next command refreshes `docnexus/skills/`.
 - Managed paths and draft directories reject symbolic links to keep writes inside `docnexus/`.
 
 ## Embeddings
@@ -124,7 +144,7 @@ npm run build
 
 ## Current scope
 
-Implemented: project-local `docnexus/` workspace; an entry orchestration skill plus five workflow skills; CLI-managed draft sealing and ingestion; single-version managed documents with physical deletion and reset; local embeddings, LadybugDB vector/graph recall, and grouped context; doctor, rebuild, graph audit, and repair.
+Implemented: project-local `docnexus/` workspace; text records as the Git-friendly source of truth; a concept index with autonomous agent recall; adoption of hand edits; an entry orchestration skill plus five workflow skills; CLI-managed draft sealing and ingestion; single-version managed documents with physical deletion and reset; local embeddings, LadybugDB vector/graph recall, and grouped context; doctor, rebuild, graph audit, and repair.
 
 Not implemented: automatic capture or file watching, external model providers, CLI-side answer generation, deeper multi-hop graph reasoning.
 

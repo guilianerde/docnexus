@@ -59,6 +59,8 @@ try {
   assert(initialized.workspace === join(await realpath(projectDirectory), "docnexus"), "init did not create the docnexus workspace");
   await stat(join(projectDirectory, "docnexus", "skills", "docnexus", "SKILL.md"));
   await stat(join(projectDirectory, ".agents", "skills", "docnexus", "SKILL.md"));
+  const agentsInstructions = await readFile(join(projectDirectory, "AGENTS.md"), "utf8");
+  assert(agentsInstructions.includes("docnexus/CONCEPTS.md"), "init did not add the DocNexus block to AGENTS.md");
 
   const doctor = await runJson(cliPath, ["doctor"], projectDirectory, cliEnvironment);
   assert(doctor.checks?.project?.initialized === true, "doctor did not recognize the initialized project");
@@ -114,6 +116,15 @@ try {
     recalled.context_groups?.[0]?.document?.path === "release/smoke.md",
     "recall did not cite the managed document from the smoke project"
   );
+
+  const concepts = await runJson(cliPath, ["concepts"], projectDirectory, cliEnvironment);
+  assert(concepts.concepts?.[0]?.name === "DocNexus tarball", "concepts did not list the ingested entity");
+  const conceptIndex = await readFile(join(projectDirectory, "docnexus", "CONCEPTS.md"), "utf8");
+  assert(conceptIndex.includes("**DocNexus tarball**"), "CONCEPTS.md was not regenerated after ingestion");
+
+  await rm(join(projectDirectory, "docnexus", "store"), { recursive: true, force: true });
+  const recovered = await runJson(cliPath, ["recall", "installed DocNexus tarball", "--limit", "1"], projectDirectory, cliEnvironment);
+  assert(recovered.results?.length === 1, "recall did not rebuild the store from committed text records");
 
   process.stdout.write(`Tarball smoke test passed: ${filename}\n`);
 } finally {

@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
+import { buildConceptIndex, renderConceptIndex, writeConceptIndex } from "./concepts.js";
 import { runDoctor } from "./doctor.js";
 import { createDraft, discardDraft, listDrafts, loadSealedDraft, markDraftIngested, sealDraft, type DraftStatus } from "./drafts.js";
 import { installEmbeddingModel } from "./embedding-models.js";
@@ -11,10 +12,14 @@ import {
   deleteManagedDocument,
   getManagedIndexStatus,
   getManagedRecord,
+  ensureManagedStore,
   getManagedStatus,
+  inspectIndex,
   isManagedFilePath,
   listManagedRecords,
   rebuildManagedDocuments,
+  reconcileIndex,
+  syncManagedDocument,
   upsertManagedDocument
 } from "./managed-documents.js";
 import { libraryRelativePath } from "./layout.js";
@@ -22,7 +27,8 @@ import { validateMetadata } from "./metadata.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
 import { recall } from "./recall.js";
 import { resetProjectData } from "./reset.js";
-import { linkSkills, parseSkillsTargets, syncSkills } from "./skills.js";
+import { ensureSkillsCurrent, inspectSkills, linkSkills, parseSkillsTargets, syncSkills } from "./skills.js";
+import { entityTypes, type DocNexusMetadata } from "./types.js";
 
 export interface RunCliDependencies {
   auditGraph?: typeof auditGraph;
@@ -60,8 +66,16 @@ export async function runCli(
     return json(await activeDependencies.doctor(projectRoot));
   }
 
-  if (["index", "graph", "recall", "document", "draft", "embeddings", "metadata", "status", "skills"].includes(command)) {
+  if (["index", "graph", "recall", "document", "draft", "embeddings", "metadata", "status", "skills", "concepts"].includes(command)) {
     await requireInitializedProject(projectRoot);
+    // The store is derived and may be absent after a clone; the workspace skills follow the installed package.
+    await ensureManagedStore(projectRoot);
+    if (!(command === "skills" && subcommand === "sync")) {
+      const synced = await ensureSkillsCurrent(projectRoot);
+      if (synced) {
+        process.stderr.write(`docnexus: refreshed docnexus/skills to ${synced.version}\n`);
+      }
+    }
   }
 
   if (command === "skills" && subcommand === "sync") {
@@ -83,7 +97,33 @@ export async function runCli(
     for (const draft of drafts) {
       draftCounts[draft.status] += 1;
     }
-    return json({ ...(await getManagedStatus(projectRoot)), drafts: draftCounts });
+    const index = await inspectIndex(projectRoot);
+    const skills = await inspectSkills(projectRoot);
+    return json({
+      ...(await getManagedStatus(projectRoot)),
+      drafts: draftCounts,
+      index: {
+        in_sync: index.in_sync,
+        unindexed: index.unindexed.length,
+        outdated: index.outdated.length,
+        orphaned: index.orphaned.length,
+        edited_library_files: index.edited,
+        missing_library_files: index.missing_library
+      },
+      skills: { version: skills.version, outdated: skills.outdated, missing: skills.missing }
+    });
+  }
+
+  if (command === "concepts") {
+    const options = parseOptions(invocation.argv.slice(1));
+    if (options.type !== undefined && !(entityTypes as readonly string[]).includes(options.type)) {
+      throw new Error(`--type must be one of ${entityTypes.join(", ")}`);
+    }
+    if (options.format !== undefined && options.format !== "json" && options.format !== "md") {
+      throw new Error("--format must be json or md");
+    }
+    const index = await buildConceptIndex(projectRoot, { type: options.type, query: options.query });
+    return options.format === "md" ? renderConceptIndex(index) : json(index);
   }
 
   if (command === "draft" && subcommand === "new") {
@@ -156,13 +196,23 @@ export async function runCli(
       throw new Error("document delete requires --force");
     }
     const options = parseOptions(rest.filter((arg) => arg !== "--force"));
-    return json(
-      await deleteManagedDocument(projectRoot, {
-        file_path: options.file,
-        id: options.id,
-        confirm: force
-      })
-    );
+    const deleted = await deleteManagedDocument(projectRoot, {
+      file_path: options.file,
+      id: options.id,
+      confirm: force
+    });
+    await writeConceptIndex(projectRoot);
+    return json(deleted);
+  }
+
+  if (command === "document" && subcommand === "sync") {
+    const options = parseOptions(rest);
+    const metadata = options["metadata-file"]
+      ? (JSON.parse(await readProjectFile(projectRoot, options["metadata-file"])) as DocNexusMetadata)
+      : undefined;
+    const result = await syncManagedDocument(projectRoot, { id: options.id, file_path: options.file, metadata });
+    await writeConceptIndex(projectRoot);
+    return json({ ...result, library_path: libraryRelativePath(result.file_path) });
   }
 
   if (command === "document" && subcommand === "add") {
@@ -182,15 +232,24 @@ export async function runCli(
       metadata: draft.metadata
     });
     await markDraftIngested(projectRoot, draft.manifest.draft_id, result.id);
+    await writeConceptIndex(projectRoot);
     return json({ ...result, draft_id: draft.manifest.draft_id, library_path: libraryRelativePath(result.file_path) });
   }
 
   if (command === "index" && subcommand === "rebuild") {
-    return json(await rebuildManagedDocuments(projectRoot, { force: rest.includes("--force") }));
+    const rebuilt = await rebuildManagedDocuments(projectRoot, { force: rest.includes("--force") });
+    await writeConceptIndex(projectRoot);
+    return json(rebuilt);
+  }
+
+  if (command === "index" && subcommand === "sync") {
+    const synced = await reconcileIndex(projectRoot, { all: false });
+    await writeConceptIndex(projectRoot);
+    return json(synced);
   }
 
   if (command === "index" && subcommand === "status") {
-    return json(await getManagedIndexStatus(projectRoot));
+    return json({ ...(await getManagedIndexStatus(projectRoot)), ...(await inspectIndex(projectRoot)) });
   }
 
   if (command === "graph" && subcommand === "audit") {
@@ -207,6 +266,12 @@ export async function runCli(
       throw new Error("query must be a non-empty string");
     }
     const options = parseOptions(rest);
+    // Recall must reflect the committed text records, e.g. after a git pull.
+    if (!(await inspectIndex(projectRoot)).in_sync) {
+      const synced = await reconcileIndex(projectRoot, { all: false });
+      await writeConceptIndex(projectRoot);
+      process.stderr.write(`docnexus: synced index before recall (${synced.rebuilt_documents} indexed, ${synced.removed_documents} removed)\n`);
+    }
     return json(
       await recall(projectRoot, {
         query,
@@ -237,15 +302,19 @@ Capture (extract -> seal -> ingest)
 
 Recall
   docnexus recall "local memory" --limit 5
+  docnexus concepts [--type component] [--query auth] [--format json|md]
 
 Library
   docnexus document list [--limit 50] [--tag tag]
   docnexus document get --id <document_id> [--include source,document,metadata]
+  docnexus document sync --id <document_id> [--metadata-file <path>]
+  docnexus document sync --file <library_path.md> [--metadata-file <path>]
   docnexus document delete --file <library_path.md> --force
   docnexus document delete --id doc_0000000000000000 --force
 
 Maintenance
   docnexus index status
+  docnexus index sync
   docnexus index rebuild --force
   docnexus graph audit
   docnexus graph repair --force

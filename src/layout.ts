@@ -8,8 +8,12 @@ import { join } from "node:path";
  *     skills/           project skills (source of truth for agent links)
  *     drafts/           extraction drafts awaiting ingestion
  *     library/          managed Markdown documents (the curated output)
+ *     records/<id>/     per-document source, metadata, and record.json (text source of truth)
+ *     CONCEPTS.md       generated concept index agents load while working
  *     schemas/          JSON schemas used by the skills
- *     store/            derived state: SQLite ledger, LadybugDB graph, sidecars, models
+ *     store/            derived, rebuildable state: SQLite ledger, LadybugDB graph, models
+ *
+ * Everything except `store/` is plain text and can be committed; `index sync` rebuilds `store/` from it.
  */
 export const WORKSPACE_DIRNAME = "docnexus";
 
@@ -41,8 +45,12 @@ export function storePath(projectRoot: string): string {
   return join(workspacePath(projectRoot), "store");
 }
 
-export function sidecarsPath(projectRoot: string): string {
-  return join(storePath(projectRoot), "documents");
+export function recordsPath(projectRoot: string): string {
+  return join(workspacePath(projectRoot), "records");
+}
+
+export function conceptIndexPath(projectRoot: string): string {
+  return join(workspacePath(projectRoot), "CONCEPTS.md");
 }
 
 export function databasePath(projectRoot: string): string {
@@ -57,9 +65,9 @@ export function projectModelsPath(projectRoot: string): string {
   return join(storePath(projectRoot), "models");
 }
 
-/** Project-relative sidecar directory recorded in the SQLite ledger. */
-export function sidecarRelativePath(documentId: string): string {
-  return `${WORKSPACE_DIRNAME}/store/documents/${documentId}`;
+/** Project-relative record directory recorded in the SQLite ledger. */
+export function recordRelativePath(documentId: string): string {
+  return `${WORKSPACE_DIRNAME}/records/${documentId}`;
 }
 
 /** Project-relative path of a managed document inside the library. */

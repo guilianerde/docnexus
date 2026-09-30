@@ -30,7 +30,7 @@ describe("project initialization", () => {
 
     expect(result).toMatchObject({ project_root: root, workspace: join(root, "docnexus"), initialized: true, created: true });
     expect(result.skills).toContain("docnexus");
-    expect(marker).toMatchObject({ format_version: 4, initialized_at: expect.any(String) });
+    expect(marker).toMatchObject({ format_version: 5, initialized_at: expect.any(String) });
     expect(projectMarkerPath(root)).toBe(join(root, "docnexus", "project.json"));
     for (const path of ["skills/docnexus/SKILL.md", "drafts", "library", "schemas/metadata.schema.json", "store/index.sqlite", "README.md"]) {
       await expect(stat(join(root, "docnexus", path))).resolves.toBeDefined();

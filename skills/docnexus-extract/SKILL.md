@@ -39,6 +39,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
    - Entity `type`: `component`, `concept`, `protocol`, `decision`, `file`, `tool`, or `other`.
    - Relationship `type`: `depends_on`, `mentions`, `implements`, `replaces`, `relates_to`, or `decides`; `from` and `to` should name declared entities.
    - At least one source-grounded entity is required.
+   - Reuse the exact name and type of a concept already listed in `docnexus/CONCEPTS.md` when the source talks about the same thing; shared names link documents in the graph.
 6. Choose a library `file_path`: a relative Markdown path such as `auth/token-rotation.md`. It is stored at `docnexus/library/<file_path>`. Check `./node_modules/.bin/docnexus document list` to reuse an existing path only when the user intends to update that document.
 7. Seal the draft. Sealing validates all three artifacts and the metadata, records their hashes, and writes `manifest.json`:
 

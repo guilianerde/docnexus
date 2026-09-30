@@ -12,18 +12,20 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
 - 每个项目独立的可见 `docnexus/` 工作区（skills、drafts、library、schemas、store），项目内 npm CLI，skills 通过链接暴露给智能体，无 MCP 服务。
 - `init --agent`、`doctor`、skills 同步/链接、草稿分配/封存/列出/丢弃、embedding 模型覆盖安装、按草稿入库/替换/删除、recall、索引重建、图谱审计/修复和 reset。
 - 入口编排 skill 与 extract、ingest、recall、library、maintain 五个工作流 skill。
-- `docnexus/library/` 中的单版本托管 Markdown、带哈希的已封存草稿、`docnexus/store/` 中的 sidecars、SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
+- 文本记录（`records/`）为唯一真源，`store/` 可由 `index sync` 重建，工作区可随 Git 同步；手动编辑经 `document sync` 采纳。
+- 自动生成的 `CONCEPTS.md` 概念索引、`CLAUDE.md`/`AGENTS.md` 指令区块与主动触发的召回 skill；skills 按包版本自动刷新。
+- `docnexus/library/` 中的单版本托管 Markdown、带哈希的已封存草稿、`docnexus/records/` 中的文本记录，以及 `docnexus/store/` 中派生的 SQLite 文档/chunks 与 LadybugDB 图谱/向量状态。
 - 随 npm 包发布并以 local-only 模式加载的 `BAAI/bge-small-zh-v1.5` 量化 ONNX 模型。
 - 按 chunk 向量相关性排序、按文档归集、包含相邻 chunk 与一跳图谱证据的召回结果。
 - 写入前 metadata 强校验：每份文档至少包含一个基于来源的实体，以保证图谱召回前提成立。
 - 托管路径安全校验：逻辑目标必须是相对于 `docnexus/library/` 的 Markdown 路径，实际路径不得越过该目录且不得包含符号链接；草稿目录使用相同规则。
 - 文件、SQLite 与 LadybugDB 变更失败时的补偿恢复，以及外部修改检测。
 
-当前验证基线：18 个测试文件全部通过；类型检查和构建通过。
+当前验证基线：20 个测试文件、104 个测试全部通过；类型检查、构建和 tarball 冒烟测试通过。
 
 ## 当前明确边界
 
-- 不自动捕获对话，不监听文件变化。
+- 不自动捕获对话，不监听文件变化；召回可由智能体自主触发，但写入始终需要用户同意。
 - 不保留托管文档历史版本；替换和删除只维护当前状态。
 - 不在 CLI 内调用 LLM 或生成最终答案。
 - 不支持外部 embedding/LLM 供应商。
@@ -76,7 +78,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆服务�
    - 基于结果决定是否增加多语 embedding 模型或可配置模型方案。
 
 8. 数据恢复能力
-   - 评估软删除、版本快照、导出/导入与项目迁移，优先解决误删和跨机器恢复。
+   - 跨机器恢复已通过可提交的文本记录解决；继续评估软删除与版本快照，优先解决误删。
 
 9. 扩展能力
    - 在核心稳定后再评估文件监听、自动捕获、更深多跳推理和外部模型供应商；这些能力不作为当前 MVP 发布门槛。
