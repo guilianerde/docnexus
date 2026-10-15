@@ -6,6 +6,7 @@ import { inspectRetrievalIndex, withSyncedRetrieval } from "./retrieval-index.js
 import { projectionKnowledge, resolveKnowledge } from "./knowledge.js";
 import { loadKnowledgeDocuments } from "./knowledge-service.js";
 import { relationshipsToEdges } from "./graph-mapping.js";
+import { DocNexusError } from "./errors.js";
 
 export interface GraphAuditOutput {
   result: "clean" | "issues_found";
@@ -16,7 +17,9 @@ export interface GraphAuditOutput {
 
 export async function auditGraph(root: string): Promise<GraphAuditOutput> {
   return withProjectLock(root, async () => {
-    if (!(await inspectRetrievalIndex(root)).available) throw new Error("retrieval store is missing or unavailable; run docnexus index sync");
+    const state = await inspectRetrievalIndex(root);
+    if (!state.available) throw new Error("retrieval store is missing or unavailable; run docnexus index sync");
+    if (state.schema_status !== "current") throw new DocNexusError(state.schema_status === "unsupported" ? "index_schema_incompatible" : "index_outdated", state.message ?? "synchronize the retrieval projection first");
     return (await withRetrievalDatabase(root, async db => {
       const t = tables(db);
       const documents = await loadKnowledgeDocuments(root);

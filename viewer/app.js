@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { category: "", page: 1, size: 20, revision: "", selected: "", snapshot: null, busy: false };
+const state = { category: "", page: 1, size: 20, revision: "", etag: "", selected: "", snapshot: null, busy: false };
 const statuses = { active: "有效", scheduled: "待生效", expired: "已到期", superseded: "已替代", withdrawn: "已撤回" };
 let requestNumber = 0;
 let controller;
@@ -36,7 +36,14 @@ async function load({ reset = false, poll = false } = {}) {
       const params = new URLSearchParams({ page: String(state.page), page_size: String(state.size) });
       if (state.category) params.set("category", state.category);
       if (state.revision) params.set("revision", state.revision);
-      const response = await fetch(`/api/documents?${params}`, { signal });
+      const headers = poll && state.snapshot && state.etag ? { "If-None-Match": state.etag } : {};
+      const response = await fetch(`/api/documents?${params}`, { signal, headers, cache: "no-store" });
+      if (number !== requestNumber) return;
+      if (response.status === 304) {
+        $("error").hidden = true;
+        $("sync-status").textContent = `已同步 ${date(new Date().toISOString(), true)}`;
+        return;
+      }
       const output = await response.json();
       if (number !== requestNumber) return;
       if (response.status === 409 && output.error === "document_revision_changed") {
@@ -60,6 +67,7 @@ async function load({ reset = false, poll = false } = {}) {
       const needsRender = !poll || output.revision !== state.snapshot?.revision || changed;
       state.snapshot = output;
       state.revision = output.revision;
+      state.etag = response.headers.get("etag") || "";
       $("error").hidden = true;
       if (needsRender) render();
       $("sync-status").textContent = changed ? "知识已更新 · 已回到第一页" : `已同步 ${date(output.generated_at, true)}`;

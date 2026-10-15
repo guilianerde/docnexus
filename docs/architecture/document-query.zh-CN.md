@@ -48,7 +48,7 @@ const second = await queryDocuments(projectRoot, {
 
 浏览页展示实际分类及计数、10/20/50 篇分页列表、完整当前正文、分类依据、标签和事实来源/生命周期状态。分类由 skills 中的模型维护；浏览操作不触发重分类。页面可见时每 15 秒检查一次更新，重新切回页面或点击刷新也会检查。后续查询携带 revision，返回 409 时丢弃旧页并重新读取第一页；所选分类被合并、改名或删除时回到全部文档。读取失败时清除正文，显示错误与重试提示。事实面板保留历史状态，只有“有效”条目代表当前有效事实。
 
-HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。参数错误为 400，旧 revision 为 409，源文本不可用为 503。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。
+HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；浏览页轮询携带 `If-None-Match`，相同视图未变化时返回无正文的 304，保留当前阅读位置并跳过 Markdown HTML 渲染与完整正文传输。手动刷新和切换分页/分类仍获取完整内容。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。
 
 服务不保持长期项目锁，每次查询独立获取锁，其他已授权写入可以同时继续。没有新的源数据或后台模型服务，不写入分类、正文或索引；项目锁仍沿用已有中断恢复机制。请求只支持 GET/HEAD，拒绝其他方法、跨源和非本机 Host，不开放 CORS，也不提供任意文件读取。HTML/JS/CSS 与 Markdown 依赖随 npm 包分发，无 CDN 或远程字体。
 
@@ -87,6 +87,8 @@ Node 异常的 code 为 `document_revision_changed`，current_revision 给出新
 
 ## 模型驱动的动态分类
 
+调用方可在本次写入中显式指定分类，优先于模型判断。例如 code-review skill 可在封存时执行 `draft seal --id <draft_id> --file reviews/report.md --base-version new --category codeReview --category-reason "Produced by the code-review skill"`。编排层跳过该文档的自动分类，CLI 按原样采用分类名；分类与依据写入草稿 metadata 后一同封存、审阅和入库。依据可省略，默认记录 `Explicit category supplied by caller.`；不能单独提供依据而缺少分类。同次捕获后的分类维护不覆盖该选择，后续仍可显式调整。这是本次写入的优先级，不是永久分类锁。
+
 分类名由项目定义，长度为 1–80 字符，不能有首尾空白或控制字符。一份文档选择一项主分类，跨主题关联使用 tags。大模型先阅读项目 README/相关指引、query 返回的现有分类及相关文档；优先复用已有 id，在语义不匹配时创建有意义的新名称，并记录最多 2000 字符的 category_reason。
 
 例如，项目可以使用“接口契约”“部署与运维”“用户研究”等分类。旧的 architecture、guide 等 id 仍保留中文显示名，仅为兼容；它们不是枚举约束。未设分类的文档显示 uncategorized。空项目的 categories 为空，分类计数只展示实际使用的名称。
@@ -102,4 +104,4 @@ Node 异常的 code 为 `document_revision_changed`，current_revision 给出新
 
 该命令只更新分类和依据、record 的 metadata/timeline 哈希及更新时间，追加新旧分类与依据到时间线。来源、正文、事实、别名和关系保持不变；相同分类与依据为 no-op。普通提炼/更新同样记录分类变化与依据。连续调整多份文档时，每次写入后获取新 revision；过时上下文被拒绝后重新判断。
 
-分类由执行 skills 的模型完成，使用既有提炼/更新/分类维护授权；查询脚本只读，不调用模型或自动修改分类。已有授权涵盖时无需反复询问。没有后台分类守护进程，也没有另一套分类真源。编排步骤见 [分类工作流](../../skills/docnexus-library/references/classification.md)。
+未提供显式分类时，分类由执行 skills 的模型完成，使用既有提炼/更新/分类维护授权；查询脚本只读，不调用模型或自动修改分类。已有授权涵盖时无需反复询问。没有后台分类守护进程，也没有另一套分类真源。编排步骤见 [分类工作流](../../skills/docnexus-library/references/classification.md)。

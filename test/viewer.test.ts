@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import MarkdownIt from "markdown-it";
 import { initializeProject } from "../src/project.js";
 import { classifyManagedDocument, upsertManagedDocument } from "../src/managed-documents.js";
 import { renderViewerMarkdown, startDocumentViewer, type DocumentViewer } from "../src/viewer.js";
@@ -67,6 +68,56 @@ describe("read-only document viewer", () => {
     const after = await snapshot(`${viewer.url}/api/documents`);
     expect(after.categories).toEqual([{ id: "团队决策", label: "团队决策", count: 1 }]);
     expect(after.documents[0].category_reason).toBe("结合项目决策目录调整分类");
+  });
+
+  it("returns an empty 304 without rendering HTML only for the same validated page and category", async () => {
+    const { root, viewer } = await setup();
+    const record = await add(root);
+    const url = `${viewer.url}/api/documents?page=1&page_size=1`;
+    const first = await fetch(url);
+    const before = await first.json() as DocumentQueryOutput;
+    const etag = first.headers.get("etag");
+    expect(etag).toBeTruthy();
+    const render = vi.spyOn(MarkdownIt.prototype, "render");
+    const headers = { "If-None-Match": etag! };
+    const unchanged = await fetch(`${url}&revision=${before.revision}`, { headers });
+    expect(unchanged.status).toBe(304);
+    expect(unchanged.headers.get("etag")).toBe(etag);
+    expect(await unchanged.text()).toBe("");
+    expect(render).not.toHaveBeenCalled();
+    for (const suffix of ["page=2&page_size=1", "page=1&page_size=20", "page=1&page_size=1&category=项目约定"]) {
+      const changedView = await fetch(`${viewer.url}/api/documents?${suffix}`, { headers });
+      expect(changedView.status).toBe(200);
+      expect(changedView.headers.get("etag")).not.toBe(etag);
+    }
+    await classifyManagedDocument(root, { id: record.id, category: "团队决策", reason: "Updated category" });
+    expect((await fetch(`${url}&revision=${before.revision}`, { headers })).status).toBe(409);
+    const changed = await fetch(url, { headers });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("etag")).not.toBe(etag);
+    const currentHeaders = { "If-None-Match": changed.headers.get("etag")! };
+    await writeFile(join(root, "docnexus/library/policy.md"), "Unadopted edit");
+    expect((await fetch(url, { headers: currentHeaders })).status).toBe(503);
+  });
+
+  it("invalidates conditional responses when a fact expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      const { root, viewer } = await setup();
+      await upsertManagedDocument(root, { file_path: "expiry.md", source: "Decision", document: "{{fact:fact_expiry}}", metadata: {
+        title: "Expiry", summary: "Temporary policy", tags: [], entities: [], relationships: [], facts: [{ id: "fact_expiry", text: "Temporary assertion", provenance: "Owner", valid_from: "2020-01-01T00:00:00Z", valid_until: "2026-01-02T00:00:00Z" }]
+      } });
+      const first = await fetch(`${viewer.url}/api/documents`);
+      const before = await first.json() as DocumentQueryOutput;
+      const headers = { "If-None-Match": first.headers.get("etag")! };
+      expect((await fetch(`${viewer.url}/api/documents?revision=${before.revision}`, { headers })).status).toBe(304);
+      vi.setSystemTime(new Date("2026-01-02T00:00:00Z"));
+      expect((await fetch(`${viewer.url}/api/documents?revision=${before.revision}`, { headers })).status).toBe(409);
+      const after = await fetch(`${viewer.url}/api/documents`, { headers });
+      expect(after.status).toBe(200);
+      expect((await after.json() as DocumentQueryOutput).documents[0].facts[0].status).toBe("expired");
+    } finally { vi.useRealTimers(); }
   });
 
   it("rejects writes, foreign origins, DNS rebinding, arbitrary files and malformed query options", async () => {

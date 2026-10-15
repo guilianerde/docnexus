@@ -25,6 +25,82 @@ Default hybrid retrieval takes `min(100, max(20, limit * 5))` candidates per arm
 
 Expand the corpus with real project queries and adversarial aliases, outdated prose, conflicting sources and unsupported questions before changing model or fusion parameters. Track quality and latency separately; this fixture is too small to justify a performance claim.
 
+## Source-based quality baseline
+
+The original five-document smoke corpus remains unchanged. The separate quality suite evaluates 15 documents: ten curated extracts anchored in four repository source files, and five explicitly simulated documents. Its 44 authored questions comprise 30 source-supported project questions, six unsupported questions, and eight simulation cases covering aliases, long-document endings, replacement, expiry, withdrawal, future facts, cross-document references and an unapproved proposal conflicting with a confirmed decision.
+
+```bash
+npm run eval:retrieval:quality                         # development split only
+npm run eval:retrieval:quality -- --split holdout      # explicit held-out comparison
+npm run eval:retrieval:quality -- --split all          # initial full baseline
+```
+
+The labels live in `test/fixtures/retrieval-quality-eval.json`. Development has 30 questions (21 source-supported, three unsupported, six simulated); holdout has 14 (nine source-supported, three unsupported, two simulated). All questions targeting a document family belong to one split. Both splits search the same full corpus, including distractors. CI runs development only on Node.js 24; it gates source drift, citation/fact consistency, response budgets and unexpected errors, not a retrospectively selected quality threshold. Keep retrieval defaults frozen while establishing the baseline, and evaluate proposed changes on development before an explicit holdout comparison.
+
+These are repository-authored questions over selected source excerpts, not observed user traffic, an independent human annotation study or a blind holdout. Answer spans must exist in their target source or simulated fact registry before evaluation. Changed source excerpts fail validation and require rereading and reviewing the labels; the runner does not silently rewrite them. The report records fixture/source hashes, model identity, initial indexing cost and per-question results. Simulated results and source-supported results are reported separately.
+
+The runner compares these existing product paths:
+
+- **Keyword:** top three literal document results. Evidence starts from the returned snippet, with no vector, graph or neighbor expansion.
+- **Vector:** public `recall --mode vector --limit 3`, which ranks chunks and can return fewer than three unique documents.
+- **Hybrid:** public default recall, returning up to three unique documents.
+
+This measures product behavior; the differing candidate units and expansion policies make it unsuitable as an isolated ranking-algorithm ablation. Each mode retrieves once per question, then reuses those exact candidates for `window`, `section` and `page` under 1200 and 4000 complete-response byte budgets. Evidence assembly never reruns retrieval to make one delivery strategy look better.
+
+Metrics distinguish the following:
+
+| Measurement | Meaning |
+| --- | --- |
+| `hit_at_1`, `hit_at_3`, `mrr_at_3` | Position of the first labeled relevant document; duplicate chunks do not improve document rank |
+| `document_recall_at_3`, `all_documents_at_3` | Fraction/all of the required documents retrieved, including multi-document conflict questions |
+| `mean_coverage`, `complete`, `missing` | Exact labeled answer spans or fact/status units retained with their correct source; partial or misplaced evidence does not count |
+| `citation_errors`, `fact_errors`, `budget_violations` | Mechanical source-version and fact-lifecycle consistency, and the actual complete JSON byte budget |
+| `no_answer_with_candidates` | Unsupported questions that still return neighbors; this is **not** successful or failed agent abstention |
+| `embedding_calls`, `retrieval_ms`, `assembly_ms` | Observed calls and timing, with initial indexing recorded separately |
+
+Latency is one sample per question in fixed keyword/vector/hybrid order, after indexing with a reused local model. Its p50/p95 describe this small workload, not cold CLI performance or a scale benchmark. Exact evidence coverage is also stricter than semantic sufficiency and does not measure a host model's final answer, citation selection, proactive reading or refusal. Those remain explicitly unmeasured and need the separate [agent evaluation](agent-evaluation.zh-CN.md).
+
+The first full report is [retrieval-quality-2026-10-15.json](baselines/retrieval-quality-2026-10-15.json). Failed retrievals and omitted answer evidence remain in its per-question rows; the baseline does not assert that the hybrid strategy always wins.
+
+That report preserves the source hashes at the time of measurement. Later documentation edits do not rewrite the historical results; a new comparison must record its own fixture/source hashes and outcomes.
+
+Observed on 2026-10-15, **source-supported questions only**, excluding simulations and unsupported questions:
+
+| Split | Mode | Top 1 | Top 3 | MRR@3 | Complete section evidence, budget 4000 |
+| --- | --- | --- | --- | --- | --- |
+| Development | Keyword | 17/21 | 20/21 | 0.873 | 18/21 |
+| Development | Vector | 13/21 | 18/21 | 0.730 | 18/21 |
+| Development | Hybrid | 18/21 | 18/21 | 0.857 | 18/21 |
+| Holdout | Keyword | 8/9 | 9/9 | 0.944 | 8/9 |
+| Holdout | Vector | 6/9 | 7/9 | 0.722 | 7/9 |
+| Holdout | Hybrid | 7/9 | 9/9 | 0.870 | 8/9 |
+
+All 792 delivery comparisons had zero mechanical citation, fact-state or budget violations; there were no network attempts or unexpected errors. This does not mean all questions retained their answers. For example:
+
+- `concurrency-locks-3`: the hybrid top three contain the correct lock document, but section evidence at budget 4000 omits its answer after earlier context consumes the budget.
+- `retrieval-fusion-3`: the English question about whether similarity proves answer existence misses the labeled source in all three retrieval modes.
+- `sim-long-ending`: the longer query combining `QUEUE_RECOVERY_ORDER` with Chinese wording misses the long document in all three modes.
+- `sim-withdrawn`: hybrid retrieves the fact registry but omits the requested withdrawal state under section budget 4000.
+
+Keep these failures as development/review inputs. Evidence coverage, retrieval rank and host-agent answer quality are separate outcomes; neither the passing consistency checks nor the holdout's small sample justify a general quality claim.
+
+### Architecture comparison — 2026-10-15
+
+The [architecture report](baselines/retrieval-quality-architecture-2026-10-15.json) uses the same 44 questions, model and retrieval parameters after projection versioning, structured source anchors and budget planning. The original report remains unchanged. Keyword delivery now passes the public search anchor alongside its snippet; the old adapter used snippet-only text lookup. Differences therefore describe the integrated pipeline, not a budget-only ablation. Some original holdout failures were inspected during diagnosis, so this is a known regression comparison; independent generalization claims require new unseen questions.
+
+All 792 deliveries again had zero mechanical citation/fact errors, budget violations or unexpected errors, with no network attempts. Complete labeled evidence under section/4000, repository-supported questions only:
+
+| Split | Mode | Original | Architecture update |
+| --- | --- | --- | --- |
+| Development | Keyword | 18/21 | 17/21 |
+| Development | Vector | 18/21 | 18/21 |
+| Development | Hybrid | 18/21 | 18/21 |
+| Original holdout | Keyword | 8/9 | 9/9 |
+| Original holdout | Vector | 7/9 | 7/9 |
+| Original holdout | Hybrid | 8/9 | 9/9 |
+
+`concurrency-locks-3` now retains the answer with hybrid delivery; `sim-withdrawn` retains its atomic withdrawal state. The keyword-only development cases `documents-pagination-3` and `operations-release-3` lose their labeled span at this budget, while other coverage changes offset one of those losses. Their document retrieval succeeds, but compact-hit reservation and precise field anchors give different context than the earlier page fallback. These failures remain recorded rather than being removed from the corpus. `sim-long-ending` and hybrid `sim-cross-document` still miss relevant documents; this change does not repair query analysis or ranking. Complete labeled evidence is not full-document delivery or model answer accuracy.
+
 ## Long-document regression
 
 ```bash

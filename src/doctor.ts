@@ -80,9 +80,9 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
     try {
       const state = await inspectRetrievalIndex(root);
       index = { ...state, ok: state.in_sync };
-      if (!state.in_sync) recommendations.push("Run docnexus index sync to rebuild derived state from current text.");
+      if (!state.in_sync) recommendations.push(state.schema_status === "unsupported" ? "Use a DocNexus release compatible with the stored projection version; canonical text remains readable." : "Run docnexus index sync to rebuild derived state from current text.");
       database = state.available ? await checkPostgresVectorIndex(root) : state.record_count === 0 && !state.message ? { ok: true, skipped: true, message: "retrieval database is created on first sync" } : { ok: false, message: state.message ?? "retrieval store is missing" };
-      if (!database.ok && state.available) recommendations.push("Run docnexus graph repair --force, or index rebuild --force if document projections are damaged.");
+      if (!database.ok && state.available && state.schema_status === "current") recommendations.push("Run docnexus graph repair --force, or index rebuild --force if document projections are damaged.");
     } catch (error) {
       index = { ok: false, message: error instanceof Error ? error.message : String(error) };
       recommendations.push("Inspect the derived stores and rebuild them from verified text.");
@@ -96,8 +96,8 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
   if (project.ok) {
     if (!skills.ok) finding("skills_outdated", skills.message ?? "Project skills are missing or outdated.");
     if (!records.ok) finding("text_integrity_error", records.message ?? "Canonical text has edits, missing files or damaged records.", { edited: records.edited, missing_library: records.missing_library, invalid_records: records.invalid_records });
-    else if (!index.ok) finding(index.message ? "index_unavailable" : "index_outdated", index.message ?? "The retrieval projection is not synchronized.");
-    if (!database.ok && index.available) finding("index_unavailable", database.message ?? "The vector index is unavailable.");
+    else if (!index.ok) finding(index.schema_status === "unsupported" ? "index_schema_incompatible" : index.schema_status === "legacy" ? "index_outdated" : index.message ? "index_unavailable" : "index_outdated", index.message ?? "The retrieval projection is not synchronized.");
+    if (!database.ok && index.available && index.schema_status === "current") finding("index_unavailable", database.message ?? "The vector index is unavailable.");
     if (!embedding.ok) finding("embedding_failed", embedding.message ?? "The offline model is unavailable.");
   }
   return {

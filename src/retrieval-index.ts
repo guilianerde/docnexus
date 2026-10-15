@@ -1,4 +1,5 @@
 import { embedText } from "./embedder.js";
+import { documentAnchor, factAnchor, recordVersion } from "./source-anchor.js";
 import { asDocNexusError, DocNexusError } from "./errors.js";
 import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { randomUUID } from "node:crypto";
@@ -8,18 +9,19 @@ import { createDefaultEmbedder } from "./embedder-default.js";
 import type { Embedder } from "./embedder.js";
 import { EMBEDDING_DIMENSION } from "./embedding-config.js";
 import { relationshipsToEdges } from "./graph-mapping.js";
-import { sha256 } from "./hash.js";
+import { sha256, stableJson } from "./hash.js";
 import { createChunkId } from "./ids.js";
 import { listRecordFiles, refreshFactViews } from "./managed-documents.js";
 import type { ManagedChunk } from "./types.js";
 import { projectionKnowledge, resolveKnowledge } from "./knowledge.js";
 import { loadKnowledgeDocuments } from "./knowledge-service.js";
 import { withRetrievalDatabase, type RetrievalDatabase } from "./postgres-engine.js";
-import { deletePostgresDocument, ensurePostgresStore, hasRetrievalSchema, readChunks, readIndexedProjections, readIndexState, replacePostgresProjection, writeIndexState } from "./postgres-store.js";
+import { deletePostgresDocument, ensurePostgresStore, inspectProjectionSchema, readChunks, readIndexedProjections, readIndexState, replacePostgresProjection, writeIndexState } from "./postgres-store.js";
 
 export interface RetrievalIndexState {
   available: boolean; record_count: number; indexed_count: number; chunk_count: number;
   unindexed: string[]; outdated: string[]; orphaned: string[]; in_sync: boolean; message?: string;
+  schema_version?: string | null; expected_schema_version?: number; schema_status?: "missing" | "legacy" | "current" | "unsupported";
 }
 export interface IndexSyncResult {
   result: "completed"; processed_documents: number; rebuilt_documents: number; removed_documents: number;
@@ -36,11 +38,16 @@ export async function inspectRetrievalIndex(root: string, at = new Date().toISOS
     const records = snapshot?.records ?? await listRecordFiles(root);
     const documents = snapshot?.documents ?? await loadKnowledgeDocuments(root);
     const knowledge = snapshot?.knowledge ?? resolveKnowledge(documents, at);
-    const expected = new Map(documents.map(document => [document.id, (snapshot?.projectDocument(document.id) ?? projectionKnowledge(knowledge, document)).signature]));
+    const versions = new Map(records.map(record => [record.id, sha256(stableJson(record))]));
+    const expected = new Map(documents.map(document => [document.id, anchoredProjectionSignature(snapshot?.projectDocument(document.id) ?? projectionKnowledge(knowledge, document), versions)]));
     const missing: RetrievalIndexState = { available: false, record_count: records.length, indexed_count: 0, chunk_count: 0, unindexed: records.map(r => r.id), outdated: [], orphaned: [], in_sync: records.length === 0 };
     try {
       return (await withRetrievalDatabase(root, async db => {
-        if (!await hasRetrievalSchema(db)) return missing;
+        const schema = await inspectProjectionSchema(db);
+        const version = { schema_version: schema.version, expected_schema_version: schema.expected_version, schema_status: schema.status };
+        if (schema.status === "missing") return { ...missing, ...version };
+        if (schema.status !== "current") return { ...missing, ...version, available: true, in_sync: false,
+          message: schema.status === "legacy" ? "retrieval projection needs rebuilding; run docnexus index sync" : "incompatible retrieval projection; use a compatible DocNexus release" };
         const indexed = await readIndexedProjections(db);
         const state = await readIndexState(db);
         const byId = new Map(indexed.map(row => [row.id, row]));
@@ -48,10 +55,10 @@ export async function inspectRetrievalIndex(root: string, at = new Date().toISOS
         const unindexed = records.filter(r => !byId.has(r.id)).map(r => r.id);
         const outdated = records.filter(r => {
           const row = byId.get(r.id);
-          return row && (state.get("chunking_signature") !== CHUNKING_SIGNATURE || row.projection_signature !== expected.get(r.id) || row.document_hash !== r.document_hash || row.metadata_hash !== r.metadata_hash || row.file_path !== r.file_path || row.chunk_count === 0);
+          return row && (state.get("chunking_signature") !== CHUNKING_SIGNATURE || row.projection_signature !== expected.get(r.id) || row.document_hash !== r.document_hash || row.metadata_hash !== r.metadata_hash || row.record_version !== sha256(stableJson(r)) || row.file_path !== r.file_path || row.chunk_count === 0 || row.missing_anchor_count > 0);
         }).map(r => r.id);
         const orphaned = indexed.filter(row => !ids.has(row.id)).map(row => row.id);
-        return { available: true, record_count: records.length, indexed_count: indexed.length, chunk_count: indexed.reduce((sum, row) => sum + row.chunk_count, 0), unindexed, outdated, orphaned, in_sync: unindexed.length + outdated.length + orphaned.length === 0 };
+        return { ...version, available: true, record_count: records.length, indexed_count: indexed.length, chunk_count: indexed.reduce((sum, row) => sum + row.chunk_count, 0), unindexed, outdated, orphaned, in_sync: unindexed.length + outdated.length + orphaned.length === 0 };
       }, false)) ?? missing;
     } catch (error) { return { ...missing, in_sync: false, message: (error as Error).message }; }
   });
@@ -79,7 +86,11 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
       validateEmbedding(probe);
       signature = sha256(JSON.stringify({ probe, tokenLimit: tokenBudget?.maxTokens ?? null }));
     }
-    const projections = new Map(documents.map(document => [document.id, snapshot.projectDocument(document.id)]));
+    const versions = new Map(records.map(record => [record.id, snapshot.recordVersion(record.id)]));
+    const projections = new Map(documents.map(document => {
+      const projection = snapshot.projectDocument(document.id);
+      return [document.id, { ...projection, signature: anchoredProjectionSignature(projection, versions) }] as const;
+    }));
     const plan = await withProjectLock(root, async () => (await withRetrievalDatabase(root, async db => {
       await ensurePostgresStore(db);
       const state = await inspectRetrievalIndex(root, snapshot.at, snapshot);
@@ -96,8 +107,9 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
     const prepared: Array<{ record: WorkspaceSnapshot["records"][number]; projection: ReturnType<typeof projectionKnowledge>; chunks: ManagedChunk[] }> = [];
     for (const record of plan.pending) {
       const projection = projections.get(record.id)!;
-      const parts = chunkText(snapshot.renderDocument(record.id).document, { tokenBudget });
-      for (const fact of projection.facts) parts.push(...chunkText(`[${fact.id}] ${fact.text}\nSource: ${fact.provenance}\nValid from: ${fact.valid_from}`, { tokenBudget }));
+      const parts = chunkText(snapshot.sourceDocument(record.id).rendered, { tokenBudget }).map(part => ({ ...part,
+        source_anchor: documentAnchor(snapshot, record.id, part.source_start, part.source_end) }));
+      for (const fact of projection.facts) parts.push(...chunkText(`[${fact.id}] ${fact.text}\nSource: ${fact.provenance}\nValid from: ${fact.valid_from}`, { tokenBudget }).map(part => ({ ...part, source_anchor: factAnchor(snapshot, fact) })));
       const candidates = new Map<string, Awaited<ReturnType<typeof readChunks>>>();
       for (const chunk of plan.previous.get(record.id)!) {
         if (chunk.embedding_signature !== signature) continue;
@@ -111,7 +123,7 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
         const embedding = old?.embedding ?? await embedText(embedder, part.text);
         validateEmbedding(embedding);
         old ? reused++ : embedded++;
-        chunks.push({ id: old?.id ?? createChunkId(), document_id: record.id, chunk_index: index, text: part.text, text_hash: part.text_hash, embedding, created_at: old?.created_at ?? record.updated_at });
+        chunks.push({ id: old?.id ?? createChunkId(), document_id: record.id, chunk_index: index, text: part.text, text_hash: part.text_hash, embedding, created_at: old?.created_at ?? record.updated_at, source_anchor: part.source_anchor });
       }
       prepared.push({ record, projection, chunks });
     }
@@ -128,7 +140,7 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
         if (prepared.length || plan.orphaned.length || plan.stateChanged) await writeIndexState(db, "index_generation", randomUUID());
         for (const id of plan.orphaned) await deletePostgresDocument(db, id);
         for (const { record, projection, chunks } of prepared) {
-          await replacePostgresProjection(db, { ...record, summary: projection.metadata.summary, tags: projection.metadata.tags, projection_signature: projection.signature }, chunks, relationshipsToEdges(projection.metadata), signature!);
+          await replacePostgresProjection(db, { ...record, record_version: recordVersion(snapshot, record.id), summary: projection.metadata.summary, tags: projection.metadata.tags, projection_signature: projection.signature }, chunks, relationshipsToEdges(projection.metadata), signature!);
         }
         // A failed batch retains old model/chunking signatures for the next sync.
         if (plan.stateChanged) await db.transaction(async tx => {
@@ -147,7 +159,12 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
 
 export async function removeIndexedDocument(root: string, id: string): Promise<void> {
   await withProjectLock(root, async () => {
-    try { await withRetrievalDatabase(root, async db => { if (await hasRetrievalSchema(db)) await deletePostgresDocument(db, id); }, false); }
+    try { await withRetrievalDatabase(root, async db => {
+      const schema = await inspectProjectionSchema(db);
+      if (schema.status === "missing") return;
+      if (schema.status !== "current") throw new DocNexusError(schema.status === "unsupported" ? "index_schema_incompatible" : "index_outdated", "derived deletion requires a compatible projection");
+      await deletePostgresDocument(db, id);
+    }, false); }
     catch { process.stderr.write("docnexus: derived deletion pending; next index sync will reconcile it from canonical text\n"); }
   });
 }
@@ -158,4 +175,9 @@ export async function listIndexedChunks(root: string, id: string): Promise<Manag
 
 function validateEmbedding(embedding: number[]): void {
   if (embedding.length !== EMBEDDING_DIMENSION || !embedding.every(Number.isFinite)) throw new DocNexusError("embedding_failed", "embedding dimension mismatch or non-finite values");
+}
+
+function anchoredProjectionSignature(projection: ReturnType<typeof projectionKnowledge>, versions: Map<string, string>): string {
+  const owners = [...new Set(projection.facts.map(fact => fact.document_id))].sort();
+  return sha256(stableJson({ knowledge: projection.signature, fact_owners: owners.map(id => [id, versions.get(id)]) }));
 }

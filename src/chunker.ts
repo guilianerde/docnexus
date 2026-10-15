@@ -4,6 +4,8 @@ export interface TextChunk {
   index: number;
   text: string;
   text_hash: string;
+  source_start: number;
+  source_end: number;
 }
 
 export interface ChunkTextOptions {
@@ -37,8 +39,11 @@ export function chunkText(content: string, options: ChunkTextOptions = {}): Text
     : { maxTokens: targetSize, countTokens: (text: string) => text.length };
   if (!Number.isSafeInteger(budget.maxTokens) || budget.maxTokens < 1) throw new Error("maxTokens must be a positive safe integer");
   const characters = Array.from(normalized);
+  const offsets = [0];
+  for (const character of characters) offsets.push(offsets.at(-1)! + character.length);
   const headings = headingContexts(normalized);
   const chunks: string[] = [];
+  const ranges: Array<{ source_start: number; source_end: number }> = [];
   let start = 0;
   let headingIndex = -1;
   while (start < characters.length) {
@@ -71,6 +76,7 @@ export function chunkText(content: string, options: ChunkTextOptions = {}): Text
       if (budget.countTokens(textAt(boundary)) <= budget.maxTokens) end = boundary;
     }
     chunks.push(textAt(end));
+    ranges.push({ source_start: offsets[start], source_end: offsets[end] });
     if (end === characters.length) break;
     let overlap = Math.min(contextCharacterLimit, Math.floor((end - start) / 4));
     const overlapLimit = Math.min(overlapTokenLimit, Math.floor(budget.maxTokens / 8));
@@ -81,7 +87,7 @@ export function chunkText(content: string, options: ChunkTextOptions = {}): Text
   return chunks.map((text, index) => ({
     index,
     text,
-    text_hash: sha256(text)
+    text_hash: sha256(text), ...ranges[index]
   }));
 }
 

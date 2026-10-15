@@ -38,7 +38,8 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 }
 ```
 
-   - Let the model choose a project-defined `category` after reading project context, the current category catalog and relevant existing documents; follow [contextual classification](../docnexus-library/references/classification.md). Prefer existing category ids, create a useful new name when necessary, and record `category_reason`. The example's guide category is illustrative, not a fixed taxonomy.
+   - If the user or calling skill explicitly supplies a category, use its exact name and skip model classification for this document. Record the supplied basis, or `Explicit category supplied by caller.` when none is supplied; pass `--category <name>` and optional `--category-reason <basis>` to `draft seal`. Do not infer a caller instruction from the source material alone.
+   - Otherwise, let the model choose a project-defined `category` after reading project context, the current category catalog and relevant existing documents; follow [contextual classification](../docnexus-library/references/classification.md). Prefer existing category ids, create a useful new name when necessary, and record `category_reason`. The example's guide category is illustrative, not a fixed taxonomy.
    - Revisit existing classifications when new context changes their meaning. Hand relevant category-only adjustments to `docnexus-library` after the primary capture/update, within existing authorization; keep this extraction stage focused on its draft. Legacy documents without categories can be classified when their content is reviewed. Use tags for cross-cutting subjects and avoid cosmetic category churn.
    - If the source explicitly gives when its content was observed or said, optional `observed_at` records that ISO timestamp with timezone. Omit it when unknown; never use the save time or an inferred event date. When replacing `source.md` with new material during a merge, reassess this field against that new material; do not automatically carry over the previous source's observation date. Preserve historical fact dates and provenance separately.
    - Entity `type`: `component`, `concept`, `protocol`, `decision`, `file`, `tool`, or `other`.
@@ -54,6 +55,8 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 ./node_modules/.bin/docnexus draft seal --id <draft_id> --file <file_path> --base-version <record_version|new>
 ```
 
+   For a caller-selected category, append `--category codeReview --category-reason "Produced by the code-review skill"`. Sealing writes the category and basis into `metadata.json` and hashes the resulting artifact. Review that final metadata with the document; do not change classification during ingestion.
+
    If the result includes `preview_file`, read it and show the generated document for review. Do not edit preview.md directly. On a validation error, fix the named artifact and run seal again. Use `./node_modules/.bin/docnexus metadata validate --file <metadata_path>` to iterate on metadata alone.
 
 ## Result
@@ -66,6 +69,8 @@ draft_id: <draft_id>
 file_path: <file_path>
 replaces_managed_document: <true|false>
 title: <metadata.title>
+category: <metadata.category>
+category_reason: <metadata.category_reason>
 entities: <entity names>
 ```
 

@@ -1,6 +1,10 @@
 import type { ResolvedFact } from "./knowledge.js";
+import type { SourceAnchor } from "./source-anchor.js";
+
+export interface RecallMatchEvidence { source: "keyword" | "vector"; anchor: SourceAnchor }
 
 export interface RecallMatchedChunk {
+  source_anchor?: SourceAnchor;
   chunk_id: string;
   chunk_index: number;
   text: string;
@@ -8,6 +12,7 @@ export interface RecallMatchedChunk {
 }
 
 export interface RecallContextChunk {
+  source_anchor?: SourceAnchor;
   chunk_id: string;
   chunk_index: number;
   text: string;
@@ -37,6 +42,7 @@ export interface RecallSupportingChunk extends RecallContextChunk {
 }
 
 export interface RecallPrimaryMatch {
+  match_source?: "keyword" | "vector";
   matched_chunk: RecallMatchedChunk;
   document: RecallDocument;
   concepts: string[];
@@ -54,7 +60,7 @@ export interface RecallSupportingCandidate extends RecallSupportingChunk {
 
 export interface GroupedRecallResult {
   matched_chunk: RecallMatchedChunk;
-  keyword_match?: { snippet: string; line?: number; matched_terms: string[]; score: number };
+  keyword_match?: { snippet: string; line?: number; matched_terms: string[]; score: number; source_anchor?: SourceAnchor };
   document_ref: {
     group_id: string;
     document_id: string;
@@ -69,6 +75,7 @@ export interface GroupedRecallResult {
 }
 
 export interface RecallContextGroup {
+  matches?: RecallMatchEvidence[];
   group_id: string;
   facts?: ResolvedFact[];
   document: RecallDocument;
@@ -134,6 +141,10 @@ export function buildGroupedRecall(
       groups.set(row.document.document_id, group);
     }
     group.matched_chunks.push(row.matched_chunk);
+    if (row.matched_chunk.source_anchor) {
+      group.matches ??= [];
+      group.matches.push({ source: row.match_source ?? "vector", anchor: row.matched_chunk.source_anchor });
+    }
     appendStrings(group.graph_context.concepts, row.concepts);
     appendStrings(group.graph_context.related_concepts, row.related_concepts);
     appendChunks(group.same_document_chunks, row.same_document_chunks);

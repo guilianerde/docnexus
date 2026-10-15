@@ -87,7 +87,8 @@ describe("unified PostgreSQL retrieval", () => {
     await classifyManagedDocument(path, { id: saved.id, category: "接口约定", reason: "User classification" });
     const result = await syncRetrievalIndex(path, {}, embedder);
     expect(result).toMatchObject({ embedded_chunks: 0, reused_chunks: before.length });
-    expect(await listIndexedChunks(path, saved.id)).toEqual(before);
+    const version = (await getManagedRecord(path, saved.id)).record_version;
+    expect(await listIndexedChunks(path, saved.id)).toEqual(before.map(chunk => ({ ...chunk, source_anchor: { ...chunk.source_anchor!, record_version: version } })));
     expect(await indexOid(path)).toEqual(oid);
     expect((await syncRetrievalIndex(path, {}, embedder)).processed_documents).toBe(0);
   });

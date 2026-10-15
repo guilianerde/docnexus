@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.14.0 keeps workspace format 6. Existing format-6 text needs only `index sync` to build the new projections; no reset is needed. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.15.0 keeps workspace format 6. Existing format-6 text needs only `index sync` to build the new projections; no reset is needed. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -69,9 +69,9 @@ Optional metadata entity `aliases` resolve alternative names to canonical graph 
 
 ## Document viewer query
 
-Run `./node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Visible pages check for updates every 15 seconds; manual refresh is also available. Revision changes restart pagination at page one. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
+Run `./node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Visible pages check for updates every 15 seconds; manual refresh is also available. Revision changes restart pagination at page one. ETag/304 responses skip HTML rendering and full-body transfer for unchanged views while retaining canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
 
-The model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
+When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
 
 ```bash
 ./node_modules/.bin/docnexus document query --all
@@ -96,9 +96,20 @@ Long documents and active facts are split with the local model's actual tokenize
 
 Capture: `draft new` → write three artifacts → `draft seal` → user review → `document add --draft <id>`. Fact-backed drafts emit a sealed preview.md for review; changed referenced facts require resealing and review. Replacing an existing path requires explicit authorization and `--replace`. Changed sealed artifacts must be resealed, with authorization covering the revised content.
 
+A calling skill can supply an explicit category for this write and skip model classification. For example, after a code-review skill prepares the three draft artifacts:
+
+```bash
+./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
+  --category codeReview --category-reason "Produced by the code-review skill"
+# Review the document and sealed metadata, then ingest.
+./node_modules/.bin/docnexus document add --draft <draft_id>
+```
+
+The category name is preserved exactly. The basis is optional, defaulting to `Explicit category supplied by caller.` Classification is included in the sealed metadata hash, and ingestion uses that reviewed value. Updates still require the current `--base-version <record_version>` and `--replace`. Category maintenance in the same capture pipeline preserves the caller's choice; a later authorized update can change it.
+
 Updates must pass `--base-version <record_version>` from the `document get` or `document query` read used to compose the draft. If sealing reports a conflict, reread and merge before using the new version. Use `--base-version new` for a new path. Pending manifest versions 1/2 must be resealed after rereading and merging.
 
-Sealing records the target document version. Ingestion rejects newer prose, source or category changes, deleted/recreated targets and newly occupied paths. Reread and merge current knowledge before resealing; `--replace` does not bypass this check. Existing ready format-1 draft manifests need resealing into format 2; stored documents remain workspace format 6. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for real-source regression replay and separate model review tasks.
+Sealing records the target document version. Ingestion rejects newer prose, source or category changes, deleted/recreated targets and newly occupied paths. Reread and merge current knowledge before resealing; `--replace` does not bypass this check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain workspace format 6. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for real-source regression replay and separate model review tasks.
 
 `init --agent` links project skills into `.agents/skills/` or `.claude/skills/` and adds a marked block to `AGENTS.md` or `CLAUDE.md`. Claude loads the directory through `@docnexus/CONCEPTS.md`; Codex reads it as instructed. Reset removes these links and blocks.
 
@@ -107,6 +118,8 @@ Sealing records the target document version. Ingestion rejects newer prose, sour
 Everything except `store/` and `.runtime/` is text and can be committed. After cloning, pulling or switching branches, keyword search and document reads use the current text immediately; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
 
 ## Database engines
+
+Retrieval projection schema version 2 is independent of workspace format 6. `index status` / `doctor` expose version compatibility. Known older projections rebuild from canonical text on the next sync or recall, preserving sources, history, drafts and model assets; unknown/newer versions are refused. Keyword/vector matches retain structured source anchors, and evidence delivery reserves compact primary hits before expanding context. See the [retrieval pipeline](docs/architecture/retrieval-pipeline.zh-CN.md).
 
 The zero-configuration default is PGLite, created lazily at `docnexus/store/brain.pglite` on the first index sync or semantic recall. For an existing Postgres server with pgvector available, set `DOCNEXUS_DATABASE_URL` in the CLI environment and run `docnexus index sync`. Credentials are not written into project files. Both engines use the same schema and SQL; document, chunk and graph projection changes commit in one database transaction. Text remains the canonical source and is reconciled separately.
 
@@ -135,7 +148,7 @@ skills link --target claude|codex|all
 
 draft new [--slug auth]
 metadata validate --file docnexus/drafts/<draft_id>/metadata.json
-draft seal --id <draft_id> --file auth/rotation.md
+draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
 document add --draft <draft_id> [--replace]
 draft list [--status open|ready|ingested|invalid]
 draft discard --id <draft_id> --force
@@ -171,6 +184,7 @@ npm test
 npm run typecheck
 npm run build
 npm run eval:retrieval
+npm run eval:retrieval:quality   # Development only; see retrieval evaluation for explicit holdout runs.
 npm run eval:knowledge
 npm run eval:agent -- prepare
 node scripts/tarball-smoke.mjs

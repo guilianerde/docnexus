@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0 — 2026-10-15
+
+Compatibility: workspace format 6 and draft manifest format 3 remain unchanged. Derived retrieval schema 2 rebuilds known older projections from canonical text on the next sync/recall; sources, histories and pending drafts are preserved. Unknown or newer projection schemas are refused.
+
+- Version the derived retrieval schema independently of canonical text. Rebuild known legacy projections transactionally from text, diagnose version/shape mismatches, and refuse unknown/newer schemas without losing sources or drafts.
+- Carry versioned body ranges, fact identities and metadata anchors through indexing, keyword/vector matches and evidence assembly. Refresh cross-document owner versions while reusing unchanged vectors, locate repeated paragraphs correctly, and reject stale anchors.
+- Reserve compact primary evidence across candidates before expanding requested context. Retain both retrieval arms, directly matched fact states and distant hits while preserving citation, lifecycle and complete-response budget checks.
+- Let users and calling skills supply an exact category through `draft seal --category`, with optional `--category-reason`. Seal the resulting metadata before review, preserve it through ingestion and record the classification in audit history. Skills skip model classification for that write; later authorized reclassification remains possible. Workspace format 6 and draft manifest format 3 are unchanged.
+- Prioritize directly matched atomic facts in budgeted evidence, including current replacements of historical references, before prose consumes the budget. Preserve attribution, lifecycle state and complete-response budget checks.
+- Add view-specific weak ETags and conditional polling to the local document viewer. Unchanged views return an empty 304 without HTML rendering or full-body transfer; canonical integrity, fact-time and revision checks still run.
+- Add a source-anchored retrieval quality suite with 30 answerable repository-authored questions, six unsupported questions and eight explicit simulations. Separate development/holdout target families, reuse fixed candidates across delivery units and budgets, retain failures in the initial baseline report, and run development checks in Node.js 24 CI. Mechanical coverage remains separate from host-agent answer and abstention quality.
+
 ## 0.14.0 — 2026-10-15
 
 This release includes the previously unpublished 0.6–0.13 work, including the PGLite/Postgres engine, fact lifecycle, hybrid recall and local document viewer.

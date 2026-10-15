@@ -7,6 +7,7 @@ import MarkdownIt from "markdown-it";
 import { DocumentRevisionChangedError, queryDocuments, type DocumentQueryInput } from "./document-query.js";
 import { requireInitializedProject } from "./project.js";
 import { isDocumentCategory } from "./types.js";
+import { sha256 } from "./hash.js";
 
 const markdown = new MarkdownIt({ html: false, linkify: false });
 markdown.core.ruler.before("inline", "viewer-fact-markers", (state) => {
@@ -103,6 +104,14 @@ export async function startDocumentViewer(projectRoot: string, port = 0): Promis
     }
     try {
       const snapshot = await queryDocuments(root, input);
+      const etag = `W/"${sha256(JSON.stringify([snapshot.revision, input.all ?? false, input.page ?? 1, input.page_size ?? 20, input.category ?? null]))}"`;
+      response.setHeader("ETag", etag);
+      // Validate canonical text and fact time before skipping HTML and transfer.
+      if (request.headers["if-none-match"] === etag) {
+        response.writeHead(304);
+        response.end();
+        return;
+      }
       json(200, { ...snapshot, documents: snapshot.documents.map((document) => ({ ...document, html: renderViewerMarkdown(document.document) })) });
     } catch (error) {
       if (error instanceof DocumentRevisionChangedError) {

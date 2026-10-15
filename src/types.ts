@@ -1,3 +1,5 @@
+import type { SourceAnchor } from "./source-anchor.js";
+
 export const entityTypes = ["component", "concept", "protocol", "decision", "file", "tool", "other"] as const;
 export const relationshipTypes = ["depends_on", "mentions", "implements", "replaces", "relates_to", "decides"] as const;
 /** Legacy display labels, not an allow-list for model-chosen project categories. */
@@ -100,6 +102,7 @@ export interface StoreStatus {
 }
 
 export interface ManagedChunk {
+  source_anchor?: SourceAnchor;
   id: string;
   document_id: string;
   chunk_index: number;

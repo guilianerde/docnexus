@@ -58,6 +58,12 @@ jobs:
       - name: Replay knowledge maintenance evaluation
         run: node scripts/eval-knowledge.mjs
 
+      - name: Measure development retrieval quality
+        if: matrix.node-version == 24
+        run: |
+          node scripts/eval-retrieval-quality.mjs > retrieval-quality-dev.json
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; const report = JSON.parse(readFileSync("retrieval-quality-dev.json", "utf8")); console.log(JSON.stringify({ summary: report.summary, invariants: report.invariants }, null, 2));'
+
       - name: Inspect package dry run
         run: npm pack --dry-run
 

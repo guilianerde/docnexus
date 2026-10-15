@@ -1,0 +1,901 @@
+{
+  "schema_version": 1,
+  "description": "Repository-authored questions over anchored source excerpts; held-out document families are not blind user traffic. All simulated documents and questions are explicit.",
+  "documents": [
+    {
+      "path": "architecture/storage.md",
+      "split": "dev",
+      "title": "文本真源与历史边界",
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "excerpts": [
+        "DocNexus 0.15.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。",
+        "时间线记录来源和更新摘要，不是每次编译产出的完整版本库。保存日期不等同于事件发生日期。历史来源和时间线不进入向量索引，完整旧正文可查 Git 历史。"
+      ]
+    },
+    {
+      "path": "runtime/embedding.md",
+      "split": "dev",
+      "title": "本地模型、切块预算与超长输入",
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "excerpts": [
+        "默认模型 `BAAI/bge-small-zh-v1.5` 的 q8 ONNX 文件随 npm 包发布；覆盖完整时优先使用项目模型。运行时禁用远程模型下载。实体与关系数组可以为空，实体为空的文档仍可进行关键词与语义召回。",
+        "真实 embedder 从已离线加载的 pipeline 取得 tokenizer，使用不截断的 `encode` 计算长度，包含 CLS/SEP 等特殊 token。模型硬上限取 tokenizer 与模型位置长度限制的较小值；随包 BGE 为 512 tokens。切块预算取模型上限与 256 的较小值，减少短结论混在过长片段中的信号稀释。",
+        "`RealEmbedder.embed` 在推理前再次计数，超出模型上限就报错，避免 pipeline 自动截掉尾部。普通查询支持模型硬上限，而不是索引片段的较小预算；过长查询需要用户或智能体缩短。开发用 hash/custom embedder 未提供 `tokenBudget()` 时，使用 1000 字符硬限制，不加载模型；自定义模型实现可提供该接口使用自己的实际 tokenizer。"
+      ],
+      "entities": [
+        {
+          "name": "本地模型",
+          "type": "component",
+          "description": "随包离线运行的嵌入模型"
+        },
+        {
+          "name": "ONNX",
+          "type": "tool",
+          "description": "随包模型格式与本地推理运行时"
+        }
+      ],
+      "relationships": [
+        {
+          "from": "本地模型",
+          "to": "ONNX",
+          "type": "depends_on",
+          "description": "默认模型的 q8 ONNX 文件随 npm 包发布。"
+        }
+      ]
+    },
+    {
+      "path": "retrieval/fusion.md",
+      "split": "dev",
+      "title": "RRF 融合与一跳图谱边界",
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "excerpts": [
+        "`recall` 默认统一检索：自动同步后，文本关键词和 pgvector 余弦向量检索分别取候选，以文档去重的名次执行等权 RRF：每路贡献 `1 / (60 + rank)`。每路文档候选窗口为 `min(100, max(20, limit * 5))`。向量路先取该窗口五倍的轻量 chunk 候选，每文档保留最佳片段；若长文挤满窗口导致文档不足，补查其余文档各自的最佳片段，避免重复 chunks 排挤其他文档。返回最多 `limit` 个唯一文档，每个选择一个代表 chunk。小表、指定候选及补查时，Postgres 优化器可能选择精确扫描，HNSW 存在不意味着每次查询都采用近似扫描。",
+        "候选阶段只读取 chunk ID、所属文档和相似度，不加载图谱或相邻正文。融合选定最终文档后，再批量补充正文、相邻片段和一跳图谱上下文。图谱 SQL 对每个主文档最多返回 5 条关系路径、3 个支持片段；相邻片段批量查询，避免逐候选往返。关键词独有候选在这些文档内选择代表片段，不读取向量。",
+        "模型或索引同步失败时，recall 报错；仍可使用不依赖模型的 search。相似度、词法和 RRF 分数均不表示事实置信度。无答案问题仍可能返回近邻，是否有足够证据作答由智能体判断。"
+      ]
+    },
+    {
+      "path": "capture/drafts.md",
+      "split": "dev",
+      "title": "草稿版本、复读合并与覆盖授权",
+      "source_path": "docs/architecture/skills-workspace.zh-CN.md",
+      "excerpts": [
+        "`document get` 与 `document query` 返回各文档的 `record_version`。更新草稿使用提炼读取时的 `--base-version <record_version>` 封存；新路径可使用 `--base-version new`。封存与入库各校验一次，冲突后必须复读合并，不能只刷新版本。`draft seal` 写入产物哈希。审阅展示目标路径、标题、摘要、实体及实际内容，授权覆盖该版本后再入库。产物变化须重新封存，并判断既有授权是否仍覆盖新内容。",
+        "`document add --draft <id>` 在项目锁内通过持久化恢复日志保存文本、追加时间线、标记草稿 ingested 并刷新目录。中断后下一次 CLI 访问先完成保存或回滚。派生向量和图谱由下一次 `recall` 或显式 `index sync` 建立，不追加额外时间线事件。已有路径需要 `--replace`。入库返回 `id`、`library_path`、`operation` 和 `timeline_path`。"
+      ]
+    },
+    {
+      "path": "documents/pagination.md",
+      "split": "dev",
+      "title": "分页默认值与快照冲突",
+      "source_path": "docs/architecture/document-query.zh-CN.md",
+      "excerpts": [
+        "默认 page 为 1、page_size 为 20，最大 page_size 为 100。`--all` 不能与分页参数并用。文档按 file_path 升序排列；空结果或越界页返回空数组，has_more 为 false。当前分页限制返回数据量与正文渲染量，完整性与快照校验仍会扫描全量文本。每次请求只读取一次各真源资产，并固定一个事实解析时间；revision 由完整 records 的哈希字段和事实状态生成，包含正文与生成表达的全部依赖，随后仅渲染当前页。",
+        "1. 编排层完成 `document add`、`document sync`、`document classify` 或 `document delete`。\n2. 可视化端重新查询第一页或全量结果，并更新分类计数。\n3. 继续翻页时同时传回 revision 和相同筛选条件。\n4. 若期间有写入、重新分类、删除，或事实生效/到期/撤回改变展示结果，则旧 revision 被拒绝；丢弃已积累的页并重新查询第一页。"
+      ]
+    },
+    {
+      "path": "documents/viewer.md",
+      "split": "dev",
+      "title": "浏览页的本机访问与轻量轮询",
+      "source_path": "docs/architecture/document-query.zh-CN.md",
+      "excerpts": [
+        "命令启动固定项目的本地服务，仅绑定 `127.0.0.1`。默认自动选择空闲端口，打开终端输出的 URL；Ctrl+C 停止服务。目标项目必须先初始化，不会自动导入当前仓库文件。",
+        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；浏览页轮询携带 `If-None-Match`，相同视图未变化时返回无正文的 304，保留当前阅读位置并跳过 Markdown HTML 渲染与完整正文传输。手动刷新和切换分页/分类仍获取完整内容。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
+      ]
+    },
+    {
+      "path": "operations/release.md",
+      "split": "dev",
+      "title": "发布授权与原生数据库验证边界",
+      "source_path": "docs/operations/release-checklist.md",
+      "excerpts": [
+        "Publishing requires the maintainer's authorization. Passing these checks does not publish the package.",
+        "- [ ] CI passes on supported Node.js 22 and 24.\n- [ ] Runtime dependencies and lockfile contain the local graph/embedding stack; the production audit has no unaccepted high/critical findings.\n- [ ] The tarball contains the CLI, six skills, the document query adapter, current docs and the complete q8 ONNX model.\n- [ ] The packaged local viewer serves its HTML/JS/CSS and current documents, rejects writes and foreign hosts/origins, and restarts pagination after source revisions. Desktop/mobile reading, empty/error states and classification changes are checked.\n- [ ] Full/page document queries agree, return current fact-backed Markdown and dynamic category counts, and refuse stale revisions after writes or effective-time changes.\n- [ ] Project-defined categories and reasons work; category-only edits preserve content/facts, append audit history, reject stale context and recover from write failures.\n- [ ] Sealed drafts reject changed, deleted/recreated and newly occupied targets; unrelated writes remain valid. Reread/merge/reseal preserves newer knowledge. Old draft manifests require resealing.\n- [ ] Real-source knowledge replay passes with source anchors intact. Recorded model decisions and simulated changes are labeled, and live model judgment is evaluated separately.\n- [ ] The installed orchestration query script works from an explicit project root; a text clone can query without retrieval stores.\n- [ ] The smoke test installs the release tarball using the repository's locked runtime dependencies in an isolated project. Offline installation requires a populated npm cache; normal CI prepares it with `npm ci`.\n- [ ] `init --agent codex`, doctor, sealed capture, keyword search, real local semantic recall, full document/timeline reads and concepts work.\n- [ ] Removing derived stores from a text clone causes hybrid recall to rebuild PGLite/pgvector projections without changing sources or timelines.\n- [ ] Native Postgres + pgvector integration passes through `DOCNEXUS_TEST_DATABASE_URL`; local wire-protocol tests alone do not establish native server parity.\n- [ ] Ordinary inserts, updates, deletion of all chunks and reinsertion retain the HNSW index; classification-only changes reuse vectors, and a failed relationship write rolls back the complete document projection.\n- [ ] Deletion removes current knowledge, timeline and database projections; dangling fact references are refused.\n- [ ] Process crash tests cover save, deletion, rollback, draft receipt recovery and lock release; concurrent updates preserve both timeline sources.\n- [ ] Fact references generate attributed Markdown, refresh dependent pages and indexes, and recover with the canonical fact write without changing dependent timelines.\n- [ ] Generated block repair preserves authored prose; missing references, deletion with references and preview drift/tampering are refused.\n- [ ] `npm run eval:retrieval` reports vector/hybrid ranks on the fixed bilingual corpus.\n- [ ] Chinese short terms do not admit isolated-character distractions, complete phrases/coverage outrank field weights, snippets show actual strongest evidence, and identifiers, aliases and active-fact lookup remain intact.\n- [ ] Actual tokenizer budgets include headings, overlap and special tokens; long paragraphs, code and facts retain ending conclusions in offline pure-vector top-3 regression. Oversized queries fail explicitly, old chunk signatures rebuild and text/history remain unchanged.\n- [ ] Alias resolution, future activation, expiry, withdrawal and cross-document replacement invalidate the appropriate projections without rewriting text.\n- [ ] Tests cover relation ownership on update, embedding signature changes, retry after model failure, text failure compensation, project isolation and path boundaries.\n- [ ] Real-runtime E2E uses the packaged ONNX model with a network sentinel. Deterministic hash tests do not replace this check."
+      ]
+    },
+    {
+      "path": "concurrency/locks.md",
+      "split": "holdout",
+      "title": "本机进程锁与外部编辑边界",
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "excerpts": [
+        "核心文本读取/写入、事务恢复与数据库租约共用可重入项目锁。本机进程以项目真实路径为键，在系统临时目录的专用 SQLite 文件上持有写锁；进程退出（包括强制终止）由操作系统释放锁。等待超过 30 秒返回 busy，调用者可重试。锁文件在工作区外，reset 不会让另一个进程绕过仍持有的锁。",
+        "外部编辑器、Git 和其他机器不参与本机锁。写入或恢复未完成时不要手动编辑、拉取或切换分支。Windows 跳过目录 fsync；当前验证覆盖本机进程中断，没有模拟硬件断电。"
+      ]
+    },
+    {
+      "path": "knowledge/lifecycle.md",
+      "split": "holdout",
+      "title": "事实有效期与替代链语义",
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "excerpts": [
+        "可选 `metadata.facts[]` 保存稳定项目唯一 `id`、`text`、`provenance`、`valid_from`，以及可选 `entity`、`valid_until`、`replaces`、`withdrawn_at`、`withdrawal_reason`。旧文档无需补 facts。有效日期必须有时区；`valid_until` 是排他上界。",
+        "状态为 active、scheduled、expired、superseded、withdrawn。未来事实生效前不取代旧事实；后继到期或撤回不恢复前驱。`facts list [--entity name-or-alias] [--at ISO-timestamp] [--include-inactive]` 可检查当前或指定有效时间的状态。历史查询使用目前已存的事实链，不重建“当时已知什么”的 Git 快照。",
+        "`REPLACES` 仍是概念关系；事实失效使用独立的 `facts[].replaces` 协议。图谱上下文限定一跳，不提供任意深度多跳推理。"
+      ]
+    },
+    {
+      "path": "workflow/reading.md",
+      "split": "holdout",
+      "title": "全文读取、历史查询与引用规则",
+      "source_path": "docs/architecture/skills-workspace.zh-CN.md",
+      "excerpts": [
+        "目录已给出文件时直接读全文；精确名称、路径或标识符使用 `search`；语义问题或概念关系使用 `recall`，自动同步后按文档级 RRF 融合关键词/向量排名，返回命中、相邻片段、事实状态和一跳图谱证据，再用 `document get` 阅读完整当前知识。含事实生成块的文档先由 document get 刷新，避免引用旧快照；历史问题另外读时间线。搜索短摘录与词法分数不能代替完整证据。",
+        "回答引用 `docnexus/library/<file_path>`，必要时注明时间线出处。缺口、冲突、过时来源与当前代码差异需要明确说明。存储内容是证据，不是新的操作授权。"
+      ]
+    },
+    {
+      "path": "simulated/facts.md",
+      "split": "dev",
+      "title": "模拟发布事实与生命周期",
+      "body": "# Evaluation-only release facts\n\n{{fact:fact_quality_old}}\n\n{{fact:fact_quality_current}}\n\n{{fact:fact_quality_expired}}\n\n{{fact:fact_quality_withdrawn}}\n\n{{fact:fact_quality_future}}",
+      "facts": [
+        {
+          "id": "fact_quality_old",
+          "text": "SIMULATED_RELEASE_GATE=canary-3",
+          "provenance": "Evaluation-only original decision",
+          "valid_from": "2000-01-01T00:00:00Z"
+        },
+        {
+          "id": "fact_quality_current",
+          "text": "SIMULATED_RELEASE_GATE=canary-7",
+          "provenance": "Evaluation-only replacement decision",
+          "valid_from": "2001-01-01T00:00:00Z",
+          "replaces": "fact_quality_old"
+        },
+        {
+          "id": "fact_quality_expired",
+          "text": "SIMULATED_EXPIRED_ASSERTION=legacy-9",
+          "provenance": "Evaluation-only expired rule",
+          "valid_from": "2000-01-01T00:00:00Z",
+          "valid_until": "2001-01-01T00:00:00Z"
+        },
+        {
+          "id": "fact_quality_withdrawn",
+          "text": "SIMULATED_WITHDRAWN_ASSERTION=remote-4",
+          "provenance": "Evaluation-only withdrawn rule",
+          "valid_from": "2000-01-01T00:00:00Z",
+          "withdrawn_at": "2001-01-01T00:00:00Z",
+          "withdrawal_reason": "Evaluation fixture"
+        },
+        {
+          "id": "fact_quality_future",
+          "text": "SIMULATED_FUTURE_ASSERTION=next-8",
+          "provenance": "Evaluation-only future rule",
+          "valid_from": "9999-01-01T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "path": "simulated/long-guide.md",
+      "split": "dev",
+      "title": "模拟长文末尾与跨文档事实引用",
+      "body": "# Evaluation-only long guide\n\nKeep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. Keep diagnostic records while processing the queue. \n\n## Recovery conclusion\n\nQUEUE_RECOVERY_ORDER=flush-then-replay\n\n{{fact:fact_quality_old}}"
+    },
+    {
+      "path": "simulated/aliases.md",
+      "split": "holdout",
+      "title": "模拟规范名与显式别名",
+      "body": "# Evaluation-only alias registry\n\nMemoryProjection is rebuilt from canonical text.",
+      "entities": [
+        {
+          "name": "MemoryProjection",
+          "type": "component",
+          "description": "Evaluation-only derived index",
+          "aliases": [
+            "记忆投影别名",
+            "ProjectionAlias42"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "simulated/confirmed.md",
+      "split": "holdout",
+      "title": "模拟当前已确认的嵌入决策",
+      "body": "# Evaluation-only confirmed decision\n\n当前已确认：继续本地 embedding，未批准远程供应商。"
+    },
+    {
+      "path": "simulated/proposal.md",
+      "split": "holdout",
+      "title": "模拟尚未批准的远程嵌入提议",
+      "body": "# Evaluation-only unapproved proposal\n\n提议：以后考虑远程 embedding；尚未批准，不能替代现行约定。"
+    }
+  ],
+  "questions": [
+    {
+      "id": "architecture-storage-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "DocNexus 的知识真源是 Markdown 还是数据库？",
+      "expected_paths": [
+        "architecture/storage.md"
+      ],
+      "evidence": [
+        {
+          "path": "architecture/storage.md",
+          "text": "Markdown 当前知识与来源时间线是文本真源"
+        }
+      ]
+    },
+    {
+      "id": "architecture-storage-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "保存知识的时间能当成事件实际发生时间吗？",
+      "expected_paths": [
+        "architecture/storage.md"
+      ],
+      "evidence": [
+        {
+          "path": "architecture/storage.md",
+          "text": "保存日期不等同于事件发生日期。"
+        }
+      ]
+    },
+    {
+      "id": "architecture-storage-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "English",
+      "query": "Are historical sources and timelines part of the vector index?",
+      "expected_paths": [
+        "architecture/storage.md"
+      ],
+      "evidence": [
+        {
+          "path": "architecture/storage.md",
+          "text": "历史来源和时间线不进入向量索引"
+        }
+      ]
+    },
+    {
+      "id": "runtime-embedding-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "BAAI/bge-small-zh-v1.5 使用什么格式，运行时下载吗？",
+      "expected_paths": [
+        "runtime/embedding.md"
+      ],
+      "evidence": [
+        {
+          "path": "runtime/embedding.md",
+          "text": "q8 ONNX 文件随 npm 包发布"
+        },
+        {
+          "path": "runtime/embedding.md",
+          "text": "运行时禁用远程模型下载。"
+        }
+      ]
+    },
+    {
+      "id": "runtime-embedding-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "文档切块使用多少 token 的预算？",
+      "expected_paths": [
+        "runtime/embedding.md"
+      ],
+      "evidence": [
+        {
+          "path": "runtime/embedding.md",
+          "text": "切块预算取模型上限与 256 的较小值"
+        }
+      ]
+    },
+    {
+      "id": "runtime-embedding-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "很长的检索问题会悄悄截掉后半段吗？",
+      "expected_paths": [
+        "runtime/embedding.md"
+      ],
+      "evidence": [
+        {
+          "path": "runtime/embedding.md",
+          "text": "超出模型上限就报错"
+        }
+      ]
+    },
+    {
+      "id": "retrieval-fusion-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "RRF 每一路的名次如何计算贡献？",
+      "expected_paths": [
+        "retrieval/fusion.md"
+      ],
+      "evidence": [
+        {
+          "path": "retrieval/fusion.md",
+          "text": "每路贡献 `1 / (60 + rank)`"
+        }
+      ]
+    },
+    {
+      "id": "retrieval-fusion-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "relationship",
+      "query": "一个主文档最多附带多少条图关系和支持片段？",
+      "expected_paths": [
+        "retrieval/fusion.md"
+      ],
+      "evidence": [
+        {
+          "path": "retrieval/fusion.md",
+          "text": "最多返回 5 条关系路径、3 个支持片段"
+        }
+      ]
+    },
+    {
+      "id": "retrieval-fusion-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "English",
+      "query": "Does a high similarity score prove that the corpus contains an answer?",
+      "expected_paths": [
+        "retrieval/fusion.md"
+      ],
+      "evidence": [
+        {
+          "path": "retrieval/fusion.md",
+          "text": "相似度、词法和 RRF 分数均不表示事实置信度。"
+        },
+        {
+          "path": "retrieval/fusion.md",
+          "text": "无答案问题仍可能返回近邻"
+        }
+      ]
+    },
+    {
+      "id": "capture-drafts-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "更新草稿的 --base-version 应该取哪个版本？",
+      "expected_paths": [
+        "capture/drafts.md"
+      ],
+      "evidence": [
+        {
+          "path": "capture/drafts.md",
+          "text": "提炼读取时的 `--base-version <record_version>`"
+        }
+      ]
+    },
+    {
+      "id": "capture-drafts-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "草稿版本冲突后，只换新版本号重新封存可以吗？",
+      "expected_paths": [
+        "capture/drafts.md"
+      ],
+      "evidence": [
+        {
+          "path": "capture/drafts.md",
+          "text": "冲突后必须复读合并，不能只刷新版本。"
+        }
+      ]
+    },
+    {
+      "id": "capture-drafts-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "入库覆盖已有路径需要什么参数？",
+      "expected_paths": [
+        "capture/drafts.md"
+      ],
+      "evidence": [
+        {
+          "path": "capture/drafts.md",
+          "text": "已有路径需要 `--replace`。"
+        }
+      ]
+    },
+    {
+      "id": "documents-pagination-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "page_size 默认和上限各是多少？",
+      "expected_paths": [
+        "documents/pagination.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/pagination.md",
+          "text": "默认 page 为 1、page_size 为 20，最大 page_size 为 100。"
+        }
+      ]
+    },
+    {
+      "id": "documents-pagination-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "--all 能否与分页参数一起使用？",
+      "expected_paths": [
+        "documents/pagination.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/pagination.md",
+          "text": "`--all` 不能与分页参数并用。"
+        }
+      ]
+    },
+    {
+      "id": "documents-pagination-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "读第二页前有人修改了文档，应该继续翻页还是重读？",
+      "expected_paths": [
+        "documents/pagination.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/pagination.md",
+          "text": "旧 revision 被拒绝；丢弃已积累的页并重新查询第一页。"
+        }
+      ]
+    },
+    {
+      "id": "documents-viewer-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "浏览页 If-None-Match 命中未变化版本时返回什么？",
+      "expected_paths": [
+        "documents/viewer.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/viewer.md",
+          "text": "相同视图未变化时返回无正文的 304"
+        }
+      ]
+    },
+    {
+      "id": "documents-viewer-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "文档浏览服务监听哪个地址？",
+      "expected_paths": [
+        "documents/viewer.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/viewer.md",
+          "text": "仅绑定 `127.0.0.1`"
+        }
+      ]
+    },
+    {
+      "id": "documents-viewer-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "轻量轮询会跳过源文件损坏和事实到期检查吗？",
+      "expected_paths": [
+        "documents/viewer.md"
+      ],
+      "evidence": [
+        {
+          "path": "documents/viewer.md",
+          "text": "每次请求仍校验全部真源及事实时间状态"
+        }
+      ]
+    },
+    {
+      "id": "operations-release-1",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "English",
+      "query": "Who must authorize publishing the package?",
+      "expected_paths": [
+        "operations/release.md"
+      ],
+      "evidence": [
+        {
+          "path": "operations/release.md",
+          "text": "Publishing requires the maintainer's authorization."
+        }
+      ]
+    },
+    {
+      "id": "operations-release-2",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "English",
+      "query": "Does passing the release checklist automatically publish the package?",
+      "expected_paths": [
+        "operations/release.md"
+      ],
+      "evidence": [
+        {
+          "path": "operations/release.md",
+          "text": "Passing these checks does not publish the package."
+        }
+      ]
+    },
+    {
+      "id": "operations-release-3",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "本地数据库线协议测试能证明原生 Postgres 完全兼容吗？",
+      "expected_paths": [
+        "operations/release.md"
+      ],
+      "evidence": [
+        {
+          "path": "operations/release.md",
+          "text": "local wire-protocol tests alone do not establish native server parity."
+        }
+      ]
+    },
+    {
+      "id": "concurrency-locks-1",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "等待项目锁多久会返回 busy？",
+      "expected_paths": [
+        "concurrency/locks.md"
+      ],
+      "evidence": [
+        {
+          "path": "concurrency/locks.md",
+          "text": "等待超过 30 秒返回 busy"
+        }
+      ]
+    },
+    {
+      "id": "concurrency-locks-2",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "reset 为什么不会让另一个进程绕过仍持有的锁？",
+      "expected_paths": [
+        "concurrency/locks.md"
+      ],
+      "evidence": [
+        {
+          "path": "concurrency/locks.md",
+          "text": "锁文件在工作区外"
+        }
+      ]
+    },
+    {
+      "id": "concurrency-locks-3",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "English",
+      "query": "Are Git operations and other machines coordinated by the local project lock?",
+      "expected_paths": [
+        "concurrency/locks.md"
+      ],
+      "evidence": [
+        {
+          "path": "concurrency/locks.md",
+          "text": "外部编辑器、Git 和其他机器不参与本机锁。"
+        }
+      ]
+    },
+    {
+      "id": "knowledge-lifecycle-1",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "valid_until 时间点本身是否仍有效？",
+      "expected_paths": [
+        "knowledge/lifecycle.md"
+      ],
+      "evidence": [
+        {
+          "path": "knowledge/lifecycle.md",
+          "text": "`valid_until` 是排他上界。"
+        }
+      ]
+    },
+    {
+      "id": "knowledge-lifecycle-2",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "替代旧规则的新事实撤回后，旧规则会自动恢复吗？",
+      "expected_paths": [
+        "knowledge/lifecycle.md"
+      ],
+      "evidence": [
+        {
+          "path": "knowledge/lifecycle.md",
+          "text": "后继到期或撤回不恢复前驱。"
+        }
+      ]
+    },
+    {
+      "id": "knowledge-lifecycle-3",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "relationship",
+      "query": "图里的 REPLACES 关系会自动使事实失效吗？",
+      "expected_paths": [
+        "knowledge/lifecycle.md"
+      ],
+      "evidence": [
+        {
+          "path": "knowledge/lifecycle.md",
+          "text": "事实失效使用独立的 `facts[].replaces` 协议。"
+        }
+      ]
+    },
+    {
+      "id": "workflow-reading-1",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "Chinese",
+      "query": "概念目录已经给出目标文件后还必须先搜索吗？",
+      "expected_paths": [
+        "workflow/reading.md"
+      ],
+      "evidence": [
+        {
+          "path": "workflow/reading.md",
+          "text": "目录已给出文件时直接读全文"
+        }
+      ]
+    },
+    {
+      "id": "workflow-reading-2",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "semantic",
+      "query": "要回答历史问题应该额外读取什么？",
+      "expected_paths": [
+        "workflow/reading.md"
+      ],
+      "evidence": [
+        {
+          "path": "workflow/reading.md",
+          "text": "历史问题另外读时间线。"
+        }
+      ]
+    },
+    {
+      "id": "workflow-reading-3",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "identifier",
+      "query": "智能体应该引用哪个 library 路径？",
+      "expected_paths": [
+        "workflow/reading.md"
+      ],
+      "evidence": [
+        {
+          "path": "workflow/reading.md",
+          "text": "回答引用 `docnexus/library/<file_path>`"
+        }
+      ]
+    },
+    {
+      "id": "unsupported-price",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "本项目下个月将采用的远程 embedding 供应商价格是多少？",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "语料只确认本地模型，没有远程供应商采用决定或报价。"
+    },
+    {
+      "id": "unsupported-sso",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "本项目生产环境的 SAML SSO 租户 ID 是什么？",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "语料没有生产环境 SAML 租户配置。"
+    },
+    {
+      "id": "unsupported-power",
+      "split": "dev",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "硬件断电后数据零丢失通过了多少次验证？",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "项目文档明确未模拟硬件断电，语料没有测试次数。"
+    },
+    {
+      "id": "unsupported-windows",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "Windows 的全部恢复场景已经通过了多少项验证？",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "语料没有 Windows 全场景通过数。"
+    },
+    {
+      "id": "unsupported-release-time",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "下一次 npm 正式发布具体几点上线？",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "发布授权约定不包含下一次发布排期。"
+    },
+    {
+      "id": "unsupported-identifier",
+      "split": "holdout",
+      "origin": "repository",
+      "kind": "no-answer",
+      "query": "ZXQ_UNDOCUMENTED_火星基地预算",
+      "expected_paths": [],
+      "evidence": [],
+      "rationale": "唯一标识符在语料中不存在。"
+    },
+    {
+      "id": "sim-replacement",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "replacement",
+      "query": "SIMULATED_RELEASE_GATE 当前发布门槛是什么？",
+      "expected_paths": [
+        "simulated/facts.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/facts.md",
+          "text": "SIMULATED_RELEASE_GATE=canary-7",
+          "fact_id": "fact_quality_current",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "id": "sim-expired",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "expired",
+      "query": "模拟规则 fact_quality_expired 现在的有效状态是什么？",
+      "expected_paths": [
+        "simulated/facts.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/facts.md",
+          "fact_id": "fact_quality_expired",
+          "status": "expired"
+        }
+      ]
+    },
+    {
+      "id": "sim-withdrawn",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "withdrawn",
+      "query": "模拟规则 fact_quality_withdrawn 现在的有效状态是什么？",
+      "expected_paths": [
+        "simulated/facts.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/facts.md",
+          "fact_id": "fact_quality_withdrawn",
+          "status": "withdrawn"
+        }
+      ]
+    },
+    {
+      "id": "sim-future",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "scheduled",
+      "query": "模拟规则 fact_quality_future 现在的有效状态是什么？",
+      "expected_paths": [
+        "simulated/facts.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/facts.md",
+          "fact_id": "fact_quality_future",
+          "status": "scheduled"
+        }
+      ]
+    },
+    {
+      "id": "sim-long-ending",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "long-document",
+      "query": "QUEUE_RECOVERY_ORDER 队列恢复顺序是什么？",
+      "expected_paths": [
+        "simulated/long-guide.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/long-guide.md",
+          "text": "QUEUE_RECOVERY_ORDER=flush-then-replay"
+        }
+      ]
+    },
+    {
+      "id": "sim-cross-document",
+      "split": "dev",
+      "origin": "simulated",
+      "kind": "relationship",
+      "query": "长文中的模拟发布门槛引用由哪个事实文档维护，当前值是什么？",
+      "expected_paths": [
+        "simulated/long-guide.md",
+        "simulated/facts.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/facts.md",
+          "text": "SIMULATED_RELEASE_GATE=canary-7",
+          "fact_id": "fact_quality_current",
+          "status": "active"
+        },
+        {
+          "path": "simulated/long-guide.md",
+          "text": "{{fact:fact_quality_old}}"
+        }
+      ]
+    },
+    {
+      "id": "sim-alias",
+      "split": "holdout",
+      "origin": "simulated",
+      "kind": "alias",
+      "query": "ProjectionAlias42",
+      "expected_paths": [
+        "simulated/aliases.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/aliases.md",
+          "text": "MemoryProjection is rebuilt from canonical text."
+        }
+      ]
+    },
+    {
+      "id": "sim-conflict",
+      "split": "holdout",
+      "origin": "simulated",
+      "kind": "conflict",
+      "query": "提议远程 embedding 后，是否已确认切换？需要哪些决策依据？",
+      "expected_paths": [
+        "simulated/confirmed.md",
+        "simulated/proposal.md"
+      ],
+      "evidence": [
+        {
+          "path": "simulated/confirmed.md",
+          "text": "当前已确认：继续本地 embedding，未批准远程供应商。"
+        },
+        {
+          "path": "simulated/proposal.md",
+          "text": "尚未批准，不能替代现行约定。"
+        }
+      ]
+    }
+  ]
+}

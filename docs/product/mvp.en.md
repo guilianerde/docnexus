@@ -9,12 +9,17 @@ DocNexus helps coding agents retain project decisions, conventions and explanati
 - Change a decision: read existing knowledge, merge new material and replace explicitly superseded conclusions with authorization.
 - Work on another machine: clone the text workspace and read immediately, with immediate text lookup and automatic local index rebuilding for semantic recall.
 - Adopt hand edits: review the edited page, preserve the original source and append an edit event.
+- Store a code-review report as `codeReview`: accept the caller's category for this write, skip model classification, and seal/review that category with the document before ingestion.
 
 ## Implemented scope
 
 Project workspaces, six skills, sealed drafts, document storage and deletion, keyword/name lookup, keyword/vector hybrid recall and one-hop graph context, full document and timeline reads, document/concept directories, skill links and version refresh, content hashes, path boundaries and read-only diagnostics.
 
 The agent compiles current knowledge; the CLI saves complete documents without inferring contradictions or supersession. Timeline entries contain save dates, summaries and sources, not every prior compiled document version.
+
+Calling skills can supply an exact category with `draft seal --category <name>` and an optional basis. Without an explicit category, skills classify from project context. The selection is not a permanent lock. A local read-only viewer supports categorized, paginated reading and ETag/304 polling, preserving unchanged views while retaining canonical integrity and fact-time checks.
+
+The quality suite separates source-supported project questions, unsupported questions and explicit simulations, with development/holdout target families. Retrieval and budgeted evidence retention are measured separately; these checks do not establish host-agent answer or abstention quality.
 
 ## Boundaries and acceptance
 

@@ -26,7 +26,7 @@ try {
   const packed = await run(npmExecutable, ["pack", "--json", "--pack-destination", packDirectory], {
     cwd: repositoryRoot, env: npmEnvironment
   });
-  const [{ filename }] = JSON.parse(packed.stdout);
+  const [{ filename, integrity }] = JSON.parse(packed.stdout);
   if (!filename) {
     throw new Error("npm pack did not report a tarball filename");
   }
@@ -120,7 +120,7 @@ try {
 
   const sealed = await runJson(
     cliPath,
-    ["draft", "seal", "--id", draft.draft_id, "--file", "release/smoke.md"],
+    ["draft", "seal", "--id", draft.draft_id, "--file", "release/smoke.md", "--category", "codeReview", "--category-reason", "Caller-selected release review"],
     projectDirectory,
     cliEnvironment
   );
@@ -137,9 +137,9 @@ try {
   assert(listed.records?.[0]?.id === added.id, "project-local document list did not find the document");
   let catalog = await runJson(cliPath, ["document", "query", "--all"], projectDirectory, cliEnvironment);
   assert(catalog.schema_version === 1 && catalog.pagination === null && catalog.total === 1, "full document query did not return a complete snapshot");
-  assert(catalog.documents[0].category === "reference" && catalog.documents[0].document.includes("local project memory"), "document query lost classification or generated content");
+  assert(catalog.documents[0].category === "codeReview" && catalog.documents[0].category_reason === "Caller-selected release review" && catalog.documents[0].document.includes("local project memory"), "document query lost caller classification or generated content");
   const queryScript = join(projectDirectory, "docnexus/skills/docnexus-library/scripts/query-documents.mjs");
-  const page = await runJson(process.execPath, [queryScript, "--project-root", projectDirectory, "--page", "1", "--page-size", "1", "--category", "reference", "--revision", catalog.revision], smokeRoot, cliEnvironment);
+  const page = await runJson(process.execPath, [queryScript, "--project-root", projectDirectory, "--page", "1", "--page-size", "1", "--category", "codeReview", "--revision", catalog.revision], smokeRoot, cliEnvironment);
   assert(page.documents[0].id === added.id && page.pagination.page_size === 1 && page.revision === catalog.revision, "orchestration query script did not delegate the stable paginated query");
   const classified = await runJson(cliPath, ["document", "classify", "--id", added.id, "--category", "发布与分发", "--reason", "结合项目 npm 分发流程与安装包验证文档统一归类", "--revision", catalog.revision], projectDirectory, cliEnvironment);
   assert(classified.operation === "reclassified", "category-only operation did not persist the model's judgment");
@@ -235,6 +235,7 @@ try {
   const semantic = await runJson(cliPath, ["recall", "installed DocNexus tarball", "--limit", "1"], projectDirectory, cliEnvironment);
   assert(semantic.results?.[0]?.document_ref?.document_id === added.id, "semantic recall did not find the saved document");
   assert(semantic.results[0].ranking?.primary === "rrf", "default recall did not fuse retrieval ranks");
+  assert(semantic.context_groups[0].matches?.some(match => match.anchor.document_id === added.id && /^[a-f0-9]{64}$/.test(match.anchor.record_version)), "recall lost versioned source anchors");
   assert(semantic.context_groups[0].facts?.some((fact) => fact.id === "fact_tarball_old" && fact.status === "superseded"), "recall lost superseded fact status");
   const facts = await runJson(cliPath, ["facts", "list", "--entity", "ReleaseBundle"], projectDirectory, cliEnvironment);
   assert(facts.facts?.length === 1 && facts.facts[0].id === "fact_tarball_current", "alias fact lookup did not filter inactive claims");
@@ -274,7 +275,7 @@ try {
   assert(chinese.results.length === 1 && chinese.results[0].file_path === "search/long.md", "installed Chinese search admitted a single-character distraction");
   assert(chinese.results[0].matched_terms.includes("长文") && chinese.results[0].snippet.includes("长文"), "installed search did not expose full phrase evidence");
 
-  process.stdout.write(`Tarball smoke test passed: ${filename}\n`);
+  process.stdout.write(`Tarball smoke test passed: ${filename}\nIntegrity: ${integrity}\n`);
 } finally {
   await rm(smokeRoot, { recursive: true, force: true });
 }

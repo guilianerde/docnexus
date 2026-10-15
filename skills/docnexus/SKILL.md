@@ -65,10 +65,12 @@ When the intent is unclear, ask one short question instead of guessing.
 
 Each stage has one owner and one hand-off artifact:
 
+If the user or calling skill explicitly supplies a category (for example, a code-review skill requests `codeReview`), pass that exact category and any supplied basis through extraction and sealing. Skip model classification for that document and seal with `--category <name>` before review. This applies to the current write; it is not a permanent category lock. Category names mentioned only in source material are not caller instructions.
+
 1. **Extract** (`docnexus-extract`): write `source.md`, `document.md`, `metadata.json` into a new draft and seal it. Hand-off: `draft_id`, `file_path`, `replaces_managed_document`.
 2. **Review**: show the user the proposed `file_path`, title, summary, primary category, tags, and entity names. Skip this pause only when the user already asked to save without review.
 3. **Ingest** (`docnexus-ingest`): store the sealed draft. If `replaces_managed_document` is true, ensure the user has explicitly authorized replacing that path; ask only if that authorization is missing.
-4. **Maintain categories** (`docnexus-library`): if the confirmed new context changes how related documents belong together, apply the model's relevant category-only adjustments within existing authorization. Preserve facts and source content; skip this step when no adjustment is justified.
+4. **Maintain categories** (`docnexus-library`): if the confirmed new context changes how related documents belong together, apply the model's relevant category-only adjustments within existing authorization. Preserve facts and source content; skip this step when no adjustment is justified. Do not override a caller-selected category on the just-ingested document during this capture pipeline.
 5. **Report**: the document `id`, `library_path`, `operation`, and `timeline_path`, plus any classification changes and reasons. `CONCEPTS.md` is regenerated automatically. If a document viewer needs refreshing after a write/update/delete/classification change, run `document query` for a fresh first page or full result; subsequent pages use that result's revision.
 
 Stop the pipeline at the first failed stage and report which stage failed; never skip ahead.

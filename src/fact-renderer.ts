@@ -71,11 +71,17 @@ export interface RenderedFactReference {
   source_document_id: string;
 }
 
-export function renderFactDocument(document: string, facts: ResolvedFact[]): { document: string; references: RenderedFactReference[] } {
+export interface RenderedFactSpan {
+  start: number; end: number; template_start: number; template_end: number; fact_id: string;
+}
+
+export function renderFactDocument(document: string, facts: ResolvedFact[]): { document: string; references: RenderedFactReference[]; fact_spans: RenderedFactSpan[] } {
   const byId = new Map(facts.map((fact) => [fact.id, fact]));
   const references: RenderedFactReference[] = [];
+  const spans: RenderedFactSpan[] = [];
+  let offset = 0, templateOffset = 0;
   const rendered = parse(document).map((segment) => {
-    if ("text" in segment) return segment.text;
+    if ("text" in segment) { offset += segment.text.length; templateOffset += segment.text.length; return segment.text; }
     let fact = byId.get(segment.id);
     if (!fact) throw new Error(`unknown fact reference: ${segment.id}`);
     const seen = new Set<string>();
@@ -91,8 +97,12 @@ export function renderFactDocument(document: string, facts: ResolvedFact[]): { d
     const body = fact.status === "active" ? escapeText(fact.text) : `*此事实${status[fact.status]}，当前无有效结论。*`;
     const attribution = `> 来源：${escapeText(fact.provenance)}；生效：${escapeText(fact.valid_from)}；出处：${escapeText(fact.source_path)}；事实：\`${fact.id}\`；状态：${fact.status}`;
     const newline = segment.ending || "\n";
-    return [`<!-- docnexus:fact ${segment.id} -->`, body, "", attribution, CLOSE]
+    const block = [`<!-- docnexus:fact ${segment.id} -->`, body, "", attribution, CLOSE]
       .map((line) => `${segment.indent}${line}`).join(newline) + segment.ending;
+    const template = `${segment.indent}{{fact:${segment.id}}}${segment.ending}`;
+    spans.push({ start: offset, end: offset + block.length, template_start: templateOffset, template_end: templateOffset + template.length, fact_id: fact.id });
+    offset += block.length; templateOffset += template.length;
+    return block;
   }).join("");
-  return { document: rendered, references };
+  return { document: rendered, references, fact_spans: spans };
 }

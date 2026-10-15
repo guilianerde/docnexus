@@ -71,9 +71,13 @@ export async function hybridRecall(projectRoot: string, query: string, limit: nu
       ], knowledgeDocuments);
       if (facts.length) group.facts = facts;
       const lexical = keyword.results.find((result) => result.id === rank.id);
+      group.matches = [
+        ...(chunk.source_anchor ? [{ source: vector.some(value => value.document_id === rank.id) ? "vector" as const : "keyword" as const, anchor: chunk.source_anchor }] : []),
+        ...(lexical?.source_anchor ? [{ source: "keyword" as const, anchor: lexical.source_anchor }] : [])
+      ];
       results.push({
         matched_chunk: chunk,
-        ...(lexical ? { keyword_match: { snippet: lexical.snippet, line: lexical.line, matched_terms: lexical.matched_terms, score: lexical.score } } : {}),
+        ...(lexical ? { keyword_match: { snippet: lexical.snippet, line: lexical.line, matched_terms: lexical.matched_terms, score: lexical.score, source_anchor: lexical.source_anchor } } : {}),
         document_ref: { document_id: rank.id, group_id: rank.id, path: group.document.path },
         ranking: { primary: "rrf", rrf_score: rank.score, source_ranks: rank.ranks, graph_used_as: "grouped_supporting_context" }
       });

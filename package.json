@@ -1,6 +1,6 @@
 {
   "name": "@rowansenne/docnexus",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -40,6 +40,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "eval:retrieval": "npm run build && node scripts/eval-retrieval.mjs",
+    "eval:retrieval:quality": "npm run build && node scripts/eval-retrieval-quality.mjs",
     "eval:knowledge": "npm run build && node scripts/eval-knowledge.mjs",
     "eval:agent": "npm run build && node scripts/eval-agent.mjs"
   },

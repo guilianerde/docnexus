@@ -10,6 +10,7 @@ import { buildGroupedRecall } from "../src/recall-groups.js";
 import { recallEvidence } from "../src/recall-evidence.js";
 import { LocalHashEmbedder } from "../src/embedder.js";
 import { runCli } from "../src/cli.js";
+import { renderFactDocument } from "../src/fact-renderer.js";
 
 const roots: string[] = [];
 const metadata = { title: "Evidence", summary: "Project conventions", tags: [], entities: [], relationships: [] };
@@ -72,6 +73,53 @@ it("keeps attributed facts atomic, marks inactive claims, and never substitutes 
   const small = assembleEvidence(snapshot, "Facts", grouped(id, "# Facts"), { context_budget: 1200 });
   expect(small.delivery.omitted_blocks).toBeGreaterThan(0);
   expect(small.evidence.every(block => block.kind !== "fact" || (!block.truncated && Boolean(block.fact?.provenance)))).toBe(true);
+});
+
+it.each(["indexed", "rendered", "fragment"])("retains a directly matched %s fact before long prose and unrelated facts", async (kind) => {
+  const answer = { id: "fact_answer", text: "RELEASE_GATE=canary-7", provenance: "Release decision", valid_from: "2020-01-01T00:00:00Z" };
+  const { id, snapshot } = await setup(`# Guide\n\n${"Ordinary background information. ".repeat(600)}\n\n{{fact:fact_answer}}`, {
+    facts: [...Array.from({ length: 8 }, (_, index) => ({ ...answer, id: `fact_other_${index}`, text: `Unrelated convention ${index}` })), answer]
+  });
+  const text = kind === "indexed" ? `[${answer.id}] ${answer.text}\nSource: ${answer.provenance}\nValid from: ${answer.valid_from}`
+    : kind === "rendered" ? renderFactDocument("{{fact:fact_answer}}", snapshot.knowledge.facts).document : answer.text;
+  for (const budget of [1200, 4000, 8000]) {
+    const packet = assembleEvidence(snapshot, "RELEASE_GATE", grouped(id, text), { context_budget: budget });
+    expect(packet.evidence[0]).toMatchObject({ kind: "fact", text: answer.text, truncated: false,
+      fact: { id: answer.id, status: "active", provenance: answer.provenance, valid_from: answer.valid_from } });
+    expect(packet.evidence.filter(block => block.fact?.id === answer.id)).toHaveLength(1);
+    expect(packet.delivery.estimated_tokens).toBe(Buffer.byteLength(JSON.stringify(packet, null, 2) + "\n"));
+    expect(packet.delivery.estimated_tokens).toBeLessThanOrEqual(budget);
+    expect(packet.delivery.truncated).toBe(true);
+  }
+});
+
+it("prioritizes the current replacement when a generated hit still references the historical id", async () => {
+  const old = { id: "fact_old", text: "OBSOLETE_RULE", provenance: "Initial decision", valid_from: "2020-01-01T00:00:00Z" };
+  const next = { id: "fact_next", text: "CURRENT_RULE", provenance: "Revised decision", valid_from: "2021-01-01T00:00:00Z", replaces: old.id };
+  const { id, snapshot } = await setup(`Background. ${"Unrelated context. ".repeat(800)}\n\n{{fact:fact_old}}`, { facts: [old, next] });
+  const hit = renderFactDocument("{{fact:fact_old}}", snapshot.knowledge.facts).document;
+  const packet = assembleEvidence(snapshot, "Current rule", grouped(id, hit), { context_budget: 1200 });
+  expect(packet.evidence[0]).toMatchObject({ kind: "fact", text: next.text, fact: { id: next.id, status: "active", replaces: old.id } });
+  expect(JSON.stringify(packet)).not.toContain(old.text);
+});
+
+it("recognizes a fact fragment escaped by Markdown rendering", async () => {
+  const { id, snapshot } = await setup(`Background. ${"Unrelated context. ".repeat(800)}\n\n{{fact:fact_code}}`, {
+    facts: [{ id: "fact_code", text: "Use rotate_refresh_token after validation.", provenance: "API decision", valid_from: "2020-01-01T00:00:00Z" }]
+  });
+  const packet = assembleEvidence(snapshot, "rotate_refresh_token", grouped(id, "rotate\\_refresh\\_token after validation."), { context_budget: 1200 });
+  expect(packet.evidence[0]).toMatchObject({ kind: "fact", text: "Use rotate_refresh_token after validation.", fact: { id: "fact_code" } });
+});
+
+it("preserves a fact answer through actual indexing and budgeted recall", async () => {
+  const { root } = await setup(`# Guide\n\n${"Ordinary background information. ".repeat(600)}\n\n{{fact:fact_answer}}`, {
+    facts: [{ id: "fact_answer", text: "RELEASE_GATE=canary-7", provenance: "Release decision", valid_from: "2020-01-01T00:00:00Z" }]
+  });
+  const embedder = { dimension: 512, embed: async (text: string) => text.includes("RELEASE_GATE") ? [1, 0, ...Array(510).fill(0)] : [0, 1, ...Array(510).fill(0)] };
+  const packet = await recallEvidence(root, { query: "RELEASE_GATE", limit: 1, context_budget: 1200 }, embedder);
+  expect(packet.evidence[0]).toMatchObject({ kind: "fact", text: "RELEASE_GATE=canary-7", truncated: false,
+    fact: { id: "fact_answer", status: "active", provenance: "Release decision" } });
+  expect(packet.delivery.estimated_tokens).toBeLessThanOrEqual(1200);
 });
 
 it("delivers a versioned packet through the real retrieval and CLI paths without duplicate raw contexts", async () => {

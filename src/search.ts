@@ -4,8 +4,10 @@ import { libraryRelativePath } from "./layout.js";
 import { refreshFactViews } from "./managed-documents.js";
 import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { factsForDocuments, type ResolvedFact } from "./knowledge.js";
+import { documentAnchor, factAnchor, recordVersion, type SourceAnchor } from "./source-anchor.js";
 
 export interface SearchResult {
+  source_anchor?: SourceAnchor;
   id: string;
   file_path: string;
   library_path: string;
@@ -53,12 +55,13 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
     const body = snapshot.renderDocument(document.id).document;
     const projection = snapshot.projectDocument(document.id);
     const metadata = projection.metadata;
-    const names = [
-      document.title,
-      document.file_path,
-      ...metadata.entities.flatMap((entity) => [entity.name, ...(entity.aliases ?? [])]),
-      ...metadata.tags
+    const named: Array<{ text: string; field: Extract<SourceAnchor, { kind: "metadata" }>["field"] }> = [
+      { text: document.title, field: "title" },
+      { text: document.file_path, field: "path" },
+      ...metadata.entities.flatMap((entity) => [entity.name, ...(entity.aliases ?? [])].map(text => ({ text, field: "entity" as const }))),
+      ...metadata.tags.map(text => ({ text, field: "tag" as const }))
     ];
+    const names = named.map(value => value.text);
     const headings = normalize(names.join("\n"));
     const summary = normalize(metadata.summary);
     const factText = projection.facts.map((fact) => fact.text).join("\n");
@@ -67,11 +70,13 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
     if (matched.length === 0) {
       continue;
     }
-    const candidates: Array<{ text: string; line?: number }> = [
-      ...body.split("\n").map((text, index) => ({ text, line: index + 1 })),
-      ...projection.facts.map((fact) => ({ text: fact.text })),
-      ...names.map((text) => ({ text })),
-      { text: metadata.summary }
+    const version = recordVersion(snapshot, document.id);
+    let bodyOffset = 0;
+    const candidates: Array<{ text: string; line?: number; start?: number; source_anchor?: SourceAnchor }> = [
+      ...body.split("\n").map((text, index) => { const start = bodyOffset; bodyOffset += text.length + 1; return { text, line: index + 1, start }; }),
+      ...projection.facts.map((fact) => ({ text: fact.text, source_anchor: factAnchor(snapshot, fact) })),
+      ...[...named, { text: metadata.summary, field: "summary" as const }].map(({ text, field }) => ({ text,
+        source_anchor: { kind: "metadata" as const, document_id: document.id, record_version: version, field, value: text } }))
     ];
     let evidence = candidates[0];
     let evidenceScore = -1;
@@ -85,6 +90,9 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
     const phraseOffset = normalize(snippet).indexOf(normalizedQuery);
     const offset = phraseOffset >= 0 ? phraseOffset : Math.min(...matched.map((term) => normalize(snippet).indexOf(term)).filter((value) => value >= 0));
     const start = Number.isFinite(offset) ? Math.max(0, offset - 60) : 0;
+    const source = snapshot.sourceDocument(document.id);
+    const anchor = evidence.source_anchor ?? documentAnchor(snapshot, document.id,
+      source.renderedOffset(evidence.start! + start), source.renderedOffset(evidence.start! + Math.min(evidence.text.length, start + 240)));
     snippet = `${start > 0 ? "…" : ""}${snippet.slice(start, start + 240)}${snippet.length > start + 240 ? "…" : ""}`;
     const fieldScore = matched.reduce((sum, term) => sum
       + (headings.includes(term) ? 5 : 0)
@@ -105,6 +113,7 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
       line: evidence.line,
       snippet,
       score,
+      source_anchor: anchor,
       ...(facts.length ? { facts } : {})
     });
   }

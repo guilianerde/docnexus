@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.14.0 保持工作区格式 6。已有格式 6 文本只需 `index sync` 补建新投影，无需 reset；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.15.0 保持工作区格式 6。已有格式 6 文本只需 `index sync` 补建新投影，无需 reset；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -73,9 +73,9 @@ docnexus/
 
 ## 文档展示接口
 
-在已初始化的项目中运行 `./node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页打开时每 15 秒检查更新，也可手动刷新；数据版本变化后回到第一页。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
+在已初始化的项目中运行 `./node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页打开时每 15 秒检查更新，也可手动刷新；数据版本变化后回到第一页。未变化的当前页通过 ETag/304 跳过 HTML 渲染和完整正文传输，仍校验真源与事实时间。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
 
-运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
+未提供显式分类时，运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
 
 ```bash
 ./node_modules/.bin/docnexus document query --all
@@ -87,7 +87,7 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 ## 捕获与 skills
 
-封存草稿会记录目标文档版本。封存后若正文、来源、分类等发生更新，或路径被占用、删除或重建，旧草稿入库会被拒绝；先读取并合并当前知识，再重新封存和审阅，`--replace` 不绕过检查。旧格式 1 的待入库草稿需重新封存为格式 2，已存文档仍为工作区格式 6。真实文档程序回放与独立模型审阅任务见 [知识维护评估](docs/operations/knowledge-evaluation.zh-CN.md)。
+封存草稿会记录目标文档版本。封存后若正文、来源、分类等发生更新，或路径被占用、删除或重建，旧草稿入库会被拒绝；先读取并合并当前知识，再重新封存和审阅，`--replace` 不绕过检查。旧格式 1/2 的待入库草稿需复读合并后重新封存为格式 3，已存文档仍为工作区格式 6。真实文档程序回放与独立模型审阅任务见 [知识维护评估](docs/operations/knowledge-evaluation.zh-CN.md)。
 
 | Skill | 职责 |
 | --- | --- |
@@ -100,6 +100,17 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 捕获流程：`draft new` → 智能体写入三份产物 → `draft seal` → 用户审阅 → `document add --draft <id>`。有事实引用时 seal 会生成 `preview.md`；审阅该预览，引用事实变化后需重新封存与审阅。已有路径需要显式授权并使用 `--replace`。封存后的产物发生变化时，必须重新封存并确认授权仍覆盖新内容。
 
+其他 skill 可为本次写入显式指定分类，跳过 DocNexus 的智能体分类。例如 code-review skill 准备好三份草稿产物后：
+
+```bash
+./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
+  --category codeReview --category-reason "Produced by the code-review skill"
+# 审阅文档及封存后的 metadata，再入库
+./node_modules/.bin/docnexus document add --draft <draft_id>
+```
+
+分类名按原样采用，分类依据可省略，默认记录 `Explicit category supplied by caller.`。显式分类包含在封存哈希中，入库时使用已审阅值；更新已有文档仍需读取当前版本并提供 `--base-version <record_version>`，入库使用 `--replace`。同次分类维护不覆盖调用方选择，后续仍可显式调整。
+
 更新草稿须传入提炼所依据的 `document get` 或 `document query` 返回的 `--base-version <record_version>`。封存冲突后须复读合并，再使用该次读取的版本；新路径可用 `--base-version new`。旧 manifest 格式 1/2 的待入库草稿需复读合并后重新封存。
 
 `init --agent` 将 `.agents/skills/` 或 `.claude/skills/` 链接到项目 skills，并在 `AGENTS.md` 或 `CLAUDE.md` 写入带标记的指引区块。Claude 通过 `@docnexus/CONCEPTS.md` 加载目录，Codex 按指引读取。`reset` 清理这些链接和区块。
@@ -109,6 +120,8 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 除 `store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取或切换分支后，关键词查找和全文读取直接使用当前文本；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
 
 ## 数据库引擎
+
+检索投影现在单独记录 schema 版本 2，独立于工作区格式 6。`index status` / `doctor` 可查看版本与兼容状态；已知旧投影在下次同步或召回时从文本重建，保留来源、时间线、草稿和模型资产。更新或未知版本会明确拒绝，不静默按旧结构使用。两路召回保留结构化出处，预算交付先保留各候选的命中证据，再扩展正文，详见 [检索链路](docs/architecture/retrieval-pipeline.zh-CN.md)。
 
 默认零配置使用 PGLite，在首次 `index sync` 或语义召回时创建 `docnexus/store/brain.pglite`。使用已有 Postgres＋pgvector 服务时，在 CLI 环境设置 `DOCNEXUS_DATABASE_URL` 后执行 `docnexus index sync`。连接凭据不写入项目文件。两种引擎共用 schema 和 SQL，每份文档的文档、chunk 与关系投影在同一个数据库事务中提交；文本仍是真源，通过同步与数据库协调。
 
@@ -139,7 +152,7 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 # 捕获
 ./node_modules/.bin/docnexus draft new --slug auth
 ./node_modules/.bin/docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file auth/rotation.md
+./node_modules/.bin/docnexus draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
 ./node_modules/.bin/docnexus document add --draft <draft_id> [--replace]
 ./node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
 ./node_modules/.bin/docnexus draft discard --id <draft_id> --force
@@ -177,6 +190,7 @@ npm test
 npm run typecheck
 npm run build
 npm run eval:retrieval
+npm run eval:retrieval:quality   # 默认仅开发集；保留集对照命令见检索评估文档
 npm run eval:knowledge
 npm run eval:agent -- prepare
 node scripts/tarball-smoke.mjs

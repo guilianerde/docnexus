@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.14.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 0.15.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
@@ -14,6 +14,7 @@ DocNexus 0.14.0 采用分层项目记忆：Markdown 当前知识与来源时间�
 
 ## 模块职责
 
+- `drafts.ts` 校验 `draft seal` 的可选调用方分类 `--category` 与依据 `--category-reason`，优先于编排模型分类。最终分类写入草稿 metadata 并封存哈希，审阅后由入库链路原样保存；不创建单独分类真源或永久分类锁。接口见 [显式分类契约](../operations/agent-protocol.zh-CN.md#调用方显式分类)。
 - `workspace-reader.ts` 负责路径边界、record/asset 读取和完整性校验。
 - `knowledge.ts` 仅处理实体、事实生命周期、替代链与投影规则，不访问文件或项目锁；`knowledge-service.ts` 负责加载工作区并调用这些规则。
 - `workspace-snapshot.ts` 在一次操作内复用 records、资产、事实解析及时间。正文和知识投影按需计算并缓存；快照 revision 由完整 records 与有效事实状态生成，分页只渲染实际返回的正文，不维持跨请求缓存。
@@ -103,6 +104,8 @@ PGLite 在首次索引操作时创建，纯文本 init、search 和 document que
 模型或索引同步失败时，recall 报错；仍可使用不依赖模型的 search。相似度、词法和 RRF 分数均不表示事实置信度。无答案问题仍可能返回近邻，是否有足够证据作答由智能体判断。
 
 有预算的召回通过独立证据包交付，支持 window/section/page，附带当前快照时间、来源观察时间、record_version、原子事实状态与省略信息；完整 JSON 按明确标注的保守估算限制大小，不重复旧上下文。详见 [证据交付](evidence-delivery.zh-CN.md)。失败使用共享 [智能体操作协议](../operations/agent-protocol.zh-CN.md)，真实模型行为由 [独立上下文验收](../operations/agent-evaluation.zh-CN.md) 观察，不与预置知识回放混算。
+
+证据组装优先放入直接命中的完整事实，其中当前有效替代先于历史状态，再分配正文预算；未交付块仍明确计数。首批扩展检索评估冻结开发/保留集，固定候选对照三种证据范围及两档预算，逐题保留未召回或答案省略的案例，见 [来源型质量基线](../operations/retrieval-evaluation.md#source-based-quality-baseline)。
 
 ## 实体与事实生命周期
 

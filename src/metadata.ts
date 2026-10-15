@@ -5,7 +5,7 @@ export const metadataSchema = {
   title: "DocNexus metadata schema",
   entityTypes,
   relationshipTypes,
-  classification: "Project-defined category names chosen by the orchestration model from project context and existing documents; no fixed taxonomy.",
+  classification: "Project-defined category names; an explicit user or calling-skill category takes precedence over model classification. No fixed taxonomy. Seal caller overrides with draft seal --category before review.",
   documentReferences: {
     syntax: "{{fact:fact_id}} on a standalone Markdown line; code fences remain literal.",
     source: "Define each fact only once in its owner's metadata.facts. References follow effective replacements.",

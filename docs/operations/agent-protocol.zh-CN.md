@@ -38,6 +38,7 @@ docnexus protocol
 | `draft_changed` / `preview_changed` | 重新检查实际产物或引用事实，封存并审阅新内容 |
 | `text_integrity_error` | doctor 检查；审阅后采纳人工正文或从备份恢复损坏文件 |
 | `index_outdated` | 从已验证文本同步派生索引 |
+| `index_schema_incompatible` | 使用与该投影版本兼容的 DocNexus；仍可直接查找和读取文本 |
 | `index_unavailable` / `embedding_failed` | 检查数据库/离线模型；可使用独立文本 search |
 | `embedding_input_too_long` | 缩短查询或拆分输入 |
 | `knowledge_conflict` / `invalid_metadata` | 按实体、事实与格式规则审阅修正 |
@@ -46,3 +47,26 @@ docnexus protocol
 doctor 保留原有 `checks` 和 `recommendations`，新增 `protocol_version`、结构化 `issues[]`。发现真源损坏时，机器清单优先要求审阅真源，不建议先用索引重建掩盖问题。完整错误枚举以 `docnexus protocol` 为准。
 
 CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表示绕过恢复机制。
+
+## 调用方显式分类
+
+用户或调用方 skill 已确定文档类型时，可在封存阶段指定分类，跳过本次写入的模型分类。例如 code-review skill 已准备好三份草稿产物：
+
+```bash
+./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
+  --base-version new --category codeReview \
+  --category-reason "Produced by the code-review skill"
+# 审阅最终 metadata 和文档；含事实引用时同时审阅 preview_file。
+./node_modules/.bin/docnexus document add --draft <draft_id>
+```
+
+| CLI 参数 | Node `sealDraft` 输入 | 含义 |
+| --- | --- | --- |
+| `--category` | `category` | 可选；本次写入的分类，按原样采用，覆盖草稿已有分类。1–80 字符，无首尾空白或控制字符 |
+| `--category-reason` | `categoryReason` | 可选；非空且不超过 2000 字符，必须同时指定分类；写入 `metadata.category_reason` |
+
+未提供依据时记录 `Explicit category supplied by caller.`，不会继承旧分类的模型依据。未提供分类时保留原有 metadata 和编排分类流程。显式指定成功后，seal 的 JSON 额外返回可选 `category`、`category_reason`；其余成功字段和协议版本 1 不变，草稿 manifest 仍为格式 3。
+
+分类在封存时写入 `metadata.json`，其最终字节纳入 `manifest.hashes.metadata`；入库消费这一已审阅版本，时间线记录分类与依据。`document add` 不接受分类覆盖参数，传入会返回 `invalid_params`，应回到 seal 后重新审阅。封存后修改分类或依据会返回 `draft_changed`；更新已有文档仍需要提炼读取时的 `--base-version <record_version>` 和已授权的 `--replace`，版本变化返回 `target_changed`。
+
+同次捕获后的分类维护保留调用方选择；后续可显式调整，不构成永久分类锁。详细编排规则见 [调用方分类工作流](../../skills/docnexus-library/references/classification.md#caller-selected-category)。

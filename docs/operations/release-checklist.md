@@ -8,6 +8,7 @@ npm test
 npm run typecheck
 npm run build
 npm run eval:retrieval
+npm run eval:retrieval:quality
 npm run eval:knowledge
 npm pack --dry-run
 npm run audit:prod
@@ -41,6 +42,10 @@ node scripts/tarball-smoke.mjs
 
 ## Documentation and compatibility
 
+- [ ] Caller-selected categories use `draft seal --category` before review; exact names, optional/default reasons, sealed metadata hashes and audit history are preserved. Invalid inputs, late ingestion overrides, post-seal edits and stale targets are refused. The no-override path remains compatible.
+- [ ] Viewer conditional requests bind ETags to revision, pagination and category; unchanged views return an empty 304 without HTML rendering. Source corruption and fact-time changes still invalidate or reject the request; frontend recovery fetches full content after an error.
+- [ ] Budgeted evidence retains directly matched atomic facts and their current replacements before prose; source/status fields and complete JSON budgets remain valid. Record any omitted answer evidence as a quality failure, separately from consistency checks.
+- [ ] The expanded retrieval suite validates source anchors and split labels, reports repository/simulation outcomes separately, and compares fixed candidates across window/section/page and both budgets. Default/CI runs development only; holdout comparisons are explicit and recorded. Initial failures remain in the baseline report.
 - [ ] Both READMEs distinguish literal `search`, default hybrid `recall` and `recall --mode vector`.
 - [ ] Documentation explains text truth, rebuildable databases and separate backup for custom model overrides.
 - [ ] Workspace format remains 6, with no migration from earlier formats.

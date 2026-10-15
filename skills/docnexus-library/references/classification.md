@@ -1,6 +1,18 @@
 # Contextual classification
 
-The model running the project skills owns classification judgment. Categories are project-defined names, not a fixed list. The CLI validates and persists the decision; read/query commands never invoke a model or silently reorganize documents.
+Categories are project-defined names, not a fixed list. An explicit category supplied by the user or calling skill takes precedence for that write; otherwise the model running the project skills owns classification judgment. The CLI validates and persists the decision; read/query commands never invoke a model or silently reorganize documents.
+
+## Caller-selected category
+
+When a calling skill already knows its output type, such as `codeReview`, skip model classification for that document. Preserve the exact category name rather than translating it, changing its case, or replacing it with a similar existing category. Seal before review:
+
+```bash
+./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
+  --base-version <record_version|new> --category codeReview \
+  --category-reason "Produced by the code-review skill"
+```
+
+`--category-reason` is optional and requires `--category`. Without a basis the CLI records `Explicit category supplied by caller.` instead of reusing the previous model's rationale. Sealing includes the final category and basis in the metadata hash. Ingestion consumes that reviewed artifact; changing either field afterward requires resealing and review. This selection governs the current write and must not be overridden by category maintenance in the same capture pipeline. A later authorized `document classify` or new draft can change it; there is no permanent lock or separate taxonomy registry.
 
 ## When to review
 

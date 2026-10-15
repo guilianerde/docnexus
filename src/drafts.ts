@@ -7,7 +7,7 @@ import { draftsPath, WORKSPACE_DIRNAME } from "./layout.js";
 import { listRecordFiles, normalizeManagedFilePath } from "./workspace-reader.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { validateMetadata } from "./metadata.js";
-import type { DocNexusMetadata } from "./types.js";
+import { isDocumentCategory, type DocNexusMetadata } from "./types.js";
 import { atomicWrite } from "./workspace-io.js";
 import { factReferenceIds, renderFactDocument } from "./fact-renderer.js";
 import { validateKnowledgeWrite } from "./knowledge-service.js";
@@ -52,6 +52,8 @@ export interface SealDraftOutput {
   artifacts: Record<ArtifactName, string>;
   metadata_validation: "passed";
   replaces_managed_document: boolean;
+  category?: string;
+  category_reason?: string;
   preview_file?: string;
 }
 
@@ -156,9 +158,15 @@ export async function createDraft(projectRoot: string, input: { slug?: string } 
 /** Verifies the three artifacts of a draft and writes its manifest, making it ready for ingestion. */
 export async function sealDraft(
   projectRoot: string,
-  input: { draftId: string; filePath: string; baseRecordHash?: string | null }
+  input: { draftId: string; filePath: string; baseRecordHash?: string | null; category?: string; categoryReason?: string }
 ): Promise<SealDraftOutput> {
   return withProjectLock(projectRoot, async () => {
+    if (input.category !== undefined && !isDocumentCategory(input.category)) {
+      throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
+    }
+    if (input.categoryReason !== undefined && (input.category === undefined || typeof input.categoryReason !== "string" || !input.categoryReason.trim() || input.categoryReason.length > 2000)) {
+      throw new DocNexusError("invalid_params", "category reason must be non-empty, at most 2000 characters, and requires --category");
+    }
     const draftId = assertDraftId(input.draftId);
     const directory = await draftDirectory(projectRoot, draftId);
     const existing = await readManifest(directory).catch(() => undefined);
@@ -168,12 +176,16 @@ export async function sealDraft(
     const filePath = await normalizeManagedFilePath(projectRoot, input.filePath);
     const source = await readArtifact(directory, "source");
     const document = await readArtifact(directory, "document");
-    const metadataText = await readArtifact(directory, "metadata");
+    let metadataText = await readArtifact(directory, "metadata");
     let metadata: unknown;
     try {
       metadata = JSON.parse(metadataText);
     } catch (error) {
       throw new DocNexusError("draft_invalid", `draft metadata.json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (input.category !== undefined && metadata !== null && typeof metadata === "object" && !Array.isArray(metadata)) {
+      metadata = { ...metadata, category: input.category, category_reason: input.categoryReason ?? "Explicit category supplied by caller." };
+      metadataText = `${JSON.stringify(metadata, null, 2)}\n`;
     }
     const validation = validateMetadata(metadata);
     if (!validation.valid) {
@@ -209,6 +221,8 @@ export async function sealDraft(
       previewFile = relativeDraftPath(draftId, "preview.md");
       await atomicWrite(join(directory, "preview.md"), rendered);
     }
+    // Classification is part of the reviewed artifact hash, never a late ingest override.
+    if (input.category !== undefined) await atomicWrite(join(directory, ARTIFACTS.metadata), metadataText);
     await writeManifest(directory, manifest);
     return {
       result: "draft_ready",
@@ -218,6 +232,7 @@ export async function sealDraft(
       artifacts: manifest.artifacts,
       metadata_validation: "passed",
       replaces_managed_document: prior !== undefined,
+      ...(input.category !== undefined ? { category: input.category, category_reason: input.categoryReason ?? "Explicit category supplied by caller." } : {}),
       ...(previewFile ? { preview_file: previewFile } : {})
     };
   });

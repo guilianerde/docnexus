@@ -154,7 +154,8 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
       throw new DocNexusError("invalid_params", "draft seal requires --id and --file");
     }
     return json(await sealDraft(projectRoot, { draftId: options.id, filePath: options.file,
-      baseRecordHash: options["base-version"] === "new" ? null : options["base-version"] }));
+      baseRecordHash: options["base-version"] === "new" ? null : options["base-version"],
+      category: options.category, categoryReason: options["category-reason"] }));
   }
 
   if (command === "draft" && subcommand === "list") {
@@ -258,6 +259,9 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
   if (command === "document" && subcommand === "add") {
     const replace = rest.includes("--replace");
     const options = parseOptions(rest.filter((arg) => arg !== "--replace"));
+    if (options.category !== undefined || options["category-reason"] !== undefined) {
+      throw new DocNexusError("invalid_params", "set classification with draft seal --category before reviewing the draft; document add uses its sealed metadata");
+    }
     if (!options.draft) {
       throw new DocNexusError("invalid_params", "document add requires --draft <draft_id>");
     }
@@ -327,7 +331,7 @@ const USAGE = `Setup
 Capture (extract -> seal -> ingest)
   docnexus draft new [--slug auth]
   docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
-  docnexus draft seal --id <draft_id> --file <library_path.md> [--base-version <record_version|new>]
+  docnexus draft seal --id <draft_id> --file <library_path.md> [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
   docnexus document add --draft <draft_id> [--replace]
   docnexus draft list [--status open|ready|ingested|invalid]
   docnexus draft discard --id <draft_id> --force

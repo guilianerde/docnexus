@@ -19,6 +19,7 @@ export const errorDefinitions = {
   knowledge_conflict: { retryable: false, kind: "review", message: "Inspect entity and fact history; resolve the conflict without discarding valid facts." },
   invalid_metadata: { retryable: false, kind: "review", message: "Correct the reported metadata fields before sealing or writing." },
   index_outdated: { retryable: false, kind: "repair", message: "Synchronize verified text into the derived index.", command: ["index", "sync"] },
+  index_schema_incompatible: { retryable: false, kind: "configure", message: "Use a DocNexus release compatible with this projection version; canonical text remains readable." },
   index_unavailable: { retryable: false, kind: "configure", message: "Check database configuration and availability; use text search while retrieval is unavailable." },
   embedding_failed: { retryable: false, kind: "configure", message: "Check the offline model with doctor; use text search while embedding is unavailable.", command: ["doctor"] },
   embedding_input_too_long: { retryable: false, kind: "review", message: "Shorten the query or split the input before embedding." },

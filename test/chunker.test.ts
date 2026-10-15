@@ -13,7 +13,8 @@ describe("chunkText", () => {
       {
         index: 0,
         text: "# Title\n\nA short paragraph.",
-        text_hash: expect.stringMatching(/^[0-9a-f]{64}$/)
+        text_hash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        source_start: 0, source_end: 27
       }
     ]);
   });
