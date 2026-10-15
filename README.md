@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.15.0 keeps workspace format 6. Existing format-6 text needs only `index sync` to build the new projections; no reset is needed. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.16.0 keeps workspace format 6. Existing format-6 text needs only `index sync` to build the new projections; no reset is needed. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -53,6 +53,8 @@ Timeline dates are save times, not necessarily the dates of events described in 
 ./node_modules/.bin/docnexus document get --id <id> --include document,metadata
 ./node_modules/.bin/docnexus document get --id <id> --include document,timeline
 ```
+
+Use `--category codeReview` on `search` or `recall` to search an exact, case-sensitive project category; it also works with `--mode vector` and budgeted evidence. Filtering applies before candidate limits/fusion and to graph supporting documents and relation owners. `--category uncategorized` includes documents with no category; an unknown category returns no results. Referenced facts retain their canonical owners, including across categories. Omit the option to search all categories.
 
 Search literally matches current bodies, paths, titles, summaries, tags, canonical entity names/aliases and active facts. `recall` uses the bundled `BAAI/bge-small-zh-v1.5` q8 ONNX model for 512-dimensional vectors and fuses keyword/vector document ranks with RRF. Each document contributes once and returns one representative chunk, neighboring chunks and one-hop graph evidence. `ranking.rrf_score` orders hybrid results; `source_ranks` and `keyword_match` expose the evidence. `matched_chunk.score` is vector similarity only, zero for keyword-only candidates. Use `--mode vector` for the original chunk-level vector mode. Graph support does not alter primary ranking. Scores are not truth confidence; cite a relationship’s declaring `source_path`.
 
@@ -153,8 +155,8 @@ document add --draft <draft_id> [--replace]
 draft list [--status open|ready|ingested|invalid]
 draft discard --id <draft_id> --force
 
-search "Refresh token" [--limit 5]
-recall "Refresh token" [--limit 5]
+search "Refresh token" [--limit 5] [--category codeReview]
+recall "Refresh token" [--limit 5] [--category codeReview]
 concepts [--type component] [--query auth] [--format json|md]
 document list [--limit 50] [--tag auth]
 document get --id <id> [--include source,document,metadata,timeline,template]

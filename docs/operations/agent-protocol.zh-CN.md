@@ -70,3 +70,16 @@ CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表
 分类在封存时写入 `metadata.json`，其最终字节纳入 `manifest.hashes.metadata`；入库消费这一已审阅版本，时间线记录分类与依据。`document add` 不接受分类覆盖参数，传入会返回 `invalid_params`，应回到 seal 后重新审阅。封存后修改分类或依据会返回 `draft_changed`；更新已有文档仍需要提炼读取时的 `--base-version <record_version>` 和已授权的 `--replace`，版本变化返回 `target_changed`。
 
 同次捕获后的分类维护保留调用方选择；后续可显式调整，不构成永久分类锁。详细编排规则见 [调用方分类工作流](../../skills/docnexus-library/references/classification.md#caller-selected-category)。
+
+## 按分类查找
+
+```bash
+docnexus search "并发问题" --category codeReview --limit 5
+docnexus recall "哪些评审问题尚未解决？" --category codeReview
+docnexus recall "并发约定" --mode vector --category codeReview
+docnexus recall "评审结论" --category codeReview --return-unit section --context-budget 4000
+```
+
+Node API 的 `searchDocuments`、`recall`、`recallEvidence` 输入均接受 `category?: string`。分类名精确、区分大小写，使用与写入/文档查询相同的 1–80 字符校验，非法值返回 `invalid_params`；`uncategorized` 包含没有分类的旧文档，未知分类正常返回空结果。不传参数时保持全项目检索。
+
+过滤在关键词匹配、向量候选限额和 RRF 融合前生效，图谱支持文档和关系声明者也受分类约束；文内事实引用继续保留跨分类定义者及其生命周期。分类取当前文本快照，不依赖旧数据库分类缓存。指定分类无结果时，不自动退回所有分类。

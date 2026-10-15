@@ -175,13 +175,21 @@ export async function rebuildPostgresVectorIndex(root: string): Promise<void> {
 export interface VectorCandidate { id: string; document_id: string; score: number }
 
 /** Fetch ranking evidence only. Expand neighbors and graph evidence after fusion. */
-export async function findVectorCandidates(db: RetrievalDatabase, embedding: number[], limit: number, documentLevel = false, chunkIds?: string[]): Promise<VectorCandidate[]> {
+export async function findVectorCandidates(db: RetrievalDatabase, embedding: number[], limit: number, documentLevel = false, chunkIds?: string[], documentIds?: string[]): Promise<VectorCandidate[]> {
   if (embedding.length !== EMBEDDING_DIMENSION || !embedding.every(Number.isFinite)) throw new Error("embedding dimension mismatch or non-finite values");
   const t = tables(db);
   const window = documentLevel ? limit * 5 : limit;
-  const values = [JSON.stringify(embedding), window, ...(chunkIds ? [chunkIds] : [])];
-  const hits = await db.query<VectorCandidate>(`SELECT id,document_id,1-(embedding <=> $1::public.vector) AS score FROM ${t.chunks}
-    ${chunkIds ? "WHERE id=ANY($3::text[])" : ""} ORDER BY embedding <=> $1::public.vector LIMIT $2`, values);
+  const values: unknown[] = [JSON.stringify(embedding), window];
+  const filters: string[] = [];
+  if (chunkIds !== undefined) { values.push(chunkIds); filters.push(`id=ANY($${values.length}::text[])`); }
+  if (documentIds !== undefined) { values.push(documentIds); filters.push(`document_id=ANY($${values.length}::text[])`); }
+  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  // Materialize a category's eligible chunks before ranking: HNSW post-filtering
+  // can exhaust its global neighbor pool before finding in-category documents.
+  const scoped = documentIds !== undefined;
+  const hits = await db.query<VectorCandidate>(`${scoped ? `WITH eligible AS MATERIALIZED (SELECT id,document_id,embedding FROM ${t.chunks} ${where})` : ""}
+    SELECT id,document_id,1-(embedding <=> $1::public.vector) AS score FROM ${scoped ? "eligible" : t.chunks}
+    ${scoped ? "" : where} ORDER BY embedding <=> $1::public.vector LIMIT $2`, values);
   if (!documentLevel) return hits;
   const byDocument = new Map<string, VectorCandidate>();
   for (const hit of hits) if (!byDocument.has(hit.document_id)) byDocument.set(hit.document_id, hit);
@@ -189,7 +197,13 @@ export async function findVectorCandidates(db: RetrievalDatabase, embedding: num
   if (unique.length < limit && hits.length === window) {
     // A long document can fill the ANN window. Complete the document pool using
     // each remaining document's best chunk, without transferring its other chunks.
-    const extra = await db.query<VectorCandidate>(`SELECT c.id,d.id AS document_id,1-(c.embedding <=> $1::public.vector) AS score
+    const extra = scoped ? await db.query<VectorCandidate>(`SELECT * FROM (
+      SELECT DISTINCT ON(document_id) id,document_id,1-(embedding <=> $1::public.vector) AS score
+      FROM ${t.chunks} WHERE document_id=ANY($4::text[]) AND NOT(document_id=ANY($3::text[]))
+      ORDER BY document_id,embedding <=> $1::public.vector
+    ) best ORDER BY score DESC,document_id LIMIT $2`,
+    [JSON.stringify(embedding), limit - unique.length, unique.map(hit => hit.document_id), documentIds])
+    : await db.query<VectorCandidate>(`SELECT c.id,d.id AS document_id,1-(c.embedding <=> $1::public.vector) AS score
       FROM ${t.documents} d CROSS JOIN LATERAL (
         SELECT id,embedding FROM ${t.chunks} WHERE document_id=d.id ORDER BY embedding <=> $1::public.vector LIMIT 1
       ) c WHERE NOT(d.id=ANY($3::text[])) ORDER BY c.embedding <=> $1::public.vector,d.id LIMIT $2`,
@@ -203,25 +217,26 @@ export async function readChunkTexts(db: RetrievalDatabase, documentIds: string[
   return db.query<{ id: string; document_id: string; chunk_index: number; text: string; source_anchor?: SourceAnchor }>(`SELECT id,document_id,chunk_index,text,source_anchor FROM ${tables(db).chunks} WHERE document_id=ANY($1::text[]) ORDER BY document_id,chunk_index`, [documentIds]);
 }
 
-export async function loadPostgresContext(db: RetrievalDatabase, candidates: VectorCandidate[]): Promise<GroupedRecallData> {
+export async function loadPostgresContext(db: RetrievalDatabase, candidates: VectorCandidate[], documentIds?: string[]): Promise<GroupedRecallData> {
   if (!candidates.length) return { results: [], context_groups: [] };
   const t = tables(db);
   const details = await db.query<{ id: string; document_id: string; chunk_index: number; text: string; file_path: string; title: string; summary: string; source_anchor?: SourceAnchor }>(`
     SELECT c.id,c.document_id,c.chunk_index,c.text,c.source_anchor,d.file_path,d.title,d.summary
     FROM ${t.chunks} c JOIN ${t.documents} d ON d.id=c.document_id WHERE c.id=ANY($1::text[])`, [candidates.map(hit => hit.id)]);
   const ids = [...new Set(candidates.map(hit => hit.document_id))];
+  const graphValues = [ids, ...(documentIds !== undefined ? [documentIds] : [])];
   const mentions = await db.query<{ document_id: string; name: string; concept_id: string }>(`SELECT m.document_id,c.name,c.id AS concept_id FROM ${t.mentions} m JOIN ${t.concepts} c ON c.id=m.concept_id WHERE m.document_id=ANY($1::text[]) ORDER BY c.name`, [ids]);
   const paths = await db.query<RecallPathCandidate>(`SELECT selected.document_id,evidence.* FROM unnest($1::text[]) AS selected(document_id) CROSS JOIN LATERAL (
     SELECT DISTINCT f.name AS "from",e.label AS relationship,d.name AS "to",owner.id AS source_document_id,owner.file_path AS source_path,e.description
     FROM ${t.mentions} m JOIN ${t.edges} e ON e.from_id=m.concept_id JOIN ${t.concepts} f ON f.id=e.from_id JOIN ${t.concepts} d ON d.id=e.to_id JOIN ${t.documents} owner ON owner.id=e.document_id
-    WHERE m.document_id=selected.document_id ORDER BY f.name,e.label,d.name,owner.file_path LIMIT 5
-  ) evidence ORDER BY selected.document_id,evidence."from",evidence.relationship,evidence."to",evidence.source_path`, [ids]);
+    WHERE m.document_id=selected.document_id ${documentIds !== undefined ? "AND owner.id=ANY($2::text[])" : ""} ORDER BY f.name,e.label,d.name,owner.file_path LIMIT 5
+  ) evidence ORDER BY selected.document_id,evidence."from",evidence.relationship,evidence."to",evidence.source_path`, graphValues);
   const supporting = await db.query<RecallSupportingCandidate>(`SELECT selected.document_id AS source_document_id,evidence.* FROM unnest($1::text[]) AS selected(document_id) CROSS JOIN LATERAL (
     SELECT DISTINCT d.id AS document_id,d.file_path AS path,d.title,c.id AS chunk_id,c.chunk_index,c.text,c.source_anchor,'graph_one_hop' AS reason
     FROM ${t.mentions} m JOIN ${t.edges} e ON e.from_id=m.concept_id JOIN ${t.mentions} other ON other.concept_id=e.to_id
     JOIN ${t.documents} d ON d.id=other.document_id JOIN ${t.chunks} c ON c.document_id=d.id
-    WHERE m.document_id=selected.document_id AND d.id<>m.document_id ORDER BY path,chunk_index,chunk_id LIMIT 3
-  ) evidence ORDER BY selected.document_id,evidence.path,evidence.chunk_index`, [ids]);
+    WHERE m.document_id=selected.document_id AND d.id<>m.document_id ${documentIds !== undefined ? "AND d.id=ANY($2::text[]) AND e.document_id=ANY($2::text[])" : ""} ORDER BY path,chunk_index,chunk_id LIMIT 3
+  ) evidence ORDER BY selected.document_id,evidence.path,evidence.chunk_index`, graphValues);
   const neighbors = await db.query<{ matched_id: string; id: string; chunk_index: number; text: string; source_anchor?: SourceAnchor }>(`SELECT hit.id AS matched_id,n.id,n.chunk_index,n.text,n.source_anchor FROM ${t.chunks} hit JOIN ${t.chunks} n ON n.document_id=hit.document_id AND n.chunk_index IN(hit.chunk_index-1,hit.chunk_index+1) WHERE hit.id=ANY($1::text[]) ORDER BY n.chunk_index`, [candidates.map(hit => hit.id)]);
   const byId = new Map(details.map(hit => [hit.id, hit]));
   const primary: RecallPrimaryMatch[] = candidates.map(candidate => {
@@ -238,7 +253,7 @@ export async function loadPostgresContext(db: RetrievalDatabase, candidates: Vec
   return buildGroupedRecall(primary, paths, supporting);
 }
 
-export async function recallFromPostgres(root: string, embedding: number[], limit: number, chunkIds?: string[]): Promise<GroupedRecallData> {
+export async function recallFromPostgres(root: string, embedding: number[], limit: number, chunkIds?: string[], documentIds?: string[]): Promise<GroupedRecallData> {
   return withProjectLock(root, async () => (await withRetrievalDatabase(root, async db =>
-    loadPostgresContext(db, await findVectorCandidates(db, embedding, limit, false, chunkIds))))!);
+    loadPostgresContext(db, await findVectorCandidates(db, embedding, limit, false, chunkIds, documentIds), documentIds)))!);
 }

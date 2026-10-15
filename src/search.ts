@@ -1,3 +1,4 @@
+import { isDocumentCategory } from "./types.js";
 import { DocNexusError } from "./errors.js";
 import { withProjectLock } from "./project-lock.js";
 import { libraryRelativePath } from "./layout.js";
@@ -5,6 +6,12 @@ import { refreshFactViews } from "./managed-documents.js";
 import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { factsForDocuments, type ResolvedFact } from "./knowledge.js";
 import { documentAnchor, factAnchor, recordVersion, type SourceAnchor } from "./source-anchor.js";
+
+export interface SearchInput {
+  query: string;
+  limit?: number;
+  category?: string;
+}
 
 export interface SearchResult {
   source_anchor?: SourceAnchor;
@@ -23,7 +30,7 @@ export interface SearchResult {
 /** Literal word/name lookup. Results point to documents for the agent to read in full. */
 export async function searchDocuments(
   projectRoot: string,
-  input: { query: string; limit?: number }
+  input: SearchInput
 ): Promise<{ query: string; results: SearchResult[] }> {
   validateSearchInput(input);
   return withProjectLock(projectRoot, async () => {
@@ -33,8 +40,8 @@ export async function searchDocuments(
   });
 }
 
-export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: string; limit?: number }): { query: string; results: SearchResult[] } {
-  const { query, limit } = validateSearchInput(input);
+export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput): { query: string; results: SearchResult[] } {
+  const { query, limit, category } = validateSearchInput(input);
   const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
   const normalizedQuery = normalize(query);
   const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
@@ -51,10 +58,12 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
   }
   const results: SearchResult[] = [];
   const { documents: knowledgeDocuments, knowledge } = snapshot;
+  const categoryIds = category === undefined ? undefined : new Set(snapshot.documents.filter(document => (document.metadata.category ?? "uncategorized") === category).map(document => document.id));
   for (const document of snapshot.records) {
-    const body = snapshot.renderDocument(document.id).document;
+    if (categoryIds !== undefined && !categoryIds.has(document.id)) continue;
     const projection = snapshot.projectDocument(document.id);
     const metadata = projection.metadata;
+    const body = snapshot.renderDocument(document.id).document;
     const named: Array<{ text: string; field: Extract<SourceAnchor, { kind: "metadata" }>["field"] }> = [
       { text: document.title, field: "title" },
       { text: document.file_path, field: "path" },
@@ -121,7 +130,7 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: { query: stri
   return { query, results: results.slice(0, Math.min(limit, 100)) };
 }
 
-function validateSearchInput(input: { query: string; limit?: number }) {
+function validateSearchInput(input: SearchInput) {
   const query = input.query?.trim();
   if (!query) {
     throw new DocNexusError("invalid_params", "query must be a non-empty string");
@@ -130,5 +139,6 @@ function validateSearchInput(input: { query: string; limit?: number }) {
   if (!Number.isInteger(limit) || limit <= 0) {
     throw new DocNexusError("invalid_params", "limit must be a positive integer");
   }
-  return { query, limit };
+  if (input.category !== undefined && !isDocumentCategory(input.category)) throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
+  return { query, limit, category: input.category };
 }

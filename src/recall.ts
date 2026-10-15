@@ -1,6 +1,7 @@
+import { isDocumentCategory } from "./types.js";
 import { embedText } from "./embedder.js";
 import { DocNexusError } from "./errors.js";
-import { type WorkspaceSnapshot } from "./workspace-snapshot.js";
+import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { withSyncedRetrieval } from "./retrieval-index.js";
 import { type Embedder } from "./embedder.js";
 import { createDefaultEmbedder } from "./embedder-default.js";
@@ -13,6 +14,7 @@ import { factsForDocuments } from "./knowledge.js";
 export interface RecallInput {
   query: string;
   limit?: number;
+  category?: string;
   mode?: "hybrid" | "vector";
 }
 
@@ -39,18 +41,20 @@ export async function recall(
     throw new DocNexusError("invalid_params", "query must be a non-empty string");
   }
   const limit = normalizeLimit(input.limit);
+  if (input.category !== undefined && !isDocumentCategory(input.category)) throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
 
   const query = input.query.trim();
   if (input.mode !== undefined && !["hybrid", "vector"].includes(input.mode)) throw new DocNexusError("invalid_params", "mode must be hybrid or vector");
   if ((input.mode ?? "hybrid") === "hybrid") {
-    const grouped = await hybridRecall(projectRoot, query, limit, activeEmbedder);
+    const grouped = await hybridRecall(projectRoot, query, limit, activeEmbedder, input.category);
     grouped.context_groups.forEach(validateContextGroup);
     return { query, ...grouped };
   }
   const queryEmbedding = await embedText(activeEmbedder, query);
   if (queryEmbedding.length !== activeEmbedder.dimension) throw new DocNexusError("embedding_failed", "embedding dimension mismatch");
   const retrieve = async (snapshot?: WorkspaceSnapshot) => {
-    const grouped = await reader.recallFromPostgres(projectRoot, queryEmbedding, limit);
+    const documentIds = input.category === undefined ? undefined : snapshot!.documents.filter(document => (document.metadata.category ?? "uncategorized") === input.category).map(document => document.id);
+    const grouped = await reader.recallFromPostgres(projectRoot, queryEmbedding, limit, undefined, documentIds);
     if (reader === defaultRecallReader) {
       const { documents: knowledgeDocuments, knowledge } = snapshot!;
       for (const group of grouped.context_groups) {
@@ -68,7 +72,7 @@ export async function recall(
   };
   return reader === defaultRecallReader
     ? withSyncedRetrieval(projectRoot, {}, activeEmbedder, async (_db, snapshot) => retrieve(snapshot))
-    : withProjectLock(projectRoot, () => retrieve());
+    : withProjectLock(projectRoot, async () => retrieve(input.category === undefined ? undefined : await loadWorkspaceSnapshot(projectRoot)));
 }
 
 function validateContextGroup(group: RecallContextGroup): void {

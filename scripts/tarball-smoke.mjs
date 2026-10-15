@@ -148,10 +148,12 @@ try {
   assert(catalog.categories.length === 1 && catalog.categories[0].id === "发布与分发", "category navigation remained constrained to the legacy taxonomy");
 
   const currentAssets = await runJson(cliPath, ["document", "get", "--id", added.id, "--include", "template,metadata"], projectDirectory, cliEnvironment);
-  const packet = await runJson(cliPath, ["recall", "installed DocNexus tarball", "--return-unit", "page", "--context-budget", "8000"], projectDirectory, cliEnvironment);
+  const packet = await runJson(cliPath, ["recall", "installed DocNexus tarball", "--category", "发布与分发", "--return-unit", "page", "--context-budget", "8000"], projectDirectory, cliEnvironment);
   assert(packet.protocol_version === 1 && packet.evidence.some(block => block.document_id === added.id), "installed CLI did not deliver canonical evidence");
   assert(packet.delivery.estimated_tokens === Buffer.byteLength(JSON.stringify(packet, null, 2) + "\n") && packet.delivery.estimated_tokens <= 8000, "installed evidence exceeded its declared complete-response estimate");
   assert(packet.as_of && packet.snapshot_revision && !packet.context_groups && !packet.results, "installed evidence duplicated unbudgeted contexts or omitted its snapshot");
+  assert((await runJson(cliPath, ["search", "installed DocNexus tarball", "--category", "missing"], projectDirectory, cliEnvironment)).results.length === 0, "installed search ignored the category filter");
+  assert((await runJson(cliPath, ["recall", "installed DocNexus tarball", "--mode", "vector", "--category", "missing"], projectDirectory, cliEnvironment)).results.length === 0, "installed vector recall ignored the category filter");
   let missingCode;
   try { await runJson(cliPath, ["--json", "document", "get", "--id", "doc_0000000000000000"], projectDirectory, cliEnvironment); }
   catch (error) { missingCode = JSON.parse(error.cause.stdout).code; }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.0 — 2026-10-15
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces require no reset. Category-scoped vector retrieval ranks the eligible subset exactly; broad categories may be slower than unfiltered HNSW retrieval.
+
+- Add exact, case-sensitive `--category` filters to search and both recall modes, including budgeted evidence. Filter keyword/vector candidates before limits and fusion, constrain graph expansion, and use current canonical classifications without a projection schema change. `uncategorized` includes legacy documents with no category; referenced facts retain their canonical owners.
+
 ## 0.15.0 — 2026-10-15
 
 Compatibility: workspace format 6 and draft manifest format 3 remain unchanged. Derived retrieval schema 2 rebuilds known older projections from canonical text on the next sync/recall; sources, histories and pending drafts are preserved. Unknown or newer projection schemas are refused.

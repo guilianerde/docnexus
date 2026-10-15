@@ -1,6 +1,6 @@
 # DocNexus 文档中心
 
-当前文档描述 0.15.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及新增的调用方显式分类、投影版本、结构化出处、预算规划、ETag 轮询和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0150--2026-10-15)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
+当前文档描述 0.16.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及新增的调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、ETag 轮询和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0160--2026-10-15)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
 
 | 主题 | 文档 |
 | --- | --- |

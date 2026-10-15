@@ -30,13 +30,14 @@ export function fuseDocumentRanks(keyword: string[], vector: string[]): FusedRan
     || a.id.localeCompare(b.id));
 }
 
-export async function hybridRecall(projectRoot: string, query: string, limit: number, embedder: Embedder): Promise<GroupedRecallData> {
+export async function hybridRecall(projectRoot: string, query: string, limit: number, embedder: Embedder, category?: string): Promise<GroupedRecallData> {
   const embedding = await embedText(embedder, query);
   if (embedding.length !== EMBEDDING_DIMENSION || !embedding.every(Number.isFinite)) throw new DocNexusError("embedding_failed", "embedding dimension mismatch or non-finite values");
   return withSyncedRetrieval(projectRoot, {}, embedder, async (db, snapshot) => {
     const candidates = Math.min(100, Math.max(20, limit * 5));
-    const keyword = searchSnapshot(snapshot, { query, limit: candidates });
-    const vector = await findVectorCandidates(db, embedding, candidates, true);
+    const documentIds = category === undefined ? undefined : snapshot.documents.filter(document => (document.metadata.category ?? "uncategorized") === category).map(document => document.id);
+    const keyword = searchSnapshot(snapshot, { query, limit: candidates, category });
+    const vector = await findVectorCandidates(db, embedding, candidates, true, undefined, documentIds);
     const ranked = fuseDocumentRanks(keyword.results.map((result) => result.id), vector.map((result) => result.document_id)).slice(0, limit);
     if (!ranked.length) return { results: [], context_groups: [], as_of: snapshot.at, snapshot_revision: snapshot.revision };
     const selected: VectorCandidate[] = [];
@@ -55,7 +56,7 @@ export async function hybridRecall(projectRoot: string, query: string, limit: nu
       }
     }
     // Load graph/neighbor evidence for keyword-only documents as well as vector candidates.
-    const context = await loadPostgresContext(db, selected);
+    const context = await loadPostgresContext(db, selected, documentIds);
     const { documents: knowledgeDocuments, knowledge } = snapshot;
     const results: GroupedRecallData["results"] = [];
     const groups: GroupedRecallData["context_groups"] = [];

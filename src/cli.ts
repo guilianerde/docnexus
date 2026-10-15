@@ -303,7 +303,7 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
       throw new DocNexusError("invalid_params", "query must be a non-empty string");
     }
     const options = parseOptions(rest);
-    const input = { query: subcommand, limit: options.limit === undefined ? undefined : positiveInteger(options.limit, "limit") };
+    const input = { query: subcommand, category: options.category, limit: options.limit === undefined ? undefined : positiveInteger(options.limit, "limit") };
     if (options.mode !== undefined && (command !== "recall" || !["hybrid", "vector"].includes(options.mode))) throw new DocNexusError("invalid_params", "recall --mode must be hybrid or vector");
     const mode = options.mode as "hybrid" | "vector" | undefined;
     if (options["context-budget"] !== undefined || options["return-unit"] !== undefined) {
@@ -337,9 +337,9 @@ Capture (extract -> seal -> ingest)
   docnexus draft discard --id <draft_id> --force
 
 Find and read
-  docnexus search "local memory" --limit 5
-  docnexus recall "local memory" --limit 5 [--mode hybrid|vector]
-  docnexus recall "local memory" --return-unit window|section|page --context-budget 4000
+  docnexus search "local memory" --limit 5 [--category <name>]
+  docnexus recall "local memory" --limit 5 [--mode hybrid|vector] [--category <name>]
+  docnexus recall "local memory" --return-unit window|section|page --context-budget 4000 [--category <name>]
   docnexus concepts [--type component] [--query auth] [--format json|md]
   docnexus facts list [--entity name-or-alias] [--at ISO-timestamp] [--include-inactive]
 

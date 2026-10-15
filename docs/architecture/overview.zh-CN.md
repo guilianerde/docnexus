@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.15.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 0.16.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
