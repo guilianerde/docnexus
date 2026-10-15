@@ -1,7 +1,10 @@
-import { writeFile } from "node:fs/promises";
-import { conceptIndexPath, libraryRelativePath } from "./layout.js";
-import { listRecordFiles, readRecordMetadata } from "./managed-documents.js";
+import { withProjectLock } from "./project-lock.js";
+import { atomicWrite } from "./workspace-io.js";
+import { conceptIndexPath, libraryRelativePath, WORKSPACE_DIRNAME } from "./layout.js";
+import { assertNoSymbolicLinks, listManagedDocuments, readRecordMetadata } from "./managed-documents.js";
 import type { EntityType, RelationshipType } from "./types.js";
+import { resolveKnowledge } from "./knowledge.js";
+import { loadKnowledgeDocuments } from "./knowledge-service.js";
 
 export interface ConceptEntry {
   name: string;
@@ -9,11 +12,13 @@ export interface ConceptEntry {
   description: string;
   documents: string[];
   relations: Array<{ type: RelationshipType; to: string }>;
+  aliases?: string[];
 }
 
 export interface ConceptIndex {
   document_count: number;
   concept_count: number;
+  documents: Array<{ id: string; file_path: string; title: string; summary: string }>;
   concepts: ConceptEntry[];
 }
 
@@ -29,40 +34,49 @@ export async function buildConceptIndex(
   projectRoot: string,
   input: { type?: string; query?: string } = {}
 ): Promise<ConceptIndex> {
-  // Earliest documents win the display name and description of a shared concept, so output is stable.
-  const records = (await listRecordFiles(projectRoot))
-    .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path));
-  const concepts = new Map<string, ConceptEntry>();
-  for (const record of records) {
-    const metadata = await readRecordMetadata(projectRoot, record.id);
-    const byName = new Map<string, ConceptEntry>();
-    for (const entity of metadata.entities) {
-      const key = conceptKey(entity.type, entity.name);
-      let entry = concepts.get(key);
-      if (!entry) {
-        entry = { name: entity.name.trim(), type: entity.type, description: entity.description.trim(), documents: [], relations: [] };
-        concepts.set(key, entry);
+  return withProjectLock(projectRoot, async () => {
+    // Earliest documents win the display name and description of a shared concept, so output is stable.
+    const records = (await listManagedDocuments(projectRoot))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path));
+    const concepts = new Map<string, ConceptEntry>();
+    const knowledge = resolveKnowledge(await loadKnowledgeDocuments(projectRoot));
+    for (const record of records) {
+      const metadata = knowledge.resolver.canonicalize(await readRecordMetadata(projectRoot, record.id));
+      const byName = new Map<string, ConceptEntry>();
+      for (const entity of metadata.entities) {
+        const key = conceptKey(entity.type, entity.name);
+        let entry = concepts.get(key);
+        if (!entry) {
+          entry = { name: entity.name.trim(), type: entity.type, description: entity.description.trim(), documents: [], relations: [] };
+          if (entity.aliases?.length) entry.aliases = entity.aliases;
+          concepts.set(key, entry);
+        }
+        if (!entry.documents.includes(record.file_path)) {
+          entry.documents.push(record.file_path);
+        }
+        byName.set(entity.name.trim().toLowerCase(), entry);
       }
-      if (!entry.documents.includes(record.file_path)) {
-        entry.documents.push(record.file_path);
+      for (const relationship of metadata.relationships) {
+        const from = byName.get(relationship.from.trim().toLowerCase());
+        if (from && !from.relations.some((value) => value.type === relationship.type && value.to === relationship.to.trim())) {
+          from.relations.push({ type: relationship.type, to: relationship.to.trim() });
+        }
       }
-      byName.set(entity.name.trim().toLowerCase(), entry);
     }
-    for (const relationship of metadata.relationships) {
-      const from = byName.get(relationship.from.trim().toLowerCase());
-      if (from && !from.relations.some((value) => value.type === relationship.type && value.to === relationship.to.trim())) {
-        from.relations.push({ type: relationship.type, to: relationship.to.trim() });
-      }
-    }
-  }
 
-  const query = input.query?.trim().toLowerCase();
-  const list = [...concepts.values()]
-    .filter((entry) => !input.type || entry.type === input.type)
-    .filter((entry) => !query || entry.name.toLowerCase().includes(query) || entry.description.toLowerCase().includes(query))
-    .map((entry) => ({ ...entry, documents: entry.documents.sort() }))
-    .sort((a, b) => b.documents.length - a.documents.length || a.name.localeCompare(b.name));
-  return { document_count: records.length, concept_count: list.length, concepts: list };
+    const query = input.query?.trim().toLowerCase();
+    const list = [...concepts.values()]
+      .filter((entry) => !input.type || entry.type === input.type)
+      .filter((entry) => !query || [entry.name, entry.description, ...(entry.aliases ?? [])].some((name) => name.toLowerCase().includes(query)))
+      .map((entry) => ({ ...entry, documents: entry.documents.sort() }))
+      .sort((a, b) => b.documents.length - a.documents.length || a.name.localeCompare(b.name));
+    return {
+      document_count: records.length,
+      concept_count: list.length,
+      documents: records.map(({ id, file_path, title, summary }) => ({ id, file_path, title, summary })),
+      concepts: list
+    };
+  });
 }
 
 export function renderConceptIndex(index: ConceptIndex): string {
@@ -75,8 +89,16 @@ export function renderConceptIndex(index: ConceptIndex): string {
     "When a task touches a concept below, run the `docnexus-recall` skill before acting.",
     ""
   ];
+  if (index.documents.length > 0) {
+    lines.push("## Documents", "");
+    for (const document of index.documents.slice(0, MAX_MARKDOWN_CONCEPTS)) {
+      lines.push(`- **${document.title}** — ${document.summary.slice(0, MAX_DESCRIPTION_LENGTH)} → \`${libraryRelativePath(document.file_path)}\``);
+    }
+    if (index.documents.length > MAX_MARKDOWN_CONCEPTS) lines.push("_More documents: run `docnexus document list`._");
+    lines.push("");
+  }
   if (index.concepts.length === 0) {
-    lines.push("_No concepts yet. Capture project knowledge with the `docnexus` skill._", "");
+    lines.push(index.document_count === 0 ? "_No concepts yet. Capture project knowledge with the `docnexus` skill._" : "_No named concepts. Read the documents above._", "");
     return `${lines.join("\n")}`;
   }
   const shown = index.concepts.slice(0, MAX_MARKDOWN_CONCEPTS);
@@ -89,7 +111,7 @@ export function renderConceptIndex(index: ConceptIndex): string {
         : entry.description;
       const relations = entry.relations.map((relation) => `${relation.type} ${relation.to}`).join("; ");
       const documents = entry.documents.map((path) => `\`${libraryRelativePath(path)}\``).join(", ");
-      lines.push(`- **${entry.name}** — ${description}${relations ? ` (${relations})` : ""} → ${documents}`);
+      lines.push(`- **${entry.name}**${entry.aliases?.length ? ` (${entry.aliases.join(", ")})` : ""} — ${description}${relations ? ` (${relations})` : ""} → ${documents}`);
     }
     lines.push("");
   }
@@ -100,5 +122,8 @@ export function renderConceptIndex(index: ConceptIndex): string {
 }
 
 export async function writeConceptIndex(projectRoot: string): Promise<void> {
-  await writeFile(conceptIndexPath(projectRoot), renderConceptIndex(await buildConceptIndex(projectRoot)));
+  return withProjectLock(projectRoot, async () => {
+    await assertNoSymbolicLinks(projectRoot, `${WORKSPACE_DIRNAME}/CONCEPTS.md`);
+    await atomicWrite(conceptIndexPath(projectRoot), renderConceptIndex(await buildConceptIndex(projectRoot)));
+  });
 }

@@ -1,48 +1,120 @@
 # Changelog
 
-All notable user-visible changes to DocNexus are recorded here.
+## 0.14.0 — 2026-10-15
 
-## 0.5.0 - 2026-09-30
+This release includes the previously unpublished 0.6–0.13 work, including the PGLite/Postgres engine, fact lifecycle, hybrid recall and local document viewer.
 
-Breaking release. Projects created by 0.4.x and earlier are not migrated; run `docnexus reset --force` and `docnexus init` again.
+Compatibility: workspace format 6 only; the previously published 0.5.0 used format 5. Back up older workspaces and retain their sources before choosing a new workspace or an explicit reset. There is no automatic format-5 migration. Pending draft manifests 1/2 require rereading, merging and resealing as format 3. Existing format-6 documents and histories remain usable.
 
-- Make text the only source of truth: each document keeps `source.md`, `metadata.json`, and a new `record.json` under `docnexus/records/<id>/`. `store/` is fully derived and git-ignored, so `docnexus/` can be committed and shared.
-- Add `index sync` to rebuild derived state from records after a clone or `git pull`; `recall` runs it automatically when the index is stale. `index rebuild --force` now re-embeds every record from text and leaves unchanged records byte-identical.
-- Add `document sync --id|--file [--metadata-file]` to adopt hand edits of library files; `status` and `doctor` list edited and missing library files.
-- Generate `docnexus/CONCEPTS.md` from all records after every change and add `docnexus concepts [--type] [--query] [--format]`.
-- `init --agent` and `skills link` add a marked DocNexus block to `CLAUDE.md` (with `@docnexus/CONCEPTS.md`) or `AGENTS.md`, so agents load the concept index and recall on their own; `reset` removes the block.
-- Make `docnexus-recall` proactive: agents recall when a task touches a known concept, decision, or convention, without being asked. Writes still require user consent.
-- Stamp synced skills with the package version; any command refreshes outdated workspace skills automatically, and `doctor` reports version drift.
-- Project format version 5.
+- Add a shared typed operator-error registry, `--json` failure envelopes, protocol discovery and structured doctor findings.
+- Add opt-in window/section/page evidence packets with source versions, explicit observation dates, atomic fact status and a complete-response conservative budget. Preserve the existing unbudgeted recall shape.
+- Add a fresh-context agent acceptance entry with randomized facts, observed CLI receipts, durable-state checks and mandatory semantic review; fixture replay is kept separate from model-quality evidence.
 
-## 0.4.0 - 2026-09-30
+- Reuse validated operation snapshots across search and retrieval; read each canonical asset once per snapshot and render only the requested document page. Resolve facts at one snapshot time.
+- Return document `record_version` and require updates to seal with the extraction read’s `--base-version`. Use draft manifest format 3; pending format-1/2 drafts require rereading, merging and resealing.
+- Separate vector candidates from final context expansion, fill document candidates crowded out by long documents, cap graph evidence in SQL and batch neighboring chunks.
+- Compute model probes and embeddings outside the project lock. Recheck text/fact revisions and index generations before committing, retry conflicts up to three times, and keep database lifetimes and final retrieval serialized.
+- Separate workspace reads, pure knowledge rules and draft ingestion coordination while retaining document/receipt crash recovery.
 
-Breaking release. Projects created by earlier versions are not migrated; see `docs/architecture/skills-workspace.zh-CN.md`.
+## 0.13.0 — 2026-10-15
 
-- Move every DocNexus asset into a visible `docnexus/` workspace created by `init`: `skills/`, `drafts/`, `library/`, `schemas/`, and `store/`. The project format advances to version 4 and `.docnexus/` is no longer read.
-- Store managed documents at `docnexus/library/<file_path>` and derived state (SQLite ledger, `graph.lbug`, sidecars, model overrides) under `docnexus/store/`.
-- Reorganize the skills around an entry skill `docnexus` that routes requests and orchestrates the capture pipeline, plus `docnexus-extract`, `docnexus-ingest`, `docnexus-recall`, `docnexus-library`, and `docnexus-maintain`.
-- Replace `skills install` with skills synced into `docnexus/skills/` by `init`/`skills sync` and exposed to agents through `init --agent` or `skills link --target claude|codex|all`.
-- Add `draft new`, `draft seal`, `draft list`, and `draft discard`. Sealing validates artifacts and metadata, records hashes, and writes the manifest.
-- `document add` now takes `--draft <draft_id>` only, rejects drafts modified after sealing, and marks ingested drafts.
-- `status` reports draft counts; `doctor` checks workspace skills and agent links.
-- `reset --force` removes the whole workspace and the skill links pointing into it, and refuses a `docnexus/` folder without a DocNexus marker.
+- Replace the SQLite retrieval ledger and LadybugDB vector/graph stores with shared PostgreSQL + pgvector SQL. Use zero-configuration PGLite locally or `DOCNEXUS_DATABASE_URL` for an existing Postgres server.
+- Maintain HNSW incrementally during ordinary writes; reuse unchanged chunk identities and vectors, including classification-only updates. Document, chunk and relationship projections commit in one database transaction.
+- Keep format-6 canonical text, local embeddings, Chinese text search, facts, timelines, skills and the document browser. Initialize retrieval lazily; text access stays independent of database availability.
+- Reset only the selected remote project schema before removing local data. Add PGLite persistence, incremental indexing, transaction rollback and Postgres wire-protocol tests; CI also exercises native Postgres + pgvector.
 
-## 0.3.0 - 2026-09-24
+## 0.12.1 — 2026-10-15
 
-- Use project-installed skills and CLI without an MCP service or user-level skill installation.
-- Add CLI commands for metadata validation, document listing and reading, and project status.
-- Require CLI input files and model import sources to remain inside the target project.
-- Keep the existing `.docnexus/` database and document format for in-place migration.
-- Update the `sharp` override to 0.35.4 or newer within the 0.35 series to clear the production dependency audit.
+Improve Chinese literal lookup precision and the evidence passed to hybrid recall.
 
-## 0.2.0 - 2026-08-05
+- Supplement segmentation with adjacent Han character pairs and remove isolated Han matches from multiword queries, retaining explicit one-character lookup.
+- Rank complete phrases before partial evidence, then query coverage before field weights, so a generic title cannot outrank a full body phrase.
+- Select the strongest snippet from body lines, active facts and names/aliases; omit misleading line numbers for metadata-only hits and keep complete phrases visible on long lines.
+- Preserve English identifiers, paths, normalization and fact validity. Keep the response shape, RRF fusion and existing indexes unchanged.
 
-- Store managed Markdown files inside `.docnexus/` while preserving their project-relative logical paths.
-- Persist verified extraction draft bundles under `.docnexus/drafts/<draft_id>/` before documents are added to the recall index.
-- Add a completion manifest contract so document-add can consume verified source, document, and metadata artifacts.
-- Advance the project data format to version 3 for the new storage boundary.
+## 0.12.0 — 2026-10-14
 
-## 0.1.0 - 2026-07-18
+Bound long-document embeddings with the actual local tokenizer and retain content beyond the former paragraph window.
 
-- Initial public release with local ONNX embeddings, SQLite document/chunk state, LadybugDB graph/vector recall, CLI workflows, MCP tools, and packaged DocNexus skills.
+- Split oversized paragraphs, code and active-fact projections into chunks of at most 256 tokens including special tokens and heading context, with natural boundaries, small overlaps and intact Unicode characters.
+- Read tokenizer/model input limits from the offline pipeline and reject oversized embedding inputs and queries before automatic truncation.
+- Track chunk strategy and model token-limit signatures so the next sync/recall rebuilds older derived indexes without rewriting canonical documents or history.
+- Add offline pure-vector regression for ending conclusions in long paragraphs, code and facts, plus coverage and index invalidation tests. Preserve workspace format 6 and draft manifest format 2.
+
+## 0.11.1 — 2026-10-14
+
+Prevent a sealed update draft from overwriting knowledge saved after its review.
+
+- Record the target document version at sealing and recheck it under the project lock before ingestion, including prose, sources, classification, history and document identity.
+- Refuse changed, deleted/recreated or newly occupied targets even with `--replace`; unrelated writes and unchanged classifications remain valid.
+- Use draft manifest format 2; existing ready format-1 drafts require rereading and resealing. Workspace format 6 and stored knowledge are unchanged.
+- Teach extraction/ingestion skills to reread and merge current knowledge before resealing stale drafts.
+- Add `eval:knowledge` and CI replay of five real repository documents covering classification, fact ownership/replacement, provenance and stale-draft merging. Report recorded decisions separately from unmeasured live model quality.
+
+## 0.11.0 — 2026-10-14
+
+Browse current project knowledge through a local read-only document viewer.
+
+- Add `docnexus view [--port 0]`, bound to loopback with one fixed initialized project and no long-lived project lock.
+- Show dynamic categories, paginated current Markdown, classification reasons, tags and fact provenance/lifecycle states in a responsive reading layout.
+- Refresh manually or poll visible pages every 15 seconds; discard stale snapshots and restart pagination after writes, classification changes or effective fact changes.
+- Bundle local UI assets and HTML-disabled Markdown rendering; block mutation methods, foreign origins and hosts, arbitrary file reads and automatic image loads.
+- Preserve workspace format 6 and the existing CLI/Node query contract, without another document source or model service.
+
+## 0.10.0 — 2026-10-14
+
+Let the orchestration model evolve document categories from project context and existing knowledge.
+
+- Accept project-defined category names and optional classification reasons, retaining old display labels without treating them as a fixed taxonomy.
+- Derive viewer navigation from categories actually used by documents; return each document's classification basis.
+- Add `document classify` for category-only changes with reasons and optional revision guards, preserving facts, source and Markdown while appending recoverable audit history.
+- Record category changes and reasons in normal capture/update history too.
+- Teach skills to read project context and related documents, reuse existing categories and adjust affected classifications within existing authorization. Query remains deterministic and read-only; no background model service is added.
+
+## 0.9.0 — 2026-10-14
+
+Expose categorized current documents as full or paginated JSON for human-facing viewers.
+
+- Add `document query` and a thin orchestration script with complete rendered Markdown, category counts, fact provenance and effective status.
+- Add optional primary metadata categories chosen by extraction/update skills; legacy documents without a category display as uncategorized.
+- Use deterministic file-path ordering and optional snapshot revision checks to refuse pagination across writes, reclassification, deletion or effective-time changes.
+- Read canonical text and render display expressions in memory, without loading embeddings, building retrieval stores or maintaining another document source.
+- Preserve existing document list/get behavior and workspace format 6. Document the CLI, script and Node query contract for visualization consumers.
+
+## 0.8.0 — 2026-10-14
+
+Define structured facts once and generate their current Markdown expressions automatically.
+
+- Add standalone `{{fact:fact_id}}` references and attributed, read-only generated Markdown blocks, following effective replacement chains across documents.
+- Refresh dependent views in the fact write's recoverable transaction, preserving dependent source, timeline and record identity. Reads, search and index sync refresh elapsed-time changes; `document render` refreshes all views explicitly.
+- Expose author-owned prose and reference placeholders through `document get --include template`, without another stored template file. Canonical document hashes exclude generated block contents.
+- Include referenced facts and rendered-document hashes in retrieval context and projection signatures, invalidating stale dependent indexes automatically.
+- Seal generated draft previews and refuse tampering or changed effective facts before ingestion. Reject missing references and deletion of referenced definitions.
+- Preserve free-prose edit adoption and existing format 6 documents. Old hand-written duplicates require reviewed conversion to references; there is no background refresh timer or automatic semantic rewriting.
+
+## 0.7.0 — 2026-10-14
+
+Make project memory writes recoverable, retrieval hybrid, and fact validity explicit.
+
+- Serialize local CLI and core memory/index operations with a process-safe project lock released on process exit.
+- Persist text transaction intent and rollback images, recovering interrupted saves, deletion and draft ingestion receipts before subsequent reads.
+- Default `recall` to document-level keyword/vector RRF fusion with source ranks and lexical evidence; retain `--mode vector` for comparison.
+- Resolve explicit entity aliases across search, concept directories and graph endpoints; refuse ambiguous identity claims.
+- Add optional immutable fact identities, attribution, effective time, expiry, explicit replacement and withdrawal; expose `facts list` with alias and effective-time filtering.
+- Invalidate affected projections when aliases or fact validity change, including cross-document replacement, without rewriting confirmed text or timelines.
+- Add process crash/concurrency tests and an offline bilingual retrieval regression corpus with a reproducible vector/hybrid evaluation command.
+- Keep workspace format 6 and the SQLite, LadybugDB and bundled local model stack. Earlier formats remain unsupported.
+
+## 0.6.0 — 2026-10-14
+
+Keep compiled current knowledge and source timelines beside rebuildable local retrieval stores.
+
+- Store current Markdown knowledge separately from source-attributed timeline events; identical writes do not add history.
+- Keep SQLite document/chunk projections and LadybugDB vectors and typed relationships, with the bundled offline BGE q8 ONNX embedding model.
+- Add keyword/name `search`; `recall` provides vector matches, neighboring chunks and one-hop graph evidence.
+- Synchronize derived indexes automatically before semantic recall, without rewriting sources or timelines. Detect model-output changes and retry incomplete projections.
+- Attribute graph edges to their declaring document, remove superseded assertions on update, and expose relationship source paths for citations.
+- Preserve sealed drafts, authorized writes, hand-edit adoption, project isolation and Git portability.
+- Allow entity-free documents in both the directory and semantic recall.
+- Keep workspace format 6 with no migration from earlier formats. Format 6 text workspaces can build the new derived indexes directly.
+- Remove historical design documents and update skills, current documentation and installed-package verification.

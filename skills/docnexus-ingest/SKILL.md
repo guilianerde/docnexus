@@ -5,7 +5,7 @@ description: Use when the user asks DocNexus to save, store, or add a sealed dra
 
 # DocNexus Ingest
 
-Stage 3 of the capture pipeline. Stores one sealed draft as a managed document in `docnexus/library/` and indexes it (chunks, embeddings, graph) in a single command.
+Stage 3 of the capture pipeline. Stores one sealed draft as a managed document in `docnexus/library/` and appends a source-attributed timeline event in a single command.
 
 ## Workflow
 
@@ -22,17 +22,19 @@ Stage 3 of the capture pipeline. Stores one sealed draft as a managed document i
 ./node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
-3. If the CLI reports the path is already managed and requires `--replace`, stop. Tell the user which `file_path` would be overwritten and ask for confirmation. Only after explicit confirmation run:
+3. If the path is already managed, ensure the user explicitly authorized replacing that `file_path` after seeing the proposed current document. Ask only when that authorization is missing. Then run:
 
 ```bash
 ./node_modules/.bin/docnexus document add --draft <draft_id> --replace
 ```
 
-4. If the CLI reports that the draft changed after sealing, run `./node_modules/.bin/docnexus draft seal --id <draft_id> --file <file_path>` again, then retry.
-5. Report `id`, `library_path`, `operation`, and `chunk_count`. The draft is now marked `ingested` and cannot be ingested again.
+4. If the target changed since sealing, reread its current document/template, metadata and timeline. Merge those changes with the draft, preserving still-valid knowledge and user classification corrections, then seal and review again. Resealing old content alone would discard the newer knowledge. A newly occupied path or a deleted/recreated target also requires a fresh review; `--replace` does not bypass the version check. Old format-1 draft manifests need resealing into format 2; stored documents remain format 6.
+   If the draft or its referenced facts changed after sealing, read the changes and seal again. For a fact-backed document, review the generated `preview.md` before ingestion; show materially changed conclusions when existing authorization does not cover them. The CLI checks the sealed preview hash against current effective facts.
+5. Memory files and the draft's ingested receipt are covered by one recoverable text transaction. The next CLI access completes an interrupted transaction before reading memory. Derived vectors and graph projections are synchronized by the next recall or `docnexus index sync`; this does not add another timeline event. If a command was interrupted, inspect the draft status before retrying ingestion.
+6. Report `id`, `library_path`, `operation`, and `timeline_path`. The draft is now marked `ingested` and cannot be ingested again.
 
 ## Constraints
 
 - Never pass `--replace` without the user's explicit confirmation of the overwrite.
-- Never copy files into `docnexus/library/` or `docnexus/store/` yourself; the CLI owns them.
+- Never copy files into `docnexus/library/` or `docnexus/records/` yourself; the CLI owns them.
 - If the CLI reports `managed target was externally modified`, the user edited the library file by hand. Stop, tell the user, and offer `docnexus-library` → *Adopt hand edits* before replacing it; never overwrite their edit silently.

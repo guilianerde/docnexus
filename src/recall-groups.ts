@@ -1,3 +1,5 @@
+import type { ResolvedFact } from "./knowledge.js";
+
 export interface RecallMatchedChunk {
   chunk_id: string;
   chunk_index: number;
@@ -23,6 +25,9 @@ export interface RecallGraphPath {
   from: string;
   relationship: string;
   to: string;
+  source_document_id?: string;
+  source_path?: string;
+  description?: string;
 }
 
 export interface RecallSupportingChunk extends RecallContextChunk {
@@ -49,19 +54,23 @@ export interface RecallSupportingCandidate extends RecallSupportingChunk {
 
 export interface GroupedRecallResult {
   matched_chunk: RecallMatchedChunk;
+  keyword_match?: { snippet: string; line?: number; matched_terms: string[]; score: number };
   document_ref: {
     group_id: string;
     document_id: string;
     path: string;
   };
   ranking: {
-    primary: "chunk_similarity";
+    primary: "chunk_similarity" | "rrf";
     graph_used_as: "grouped_supporting_context";
+    rrf_score?: number;
+    source_ranks?: { keyword?: number; vector?: number };
   };
 }
 
 export interface RecallContextGroup {
   group_id: string;
+  facts?: ResolvedFact[];
   document: RecallDocument;
   matched_chunks: RecallMatchedChunk[];
   same_document_chunks: RecallContextChunk[];
@@ -73,11 +82,13 @@ export interface RecallContextGroup {
   };
   ranking: {
     primary_score: number;
-    primary: "highest_matched_chunk_score";
+    primary: "highest_matched_chunk_score" | "rrf";
   };
 }
 
 export interface GroupedRecallData {
+  as_of?: string;
+  snapshot_revision?: string;
   results: GroupedRecallResult[];
   context_groups: RecallContextGroup[];
 }
@@ -131,12 +142,13 @@ export function buildGroupedRecall(
   for (const path of paths) {
     const group = groups.get(path.document_id);
     if (!group || group.graph_context.paths.length === 5) continue;
-    const key = `${path.from}\u0000${path.relationship}\u0000${path.to}`;
+    const key = `${path.from}\u0000${path.relationship}\u0000${path.to}\u0000${path.source_document_id ?? ""}`;
     const exists = group.graph_context.paths.some(
-      (value) => `${value.from}\u0000${value.relationship}\u0000${value.to}` === key
+      (value) => `${value.from}\u0000${value.relationship}\u0000${value.to}\u0000${value.source_document_id ?? ""}` === key
     );
     if (!exists) {
-      group.graph_context.paths.push({ from: path.from, relationship: path.relationship, to: path.to });
+      const { document_id: _documentId, ...evidence } = path;
+      group.graph_context.paths.push(evidence);
     }
   }
 

@@ -1,305 +1,170 @@
 # DocNexus 当前架构
 
-本文描述 DocNexus 当前代码已经实现的整体架构、数据边界和主要执行流程。历史方案与阶段性设计保留在 [`docs/history/`](../history/README.md)，本文以当前源码行为为准。
-
-## 1. 系统定位
-
-DocNexus 是一个面向本地项目的文档记忆与 Graph RAG 工具。它将项目文档同时组织为：
-
-- 文件系统中的可读文档、原始输入与完整 metadata（文本真源，可提交到 Git）；
-- 由 metadata 汇总的概念索引 `CONCEPTS.md`，供智能体常驻加载；
-- SQLite 中的托管文档账本和 chunk 索引（派生）；
-- LadybugDB 中的向量、概念和图关系（派生）；
-- 供项目内 skills 调用的本地 CLI。
-
-DocNexus 在项目中拥有的全部内容位于可见的 `docnexus/` 工作区：skills、草稿、托管文档（library）、文本记录（records）、概念索引与派生数据（store）。智能体通过 `.claude/skills/` 或 `.agents/skills/` 中指向 `docnexus/skills/` 的链接发现 skills，并通过 `CLAUDE.md` / `AGENTS.md` 中的 DocNexus 区块加载概念索引；CLI 和默认模型作为项目本地 npm 依赖。skills 分工与流水线编排见[Skills 工作区与功能编排](./skills-workspace.zh-CN.md)。
-
-## 2. 组件关系
-
-```mermaid
-flowchart TD
-    U["用户 / Agent"]
-    SKILLS["项目 Skills"]
-    CLI["DocNexus CLI"]
-    MANAGER["托管文档服务"]
-    META["Metadata 校验"]
-    EMBED["本地 Embedding 运行时"]
-    SQLITE["SQLite：index.sqlite"]
-    LBUG["LadybugDB：graph.lbug"]
-    FILES["文件系统：library + records"]
-    CONCEPTS["CONCEPTS.md"]
-    CTX["CLAUDE.md / AGENTS.md 区块"]
-
-    U --> SKILLS
-    CTX --> U
-    CONCEPTS --> CTX
-    SKILLS --> CLI
-    CLI --> MANAGER
-    CLI --> EMBED
-    CLI --> CONCEPTS
-    FILES --> CONCEPTS
-    MANAGER --> META
-    MANAGER --> EMBED
-    MANAGER --> SQLITE
-    MANAGER --> LBUG
-    MANAGER --> FILES
-```
-
-主要代码入口：
-
-- CLI：[`src/cli.ts`](../../src/cli.ts)
-- 工作区布局：[`src/layout.ts`](../../src/layout.ts)
-- 初始化与重置：[`src/project.ts`](../../src/project.ts)、[`src/reset.ts`](../../src/reset.ts)
-- 草稿封存：[`src/drafts.ts`](../../src/drafts.ts)
-- 托管文档、文本记录与索引同步：[`src/managed-documents.ts`](../../src/managed-documents.ts)
-- 概念索引：[`src/concepts.ts`](../../src/concepts.ts)
-- Skills 同步/链接与版本戳：[`src/skills.ts`](../../src/skills.ts)
-- 智能体指令区块：[`src/agent-context.ts`](../../src/agent-context.ts)
-- 诊断：[`src/doctor.ts`](../../src/doctor.ts)
-- Metadata 校验：[`src/metadata.ts`](../../src/metadata.ts)
-- Embedding：[`src/embedder-real.ts`](../../src/embedder-real.ts)
-- 图存储与召回：[`src/ladybug-store.ts`](../../src/ladybug-store.ts)
-- 召回输出校验：[`src/recall.ts`](../../src/recall.ts)
-
-## 3. 数据存储分工
-
-### 3.1 文件系统
-
-文件系统保存完整且便于人工查看的数据：
+DocNexus 0.14.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
-<project>/
-└── docnexus/
-    ├── project.json              # 项目初始化信息与格式版本（5）
-    ├── CONCEPTS.md               # 由 records 汇总生成的概念索引
-    ├── skills/                   # 项目 skills
-    ├── drafts/<draft-id>/
-    │   ├── source.md             # 提炼输入
-    │   ├── document.md           # 待确认的 Markdown
-    │   ├── metadata.json         # metadata
-    │   └── manifest.json         # draft seal 写入：校验结果与产物哈希
-    ├── library/<file_path>.md    # 托管文档；逻辑 file_path 相对 library/
-    ├── records/<document-id>/    # 文本真源（可提交）
-    │   ├── source.md             # 当前原始输入
-    │   ├── metadata.json         # 当前完整 metadata
-    │   └── record.json           # 身份、时间戳与内容哈希
-    ├── schemas/
-    │   └── metadata.schema.json
-    └── store/                    # 派生数据，git-ignore，可由 records 重建
-        ├── index.sqlite          # 托管文档与 chunk 账本
-        ├── graph.lbug            # LadybugDB 图和向量数据
-        └── models/               # 可选的项目模型覆盖
+智能体与项目 skills
+  ├─ 提炼 / 合并 / 审阅 → 文本存储：library + records + timeline
+  ├─ 写入 / CLI 读取   → 本机项目锁 → 持久化文本事务与中断恢复
+  ├─ 精确查找          → search：关键词、名称、实体别名、有效事实
+  └─ 统一召回          → 索引同步 → 关键词 + 本地向量 → 文档级 RRF + 一跳关系
+                                       PostgreSQL：文档、chunks、向量、实体与关系
+                                       默认本地 PGLite / 可选独立 Postgres
 ```
 
-托管路径是相对于 `docnexus/library/` 的逻辑 Markdown 路径，实际文件必须位于该目录内，并且路径中的既有组件不得是符号链接。写入、删除和草稿封存会同时进行词法路径与真实路径校验，防止通过 symlink 越过 `docnexus/` 边界。
+## 模块职责
 
-### 3.2 SQLite
+- `workspace-reader.ts` 负责路径边界、record/asset 读取和完整性校验。
+- `knowledge.ts` 仅处理实体、事实生命周期、替代链与投影规则，不访问文件或项目锁；`knowledge-service.ts` 负责加载工作区并调用这些规则。
+- `workspace-snapshot.ts` 在一次操作内复用 records、资产、事实解析及时间。正文和知识投影按需计算并缓存；快照 revision 由完整 records 与有效事实状态生成，分页只渲染实际返回的正文，不维持跨请求缓存。
+- `document-service.ts` 协调草稿版本校验、预览约束和入库；`managed-documents.ts` 提交文档与收据的同一文本事务，不反向加载草稿或查询接口。
+- `retrieval-index.ts` 协调锁外 embedding 准备和锁内提交；`postgres-store.ts` 分离轻量候选与有界上下文加载，CLI 负责参数与输出。
 
-SQLite 位于 `docnexus/store/index.sqlite`，是由 `records/` 派生的管理账本和 chunk 数据源；删除后可用 `index sync` 重建。
+## 数据边界
 
-#### `documents`
-
-| 字段 | 含义 |
-| --- | --- |
-| `id` | 文档稳定 ID |
-| `file_path` | 项目内托管文档路径 |
-| `title`、`summary` | 文档基础 metadata |
-| `tags_json` | 标签数组 |
-| `source_hash` | 原始输入哈希 |
-| `document_hash` | 生成文档哈希，用于检测外部修改 |
-| `metadata_hash` | 完整 metadata 哈希 |
-| `created_at`、`updated_at` | 创建与更新时间 |
-| `sidecar_path` | 记录目录 `docnexus/records/<id>`（source、metadata、record.json） |
-
-#### `file_chunks`
-
-| 字段 | 含义 |
-| --- | --- |
-| `id` | chunk 稳定 ID |
-| `document_id` | 所属文档 ID |
-| `chunk_index` | chunk 在文档中的顺序 |
-| `text` | chunk 完整文本 |
-| `text_hash` | chunk 文本哈希 |
-| `embedding_json` | 512 维 embedding 的 JSON 表示 |
-| `created_at` | 创建时间 |
-
-`file_chunks.document_id` 通过外键关联 `documents.id`，删除文档时级联删除其 chunks。
-
-### 3.3 LadybugDB
-
-LadybugDB 位于 `docnexus/store/graph.lbug`，是嵌入式属性图数据库，不依赖独立数据库服务。DocNexus 在每次操作中打开本地数据库、执行 Cypher 查询并关闭连接。
-
-节点模型：
-
-| 节点 | 主要属性 |
-| --- | --- |
-| `Project` | `id`、`name`、`root_path` |
-| `Document` | `id`、`title`、`path`、`summary`、`content_hash`、`updated_at` |
-| `Chunk` | `id`、`document_id`、`text`、`text_hash`、`chunk_index`、512 维 `embedding` |
-| `Concept` | `id`、`name`、`type`、`description` |
-
-关系模型：
-
-```mermaid
-graph LR
-    P["Project"] -->|HAS_DOCUMENT| D["Document"]
-    D -->|HAS_CHUNK| C1["Chunk"]
-    C1 -->|NEXT_CHUNK| C2["Chunk"]
-    D -->|MENTIONS| A["Concept"]
-    A -->|DEPENDS_ON / RELATES_TO / IMPLEMENTS / REPLACES / DECIDES| B["Concept"]
-```
-
-`Concept` ID 根据规范化后的“实体类型 + 实体名称”生成。写入时使用 `MERGE`，因此不同文档可以共享同一 Concept。Document 和 Chunk 属于具体文档，在文档更新时整体替换。
-
-当前关系的 `description` 保存在完整 `metadata.json` 中，但尚未作为 LadybugDB 边属性落库。
-
-## 4. 文档写入流程
-
-```mermaid
-sequenceDiagram
-    participant C as CLI
-    participant M as 托管文档服务
-    participant E as Embedding
-    participant F as 文件系统
-    participant S as SQLite
-    participant L as LadybugDB
-
-    C->>C: 读取 ready 草稿并核对封存哈希
-    C->>M: add / update 文档
-    M->>M: 校验项目路径和 symlink
-    M->>M: 校验 metadata（至少一个 entity）
-    M->>E: 对每个 chunk 生成 512 维向量
-    M->>F: 原子写入 library 文档与 records（source、metadata、record.json）
-    M->>S: 事务替换 documents 与 file_chunks
-    M->>L: 替换该文档的图和向量数据
-    L->>L: 重建 Chunk 向量索引
-    C->>F: 重新生成 CONCEPTS.md
-```
-
-内容哈希全部未变时（例如重建），`record.json` 的 `updated_at` 保持不变，因此重建不会产生 Git 差异。
-
-写入前会保存当前状态快照（library 文件、records 三个文件、SQLite 行与 chunks）。如果文件、SQLite 或图写入失败，托管文档服务会尝试恢复此前状态。该机制提供应用层补偿，但目前还不是跨文件系统、SQLite 和 LadybugDB 的单一原子事务。
-
-LadybugDB 中的更新采用整文档替换：
-
-1. 删除旧 Document、旧 Chunks 及其关联边；
-2. `MERGE` Project；
-3. 创建新的 Document 和 Chunks；
-4. 创建 `HAS_DOCUMENT`、`HAS_CHUNK` 和 `NEXT_CHUNK`；
-5. `MERGE` Concepts，并创建 `MENTIONS` 和概念关系；
-6. 重新建立 Chunk 向量索引。
-
-删除文档不会自动删除共享 Concept。图维护流程负责识别并清理不再被任何文档引用的孤立 Concept。
-
-### 4.1 索引同步
-
-`record.json` 中的三份哈希是判断状态的依据：
-
-| 情况 | 判定 | 处理 |
+| 路径 | 内容 | 属性 |
 | --- | --- | --- |
-| 有记录、无索引行 | `unindexed`（新克隆、删除了 `store/`） | `index sync` 以记录中的 id 与时间戳恢复身份后重新嵌入 |
-| 记录哈希或路径与索引行不同 | `outdated`（`git pull` 带来变化） | `index sync` 重新嵌入 |
-| 有索引行、无记录 | `orphaned`（记录被删除） | `index sync` 删除索引行与图数据 |
-| library 文件哈希与记录不同 | `edited`（手动编辑） | 不自动处理；`document sync` 经确认后采纳 |
-| library 文件缺失 | `missing_library` | 报告；由用户恢复文件或删除文档 |
+| `library/<file_path>` | 人工正文、事实 ID 引用及生成的当前事实内容 | 正文与引用为真源；标记内事实为派生 |
+| `records/<id>/source.md` | 最近一次提交的原始材料 | 文本真源 |
+| `records/<id>/metadata.json` | 标题、摘要、标签、实体别名、关系及可选事实生命周期 | 文本真源 |
+| `records/<id>/timeline.md` | 按时间追加的更新摘要与来源 | 文本真源 |
+| `records/<id>/record.json` | 稳定身份、时间戳、source/正文模板/metadata/时间线哈希 | 文本真源；正文哈希不包含生成块内容 |
+| `CONCEPTS.md` | 文档和概念目录 | 由 metadata 再生成 |
+| `drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
+| `skills/`、`schemas/` | 工作流与格式说明 | 包内资源副本 |
+| `store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |
+| `store/models/` | 可选本地模型覆盖 | 非派生资产，需要另行备份 |
+| `.runtime/transaction.json` | 未完成文本事务的前后镜像、恢复方向及入库收据 | 临时恢复状态，Git 忽略，不能随意删除 |
 
-`recall` 在索引不同步时自动执行 `index sync`；`index rebuild --force` 对全部记录重新嵌入。`status`、`index status` 与 `doctor` 都报告以上状态。
+默认模型 `BAAI/bge-small-zh-v1.5` 的 q8 ONNX 文件随 npm 包发布；覆盖完整时优先使用项目模型。运行时禁用远程模型下载。实体与关系数组可以为空，实体为空的文档仍可进行关键词与语义召回。
 
-### 4.2 概念索引
+## 当前知识与时间线
 
-每次入库、`document sync`、删除、`index sync` 或重建后，CLI 读取全部 `records/*/metadata.json`，按"类型 + 规范化名称"合并实体，汇总描述、关系与出处文档，按出现文档数排序后写入 `CONCEPTS.md`（最多 300 条）。`docnexus concepts` 以 JSON 或 Markdown 返回完整列表，支持 `--type` 与 `--query` 过滤。概念索引只依赖文本记录，不需要 `store/`。
+智能体先读已有全文和时间线，再合并新材料、保留有效约定、替换明确失效的结论。CLI 不推断自然语言矛盾；显式事实的有效状态由代码判定。
 
-## 5. 召回流程
+新增或内容变化时追加保存时间、操作、标题、摘要和新 source。采纳人工编辑时将编辑后的全文作为该事件的来源，原始 `source.md` 不变。相同提交不改变时间线或 `updated_at`。
 
-召回由项目内 CLI 执行，由 `docnexus-recall` skill 触发：智能体依据常驻的 `CONCEPTS.md` 判断任务是否涉及已记录的概念、决策或约定，自行发起；用户也可以直接要求。查询优先使用概念原名，以命中图谱中的 Concept 节点。
+时间线记录来源和更新摘要，不是每次编译产出的完整版本库。保存日期不等同于事件发生日期。历史来源和时间线不进入向量索引，完整旧正文可查 Git 历史。
 
-```mermaid
-flowchart TD
-    Q["查询文本"] --> E["生成 512 维 query embedding"]
-    E --> V["向量索引搜索相似 Chunk"]
-    V --> D["关联所属 Document"]
-    D --> N["补充前后相邻 Chunk"]
-    D --> C["补充 Document 提到的 Concepts"]
-    C --> R["沿概念关系扩展一跳"]
-    R --> S["查找提到相关 Concept 的支持文档"]
-    N --> G["生成 results 与 context_groups"]
-    S --> G
-```
+## 写入与索引同步
 
-### 5.1 向量入口
+1. 智能体写草稿，CLI 封存并校验哈希，用户审阅并授权。
+2. `document add` 在持久化日志中记录当前知识、来源、metadata、时间线、`record.json` 与草稿 ingested 收据的前后镜像，再逐文件落盘并刷新目录。
+3. `index sync` 或下一次 `recall` 校验文本完整性，按需创建 PGLite 或连接 Postgres。
+4. 比较当前文档路径、正文、metadata 与知识投影签名，处理新增、变化或缺失的投影，删除已无文本记录的投影。按片段文本哈希、完整文本和模型签名复用已有 chunk ID 与向量，仅计算新片段或变化片段。
+5. 本地模型探针的输出签名变化时，重新嵌入全部当前文档。实体规范化或事实生效、到期、撤回、跨文档替代导致知识投影签名变化时，只更新受影响文档。普通同步可刷新正文中的派生事实块，不改写人工正文、metadata、来源或时间线。
 
-LadybugDB 在 `Chunk.embedding` 上建立余弦距离索引：
+每份文档的文档行、chunks、实体提及与关系声明在同一数据库事务提交，失败全部回滚。普通 INSERT/UPDATE/DELETE 由 pgvector 增量维护已有 HNSW，不执行 DROP/CREATE 或 REINDEX。分类或关系单独变化不重新计算未变文本的向量。失败后下次同步会重试，召回不会在同步失败后继续返回旧索引。模型签名只在整轮同步成功后更新。
 
-```cypher
-CALL CREATE_VECTOR_INDEX(
-  'Chunk',
-  'chunk_vector_index',
-  'embedding',
-  metric := 'cosine'
-)
-```
+PGLite 在首次索引操作时创建，纯文本 init、search 和 document query 不要求数据库可用。设置 `DOCNEXUS_DATABASE_URL` 切换引擎后，运行同步从文本重建投影，不复制另一引擎的缓存。远程 schema 名按项目真实路径哈希生成；路径移动或克隆形成独立投影，不提供跨机器共同写入或数据库角色权限隔离。扩展应安装在 `public`，无安装权限时由管理员预装。连接 URL 只从环境读取。旧 `index.sqlite`、`graph.lbug` 不再使用，确认新索引后可删除旧缓存，保留自定义模型。
 
-查询时调用：
+## 长文切块与模型输入
 
-```cypher
-CALL QUERY_VECTOR_INDEX(
-  'Chunk',
-  'chunk_vector_index',
-  $query_embedding,
-  $limit
-)
-```
+真实 embedder 从已离线加载的 pipeline 取得 tokenizer，使用不截断的 `encode` 计算长度，包含 CLS/SEP 等特殊 token。模型硬上限取 tokenizer 与模型位置长度限制的较小值；随包 BGE 为 512 tokens。切块预算取模型上限与 256 的较小值，减少短结论混在过长片段中的信号稀释。
 
-LadybugDB 返回距离，DocNexus 将其转换为相似度：`score = 1 - distance`。
+切块扫描规范化后的全文，正文窗口最多 1000 个 Unicode 字符，使用实际 token 数验证并缩小窗口。优先在窗口后半段选择换行、句末或空白边界；单个超长段落、代码块和无空格长行均可硬拆，不切断 Unicode surrogate pair。保留少量尾部重叠（最多 32 tokens，并受片段长度限制），并为后续块补上最近的 Markdown 标题层级（最多 64 tokens、128 字符；标题识别忽略围栏代码内部内容）。标题和重叠均计入总预算。特别长的标题会缩短；拆开的代码片段不保证各自构成完整的 Markdown 围栏。全部当前有效事实的额外检索片段也经过同一切块流程。
 
-### 5.2 上下文扩展
+`RealEmbedder.embed` 在推理前再次计数，超出模型上限就报错，避免 pipeline 自动截掉尾部。普通查询支持模型硬上限，而不是索引片段的较小预算；过长查询需要用户或智能体缩短。开发用 hash/custom embedder 未提供 `tokenBudget()` 时，使用 1000 字符硬限制，不加载模型；自定义模型实现可提供该接口使用自己的实际 tokenizer。
 
-获得首批相似 chunks 后，系统继续补充：
+数据库 `index_state.chunking_signature` 记录策略版本与参数，缺失或变化会使现有投影过期。embedding 签名另包含模型 token 上限；同步成功后才提交新签名，失败会保留旧签名以便重试。升级后的首次 `recall` / `index sync` 从格式 6 文本补建新引擎投影，保持来源、事实定义和时间线不变。重切块后仍复用文本和模型签名完全一致的片段；模型变化会重新计算全部向量，但仍不重建 HNSW 对象。
 
-- 命中 chunk 的前一个和后一个 chunk；
-- 所属文档的标题、摘要和路径；
-- 文档 `MENTIONS` 的 Concepts；
-- Concept 的一跳关系路径；
-- 提到相关 Concept 的其他文档 chunks。
+数据库内部投影现在共用事务；文本与数据库仍不是跨存储原子事务，采用文本先落盘、下次召回前协调的方式。数据库不可用时，文本读取、可视化查询和写入仍可运行；删除的派生清理失败会报告待同步，下次同步清除残留后才允许召回。文本的持久化恢复日志独立于 `store/`，删除或重建检索数据库不会丢失恢复意图。
 
-因此当前召回策略可以概括为：
+核心文本读取/写入、事务恢复与数据库租约共用可重入项目锁。本机进程以项目真实路径为键，在系统临时目录的专用 SQLite 文件上持有写锁；进程退出（包括强制终止）由操作系统释放锁。等待超过 30 秒返回 busy，调用者可重试。锁文件在工作区外，reset 不会让另一个进程绕过仍持有的锁。
 
-```text
-向量相似度确定入口
-+ 相邻 chunk 恢复局部语境
-+ 一跳图关系补充语义
-+ 关联文档提供支持证据
-```
+索引同步分为快照、准备和提交阶段。tokenizer 加载、模型探针、查询与片段 embedding 在锁外运行；准备阶段读取旧向量后关闭数据库，提交阶段重新获取锁和数据库租约。提交前复核完整文本快照（包括事实生效/到期状态）和 `index_generation`；若期间发生文本或索引更新，丢弃旧计划并重试，连续三次冲突时报错。索引代次在首份文档提交前更新，使其他准备中的计划也能发现部分提交或失败；模型和切块签名仍只在整轮成功后更新。最终检索在提交阶段同一锁和数据库租约内完成，不能在同步与查询之间混入另一版本。PGLite 的创建、访问和关闭都在项目锁内，模型运行期间不持有实例。
 
-## 6. 项目 Skills 与 CLI 边界
+文本写入先持久化 `apply` 意图，再逐文件原子替换；文件和目录在支持的平台上执行 fsync。普通异常先持久化 `rollback` 方向，再恢复前镜像。中断后的下一次 CLI 或核心文本访问先重放日志，完成保存/删除或回滚，刷新目录后才返回知识。文档与草稿入库收据在同一个恢复单元内；这是可恢复事务，不是所有文件同时可见的文件系统快照。
 
-项目 skills 位于 `docnexus/skills/`，在项目目录内运行本地 `./node_modules/.bin/docnexus`。入口 skill `docnexus` 负责路由与流水线编排，`docnexus-recall` 由智能体依据 `CONCEPTS.md` 自主触发；CLI 负责可校验的契约：`draft new/seal` 分配与封存草稿，`document add --draft` 入库并把草稿标记为 `ingested`，其余为读取、召回与维护命令。metadata 文件和模型导入源必须位于当前项目内。无需全局 MCP 服务或用户级 skills。
+外部编辑器、Git 和其他机器不参与本机锁。写入或恢复未完成时不要手动编辑、拉取或切换分支。Windows 跳过目录 fsync；当前验证覆盖本机进程中断，没有模拟硬件断电。
 
-## 7. 一致性与数据权威边界
+## 图谱
 
-| 数据 | 主要保存位置 | 用途 |
-| --- | --- | --- |
-| 原始输入 | `records/<id>/source.md` | 重建和审计（真源） |
-| 完整生成文档 | `library/<file_path>` | 用户和工具直接读取（真源） |
-| 完整 metadata | `records/<id>/metadata.json` | entities、relationships 和描述（真源） |
-| 身份与哈希 | `records/<id>/record.json` | 文档 id、路径、时间戳；判断同步与手动编辑（真源） |
-| 概念索引 | `CONCEPTS.md` | 由 metadata 汇总，供智能体加载 |
-| 文档管理状态 | SQLite `documents` | 清单、哈希、路径和更新时间（派生） |
-| chunk 与向量副本 | SQLite `file_chunks` | 管理和补偿恢复（派生） |
-| 图与检索向量 | LadybugDB | 实际 Graph RAG 召回 |
+图结构通过关系表表达：`chunks.document_id` 关联文档，`chunk_index` 表达片段顺序，`document_concepts` 表达实体提及，`edges` 保存概念之间的 `DEPENDS_ON`、`RELATES_TO`、`IMPLEMENTS`、`REPLACES`、`DECIDES`。不再维护单独的图数据库或重复向量副本。
 
-Chunk 文本和 embedding 当前同时写入 SQLite 与 LadybugDB：SQLite 作为管理与补偿恢复账本，LadybugDB 作为在线召回执行层。两者都可由文本真源完全重建。
+每条概念关系携带声明它的 `document_id` 和 `description`。替换或删除文档只移除该文档声明的关系，其他文档的同类关系仍保留。召回中的关系路径返回 `source_document_id`、`source_path` 与描述，便于引用真实依据。
 
-## 8. 当前限制与后续关注点
+`REPLACES` 仍是概念关系；事实失效使用独立的 `facts[].replaces` 协议。图谱上下文限定一跳，不提供任意深度多跳推理。
 
-- 每次文档图更新都会删除并重建向量索引，数据规模扩大后会影响写入性能；
-- 文件系统、SQLite 和 LadybugDB 之间依赖补偿恢复，尚无真正的跨存储原子提交；
-- 图扩展固定为一跳，尚未加入多跳深度、边权重或路径评分；
-- relationship description 尚未保存为图边属性；
-- 主动召回依赖模型遵循 skill 描述与指令区块，尚缺触发率评测；
-- `CONCEPTS.md` 超过 300 条时截断，大型知识库需按需使用 `docnexus concepts` 查询；
-- 同一项目的并发写入尚无互斥锁；
-- 新克隆首次召回需要重新嵌入全部文档，耗时与文档量成正比；
-- 缺少针对大规模文档集的检索质量与延迟基准。
+## 查找与回答
 
-这些限制属于后续演进方向，不影响当前本地文档管理和基础 Graph RAG 流程。
+`search` 对当前正文、路径、标题、摘要、标签、规范实体名称与别名、有效结构化事实进行 NFKC 归一化、大小写折叠后的字面匹配，不依赖模型。通用分词之外补充同一连续汉字串的相邻字对，例如“长文”即使被 ICU 分为“长”和“文”，仍用“长文”匹配。多词查询移除孤立汉字，显式单字查询保留；不跨标点、空白或 metadata 字段拼接汉字对，英文标识符与路径沿用原有分词。
+
+词法排序依次考虑完整查询短语是否在某个名称、摘要、正文或有效事实中出现，覆盖多少查询项，再用名称 5、摘要 2、正文/事实 1 的字段权重打破同级排序。字段得分作为小于 1 的分数部分，不能压过查询覆盖度或完整短语。`score` 用于同一次查询排序，不是置信度，也不保证与旧版本或其他查询可比。多词部分匹配仍允许；同义改写、否定和无答案判断属于语义召回及智能体阅读。
+
+摘录在正文行、有效事实和名称/摘要中选择完整短语或覆盖更多项的证据，优先给出可定位的正文行；只命中别名、metadata 或未引用到正文的事实时不伪造正文行号。长行围绕完整短语截取，避免早期弱匹配遮住真正命中。结果契约保持 `matched_terms`、`snippet`、可选 `line` 和 `score`；`matched_terms` 可能包含汉字对。排名变化直接作用于下一次 search 和 hybrid recall 的关键词路，不需要重新 embedding 或重建索引。
+
+`recall` 默认统一检索：自动同步后，文本关键词和 pgvector 余弦向量检索分别取候选，以文档去重的名次执行等权 RRF：每路贡献 `1 / (60 + rank)`。每路文档候选窗口为 `min(100, max(20, limit * 5))`。向量路先取该窗口五倍的轻量 chunk 候选，每文档保留最佳片段；若长文挤满窗口导致文档不足，补查其余文档各自的最佳片段，避免重复 chunks 排挤其他文档。返回最多 `limit` 个唯一文档，每个选择一个代表 chunk。小表、指定候选及补查时，Postgres 优化器可能选择精确扫描，HNSW 存在不意味着每次查询都采用近似扫描。
+
+候选阶段只读取 chunk ID、所属文档和相似度，不加载图谱或相邻正文。融合选定最终文档后，再批量补充正文、相邻片段和一跳图谱上下文。图谱 SQL 对每个主文档最多返回 5 条关系路径、3 个支持片段；相邻片段批量查询，避免逐候选往返。关键词独有候选在这些文档内选择代表片段，不读取向量。
+
+`results[].ranking.rrf_score` 是融合分数，`source_ranks` 保留关键词和向量两路名次，`keyword_match` 保留字面证据。`matched_chunk.score` 仅为向量相似度；关键词独有候选为 0。`context_groups[]` 提供相邻片段、一跳图谱证据，以及主结果、图谱证据来源的事实状态和替代链。图谱不参与主结果融合。`recall --mode vector` 保留原有片段级向量检索用于对照。
+
+模型或索引同步失败时，recall 报错；仍可使用不依赖模型的 search。相似度、词法和 RRF 分数均不表示事实置信度。无答案问题仍可能返回近邻，是否有足够证据作答由智能体判断。
+
+有预算的召回通过独立证据包交付，支持 window/section/page，附带当前快照时间、来源观察时间、record_version、原子事实状态与省略信息；完整 JSON 按明确标注的保守估算限制大小，不重复旧上下文。详见 [证据交付](evidence-delivery.zh-CN.md)。失败使用共享 [智能体操作协议](../operations/agent-protocol.zh-CN.md)，真实模型行为由 [独立上下文验收](../operations/agent-evaluation.zh-CN.md) 观察，不与预置知识回放混算。
+
+## 实体与事实生命周期
+
+`entities[].aliases` 是显式的别名声明。同一实体的规范名称、类型和别名参与跨文档查找、概念目录与图端点规范化。歧义别名、别名循环和别名所声明的实体类型不一致会被拒绝；无别名的旧文档仍可保留按类型区分的同名实体，事实需使用无歧义的实体名称；程序不进行模糊实体合并。
+
+可选 `metadata.facts[]` 保存稳定项目唯一 `id`、`text`、`provenance`、`valid_from`，以及可选 `entity`、`valid_until`、`replaces`、`withdrawn_at`、`withdrawal_reason`。旧文档无需补 facts。有效日期必须有时区；`valid_until` 是排他上界。
+
+同一 id 的正文、来源、实体、生效日期和替代目标不可改写；更新保留历史事实，新增事实显式替代旧 id。跨文档替代要求同一规范实体，禁止未知目标、循环、分叉和早于旧事实的替代。已有到期和撤回记录不能撤销。删除文档不能留下悬空替代或实体引用，也不能通过删除跨文档替代历史使旧事实复活。
+
+状态为 active、scheduled、expired、superseded、withdrawn。未来事实生效前不取代旧事实；后继到期或撤回不恢复前驱。`facts list [--entity name-or-alias] [--at ISO-timestamp] [--include-inactive]` 可检查当前或指定有效时间的状态。历史查询使用目前已存的事实链，不重建“当时已知什么”的 Git 快照。
+
+仅 active 事实生成额外检索 chunks。历史事实留在 metadata，来源留在时间线。通过事实引用生成的正文自动跟随有效状态；自由叙述仍由 skills 维护，并需报告与结构化事实的冲突。
+
+## 事实维护一次，正文自动生成
+
+每个事实 id 只在所属文档的 `metadata.facts` 中定义一次。正文使用独立一行 `{{fact:fact_id}}`，可在同一项目的其他文档引用，无需复制事实定义。原 id 的引用沿有效 `replaces` 链跟随后继；未来替代生效前继续显示原事实，后继到期或撤回不复活前驱。
+
+CLI 在现有 Markdown 内生成 `<!-- docnexus:fact fact_id -->` 与 `<!-- /docnexus:fact -->` 包围的块，显示有效事实、来源、生效时间、所属文档和状态。inactive 事实显示状态提示而非旧断言。解释文字写在块外；代码围栏中的引用示例保持字面内容，当前不支持行内引用。
+
+`document_hash` 校验人工正文与事实占位符组成的规范模板，忽略派生块内部内容。无需新增模板文件；`document get --include template,metadata` 返回可编辑结构，`--include document` 返回当前生成结果及 `fact_references`。修改生成内容不会修改事实，访问时会恢复 metadata 所定义的值；人工正文或引用 id 的变更仍需审阅后 `document sync`。
+
+保存事实时，同一个持久化事务更新主文档、metadata、时间线及所有受影响的正文视图。引用方的 `record.json`、来源和时间线不变。读取正文、search、index sync/recall 会刷新时间生效变化；`document render` 可显式刷新全部视图。没有后台计时刷新，直接打开未访问的 Markdown 可能看到上次渲染的快照。引用改变后的生成正文哈希参与知识投影签名，自动使依赖文档的向量索引失效。
+
+带事实引用的草稿在 seal 时生成 `preview.md`，封存其哈希。入库验证预览未被改动，并要求它与当前有效事实生成的结果一致；引用值或状态变化时需重新 seal 和审阅。未解析引用、被引用事实的删除会被拒绝。
+
+草稿 manifest 格式 3 保存 `base_record_hash`。`document get` 和 `document query` 返回各文档的 `record_version`；更新草稿封存必须通过 `--base-version <record_version>` 提交提炼读取时的版本，新路径可用 `--base-version new`。封存和入库均在项目锁内复核完整 record 的规范哈希，覆盖读取、提炼、封存到入库的变更窗口。冲突后必须复读并合并正文、metadata 和历史，再使用该次读取的版本；仅刷新版本不构成合并。目标的正文、来源、metadata/分类、时间线或身份变化，以及原先空路径被占用，都会拒绝旧草稿；`--replace` 不绕过检查。无关文档更新和只刷新生成块不会改变目标版本。旧格式 1/2 的待入库草稿需复读合并后重新封存，已存文档和工作区格式 6 不变。
+
+这一保证适用于显式事实引用。旧正文中的同义句或手写重复值不能可靠自动识别，需一次性审阅后换为引用。摘要和解释应描述主题与原因，避免再次手工维护可变事实值。示例与操作见 [事实工作流](../../skills/docnexus-extract/references/facts.md)。
+
+## 可视化查询与粗分类
+
+运行编排层 skills 的大模型阅读项目说明、已有分类和相关文档后，自主填写 metadata.category 与 category_reason，按项目变化复核相关文档。名称由项目定义，可复用、新建、重命名、合并或拆分分类；CLI 只校验名称格式，不设置固定分类枚举。分类仍只存于各文档 metadata，目录从实际使用的名称聚合，没有另一份分类数据库。旧文档缺少分类时显示未分类，跨主题关联使用 tags。
+
+`document classify --id <id> --category <name> --reason <basis> [--revision <snapshot>]` 仅更新分类 metadata、记录哈希/时间和审计历史，保留正文、来源、事实与关系。普通提炼更新也将分类新旧值和依据追加到时间线。分类名可为 1–80 个字符，去除首尾空白且不含控制字符；依据最多 2000 字符。旧分类 id 的中文显示名仅作兼容，不是允许列表。
+
+`document query --all` 或 `--page 1 --page-size 20 [--category ...]` 输出完整当前 Markdown、分类统计、事实来源与状态。独立脚本位于 `skills/docnexus-library/scripts/query-documents.mjs`，委托项目安装的 CLI；Node 后端可以直接调用 `src/document-query.ts` 导出的 queryDocuments。
+
+查询在项目锁内读取文本、校验完整性并按同一时间生成展示快照，不调用模型或查询检索数据库，不写回源数据或生成块。结果只存在于响应中，不是另一处知识源。按路径稳定排序，后续页可携带 revision 防止混用不同快照；写入、改类、删除和有效事实状态变化都可使 revision 失效。写入后可视化端重新查询第一页。详见 [接口约定](./document-query.zh-CN.md)。
+
+## Git、诊断与维护
+
+除 `store/` 和 `.runtime/` 外，工作区都可提交。克隆、拉取、切换分支后，关键词查找与全文读取直接使用当前文本；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
+
+`doctor` 在恢复未完成事务后检查文本、索引、数据库、本地模型和 skills，不修复缺失投影。新建空工作区尚无检索库是正常状态。`graph audit` 检查已存在的文档/关系投影、孤立概念与 HNSW；缺失存储先运行同步。
+
+`graph repair --force` 重同步图谱声明、清理残留，保留未变向量与健康 HNSW，仅修复异常向量索引。`index rebuild --force` 重新核对全部文档投影，仍复用同模型的未变片段。删除文档先提交文本，再清除数据库记录；服务故障时派生删除延后同步。`reset --force` 若配置远程服务，先删除当前项目 schema，失败则保留本地工作区。项目路径、记录文件与本地派生存储拒绝符号链接越界。
+
+## 主要代码
+
+- `src/managed-documents.ts`：当前知识、时间线、哈希与文件管理。
+- `src/project-lock.ts`、`src/text-transaction.ts`、`src/workspace-io.ts`：项目锁、持久化事务与原子落盘。
+- `src/knowledge.ts`：实体别名、事实生命周期、引用依赖与投影签名。
+- `src/fact-renderer.ts`：事实引用、受控生成块、有效状态与模板规范化。
+- `src/hybrid-recall.ts`：文档去重与 RRF 融合。
+- `src/document-query.ts`：供文档可视化使用的全量/分页快照、分类计数与版本校验。
+- `src/retrieval-index.ts`：片段复用、增量同步与模型/切块签名。
+- `src/postgres-engine.ts`：PGLite 与 Postgres 连接、项目 schema 与数据库事务适配。
+- `src/postgres-store.ts`、`src/graph-mapping.ts`：统一 SQL、pgvector 与关系投影。
+- `src/search.ts`、`src/recall.ts`、`src/recall-groups.ts`：关键词和向量/图谱召回。
+- `src/embedder-real.ts`、`src/embedding-models.ts`：离线 ONNX 模型与覆盖管理。
+- `src/drafts.ts`、`src/concepts.ts`、`src/skills.ts`：草稿、目录与工作流分发。
+
+小型检索基线见 [检索评估](../operations/retrieval-evaluation.md)。
+
+工作区格式仍为 6，可为此前的格式 6 文本工作区补建派生索引；不迁移格式 5 及更早的工作区。旧历史方案文档保持删除。

@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   initializeProject,
@@ -22,7 +21,7 @@ afterEach(async () => {
 });
 
 describe("project initialization", () => {
-  it("creates the docnexus workspace with skills, drafts, library, schemas, and store", async () => {
+  it("creates the docnexus workspace with skills, drafts, library, schemas, and records", async () => {
     const root = await makeRoot();
 
     const result = await initializeProject(root);
@@ -30,20 +29,15 @@ describe("project initialization", () => {
 
     expect(result).toMatchObject({ project_root: root, workspace: join(root, "docnexus"), initialized: true, created: true });
     expect(result.skills).toContain("docnexus");
-    expect(marker).toMatchObject({ format_version: 5, initialized_at: expect.any(String) });
+    expect(marker).toMatchObject({ format_version: 6, initialized_at: expect.any(String) });
     expect(projectMarkerPath(root)).toBe(join(root, "docnexus", "project.json"));
-    for (const path of ["skills/docnexus/SKILL.md", "drafts", "library", "schemas/metadata.schema.json", "store/index.sqlite", "README.md"]) {
+    for (const path of ["skills/docnexus/SKILL.md", "drafts", "library", "schemas/metadata.schema.json", "records", "README.md"]) {
       await expect(stat(join(root, "docnexus", path))).resolves.toBeDefined();
     }
     await expect(stat(join(root, ".docnexus"))).rejects.toThrow();
 
-    const db = new DatabaseSync(join(root, "docnexus", "store", "index.sqlite"));
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .all()
-      .map((row) => (row as { name: string }).name);
-    db.close();
-    expect(tables).toEqual(["documents", "file_chunks"]);
+    await expect(stat(join(root, "docnexus", "store", "brain.pglite"))).rejects.toThrow();
+
   });
 
   it("is idempotent, preserves data, and refreshes skills", async () => {
@@ -74,7 +68,7 @@ describe("project initialization", () => {
   it("rejects unsupported markers and non-existent project roots", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "docnexus"), { recursive: true });
-    await writeFile(projectMarkerPath(root), JSON.stringify({ format_version: 3, initialized_at: "x" }));
+    await writeFile(projectMarkerPath(root), JSON.stringify({ format_version: 5, initialized_at: "x" }));
 
     await expect(requireInitializedProject(root)).rejects.toThrow("unsupported DocNexus project format");
     await expect(initializeProject(join(root, "missing"))).rejects.toThrow("project root does not exist");

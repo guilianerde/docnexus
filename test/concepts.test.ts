@@ -3,12 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildConceptIndex, renderConceptIndex, writeConceptIndex } from "../src/concepts.js";
-import { LocalHashEmbedder } from "../src/embedder.js";
-import { upsertManagedDocument, type ManagedGraphWriter } from "../src/managed-documents.js";
+import { upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
 
 const roots: string[] = [];
-const graphWriter: ManagedGraphWriter = { replaceDocumentGraph: async () => {}, deleteDocumentGraph: async () => {} };
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -28,9 +26,7 @@ async function add(root: string, filePath: string, entities: Array<{ name: strin
         entities: entities.map((entity) => ({ ...entity, description: `${entity.name} description` })),
         relationships
       }
-    },
-    new LocalHashEmbedder(8),
-    graphWriter
+    }
   );
 }
 
@@ -64,4 +60,15 @@ describe("concept index", () => {
     expect(markdown).toContain("- **Auth service** — Auth service description (implements Hourly rotation) → `docnexus/library/auth.md`, `docnexus/library/gateway.md`");
     expect(markdown).toContain("docnexus-recall");
   });
+  it("lists documents with no entity annotations in the loadable directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "docnexus-directory-"));
+    roots.push(root);
+    await initializeProject(root);
+    await upsertManagedDocument(root, { file_path: "notes.md", source: "User notes", document: "# Notes", metadata: { title: "Plain notes", summary: "Project convention", tags: [], entities: [], relationships: [] } });
+    await writeConceptIndex(root);
+    const directory = await readFile(join(root, "docnexus/CONCEPTS.md"), "utf8");
+    expect(directory).toContain("docnexus/library/notes.md");
+    expect(directory).toContain("Plain notes");
+  });
+
 });

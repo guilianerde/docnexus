@@ -9,7 +9,7 @@ import {
   bundledEmbeddingModelsPath,
   resolveEmbeddingModelsRoot
 } from "../src/embedding-models.js";
-import { listManagedChunks } from "../src/managed-documents.js";
+import { listIndexedChunks } from "../src/retrieval-index.js";
 
 const tempRoots: string[] = [];
 const previousEmbedder = process.env.DOCNEXUS_EMBEDDER;
@@ -104,12 +104,12 @@ describe("real local ONNX runtime", () => {
 
     expect(record).toMatchObject({
       file_path: "docs/memory/local-onnx.md",
-      operation: "created",
-      chunk_count: 1
+      operation: "created"
     });
     expect(await readFile(join(projectRoot, "docnexus", "library", record.file_path), "utf8")).toBe(document);
 
-    const chunks = await listManagedChunks(projectRoot, record.id);
+    await runCli(["index", "sync"], projectRoot);
+    const chunks = await listIndexedChunks(projectRoot, record.id);
     expect(chunks).toHaveLength(1);
     expect(chunks[0].embedding).toHaveLength(EMBEDDING_DIMENSION);
     expect(chunks[0].embedding.every(Number.isFinite)).toBe(true);

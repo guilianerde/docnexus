@@ -1,14 +1,13 @@
 import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { isDirectCliInvocation, runCli, type RunCliDependencies } from "../src/cli.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { isDirectCliInvocation, runCli } from "../src/cli.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
 import type { DocNexusMetadata } from "../src/types.js";
 
 const tempRoots: string[] = [];
-const previousEmbedder = process.env.DOCNEXUS_EMBEDDER;
 
 async function makeRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "docnexus-cli-"));
@@ -18,7 +17,7 @@ async function makeRoot(): Promise<string> {
 
 const metadata: DocNexusMetadata = {
   title: "CLI Document",
-  summary: "CLI document input provides current managed context for structured Graph RAG retrieval.",
+  summary: "CLI document input provides current managed context for literal document lookup.",
   tags: ["cli"],
   entities: [{ name: "CLI", type: "tool", description: "The DocNexus command-line interface." }],
   relationships: []
@@ -54,32 +53,20 @@ async function sealDraft(
   return draft;
 }
 
-async function writeModelDir(projectRoot: string): Promise<string> {
-  const directory = join(projectRoot, "model-source");
-  await mkdir(join(directory, "onnx"), { recursive: true });
-  await writeFile(join(directory, "config.json"), "{}");
-  await writeFile(join(directory, "tokenizer.json"), "{}");
-  await writeFile(join(directory, "onnx", "model_quantized.onnx"), "onnx");
-  return directory;
-}
-
 afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-beforeAll(() => {
-  process.env.DOCNEXUS_EMBEDDER = "hash";
-});
-
-afterAll(() => {
-  if (previousEmbedder === undefined) {
-    delete process.env.DOCNEXUS_EMBEDDER;
-    return;
-  }
-  process.env.DOCNEXUS_EMBEDDER = previousEmbedder;
-});
-
 describe("runCli", () => {
+  it("refreshes the metadata contract with outdated workspace skills", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    await writeFile(join(projectRoot, "docnexus/skills/.docnexus-skills.json"), JSON.stringify({ version: "0.6.0" }));
+    await writeFile(join(projectRoot, "docnexus/schemas/metadata.schema.json"), "{}");
+    await runCli(["document", "list"], projectRoot);
+    const schema = JSON.parse(await readFile(join(projectRoot, "docnexus/schemas/metadata.schema.json"), "utf8"));
+    expect(schema.optionalFields["facts[]"].valid_from).toContain("ISO 8601");
+  });
   it("initializes the current project through the CLI", async () => {
     const projectRoot = await makeRoot();
 
@@ -123,7 +110,9 @@ describe("runCli", () => {
   it("rejects removed commands", async () => {
     const projectRoot = await makeRoot();
     await initializeProject(projectRoot);
-    await expect(runCli(["mcp"], projectRoot)).rejects.toThrow("Unknown command");
+    for (const command of [["mcp"], ["graph", "unknown"], ["embeddings", "unknown"]]) {
+      await expect(runCli(command, projectRoot)).rejects.toThrow("Unknown command");
+    }
     await expect(runCli(["skills", "install", "--target", "codex"], projectRoot)).rejects.toThrow("Unknown command");
     await expect(runCli(["document", "add", "--file", "a.md"], projectRoot)).rejects.toThrow("--draft");
   });
@@ -142,7 +131,7 @@ describe("runCli", () => {
       expect.objectContaining({ id: saved.id, file_path: "docs/memory/read.md" })
     ]);
     expect(JSON.parse(await runCli(["document", "get", "--id", saved.id, "--include", "metadata"], projectRoot)))
-      .toEqual({ id: saved.id, file_path: "docs/memory/read.md", metadata });
+      .toEqual({ id: saved.id, record_version: expect.stringMatching(/^[a-f0-9]{64}$/), file_path: "docs/memory/read.md", metadata });
     expect(JSON.parse(await runCli(["status"], projectRoot))).toMatchObject({
       document_count: 1,
       drafts: { open: 0, ready: 0, ingested: 0, invalid: 0 }
@@ -174,93 +163,6 @@ describe("runCli", () => {
     expect(isDirectCliInvocation(moduleUrl, "/usr/local/bin/docnexus", fakeRealpath)).toBe(true);
   });
 
-  it("runs doctor without requiring project initialization", async () => {
-    const projectRoot = await makeRoot();
-    const dependencies: RunCliDependencies = {
-      doctor: async () => ({
-        result: "issues_found",
-        checked_at: "2026-05-29T00:00:00.000Z",
-        checks: {
-          node: {
-            ok: true,
-            version: "v24.0.0",
-            sqlite_available: true
-          },
-          project: {
-            ok: false,
-            initialized: false,
-            project_root: projectRoot,
-            message: "DocNexus project is not initialized"
-          },
-          skills: {
-            ok: false,
-            skipped: true,
-            message: "project is not initialized"
-          },
-          index: {
-            ok: false,
-            skipped: true,
-            message: "project is not initialized"
-          },
-          sqlite: {
-            ok: false,
-            skipped: true,
-            message: "project is not initialized"
-          },
-          ladybug: {
-            ok: false,
-            skipped: true,
-            message: "project is not initialized"
-          },
-          embedding: {
-            ok: true,
-            provider: "local-transformers",
-            model: "BAAI/bge-small-zh-v1.5",
-            dimension: 512,
-            local_only: true,
-            remote_allowed: false
-          }
-        },
-        recommendations: [`Run "docnexus init" in ${projectRoot}.`]
-      })
-    };
-
-    const output = JSON.parse(await runCli(["doctor"], projectRoot, dependencies));
-
-    expect(output).toMatchObject({
-      result: "issues_found",
-      checks: {
-        project: {
-          initialized: false
-        },
-        embedding: {
-          local_only: true,
-          remote_allowed: false
-        }
-      }
-    });
-  });
-
-  it("installs embedding model assets through the CLI with an overwrite guard", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const sourcePath = await writeModelDir(projectRoot);
-
-    const installed = JSON.parse(await runCli(["embeddings", "install", "--from", sourcePath], projectRoot));
-
-    expect(installed).toMatchObject({
-      model: "BAAI/bge-small-zh-v1.5",
-      installed_path: join(projectRoot, "docnexus", "store", "models", "BAAI", "bge-small-zh-v1.5"),
-      replaced: false
-    });
-    await expect(runCli(["embeddings", "install", "--from", sourcePath], projectRoot)).rejects.toThrow(
-      "embeddings install requires --replace"
-    );
-    await expect(runCli(["embeddings", "install", "--from", sourcePath, "--replace"], projectRoot)).resolves.toContain(
-      '"replaced": true'
-    );
-  });
-
   it("ingests a sealed draft into the library and marks it ingested", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
@@ -279,7 +181,7 @@ describe("runCli", () => {
       library_path: "docnexus/library/docs/memory/auth.md",
       draft_id: draft.draft_id,
       operation: "created",
-      chunk_count: 1
+      timeline_path: expect.stringContaining("timeline.md")
     });
     await expect(access(join(projectRoot, "docnexus/library/docs/memory/auth.md"))).resolves.toBeUndefined();
     expect(JSON.parse(await runCli(["draft", "list"], projectRoot)).drafts).toEqual([
@@ -300,8 +202,8 @@ describe("runCli", () => {
     await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot)).rejects.toThrow("missing: source.md");
     await writeFile(join(projectRoot, draft.artifacts.source), "source");
     await writeFile(join(projectRoot, draft.artifacts.document), "# Doc");
-    await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify({ ...metadata, entities: [] }));
-    await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot)).rejects.toThrow("at least one entity");
+    await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify({ ...metadata, title: "" }));
+    await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "a.md"], projectRoot)).rejects.toThrow("title must be a non-empty string");
     await writeFile(join(projectRoot, draft.artifacts.metadata), JSON.stringify(metadata));
     await expect(runCli(["draft", "seal", "--id", draft.draft_id, "--file", "../a.md"], projectRoot)).rejects.toThrow("docnexus/library");
     await expect(runCli(["draft", "seal", "--id", "../escape", "--file", "a.md"], projectRoot)).rejects.toThrow("draft id");
@@ -311,42 +213,6 @@ describe("runCli", () => {
     expect(JSON.parse(await runCli(["status"], projectRoot)).drafts).toMatchObject({ ready: 1 });
   });
 
-  it("recovers memory from committed text files and adopts hand edits", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init", "--agent", "claude"], projectRoot);
-    await expect(readFile(join(projectRoot, "CLAUDE.md"), "utf8")).resolves.toContain("@docnexus/CONCEPTS.md");
-    const draft = await sealDraft(projectRoot, "auth/rotation.md", {
-      source: "Refresh tokens rotate on every use.",
-      document: "# Rotation\n\nRefresh tokens rotate on every use.",
-      metadata: { ...metadata, entities: [{ name: "Refresh token", type: "concept", description: "Rotating credential." }] }
-    });
-    const added = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
-    await expect(readFile(join(projectRoot, "docnexus", "CONCEPTS.md"), "utf8")).resolves.toContain("**Refresh token**");
-    expect(JSON.parse(await runCli(["concepts", "--type", "concept"], projectRoot)).concepts).toEqual([
-      expect.objectContaining({ name: "Refresh token", documents: ["auth/rotation.md"] })
-    ]);
-    await expect(readFile(join(projectRoot, "docnexus", ".gitignore"), "utf8")).resolves.toBe("store/\n");
-
-    // Simulate a fresh clone: only the git-tracked text survives.
-    await rm(join(projectRoot, "docnexus", "store"), { recursive: true, force: true });
-    expect(JSON.parse(await runCli(["status"], projectRoot)).index).toMatchObject({ in_sync: false, unindexed: 1 });
-    const recalled = JSON.parse(await runCli(["recall", "refresh token rotation", "--limit", "1"], projectRoot));
-    expect(recalled.context_groups[0].document).toMatchObject({ document_id: added.id, path: "auth/rotation.md" });
-    expect(JSON.parse(await runCli(["status"], projectRoot)).index).toMatchObject({ in_sync: true });
-
-    await writeFile(join(projectRoot, "docnexus/library/auth/rotation.md"), "# Rotation\n\nRefresh tokens rotate hourly.");
-    expect(JSON.parse(await runCli(["status"], projectRoot)).index.edited_library_files).toEqual([added.id]);
-    const synced = JSON.parse(await runCli(["document", "sync", "--id", added.id], projectRoot));
-    expect(synced).toMatchObject({ id: added.id, operation: "updated", metadata_updated: false });
-    const after = JSON.parse(await runCli(["recall", "rotate hourly", "--limit", "1"], projectRoot));
-    expect(after.results[0].matched_chunk.text).toContain("hourly");
-    expect(JSON.parse(await runCli(["index", "sync"], projectRoot))).toMatchObject({ processed_documents: 0, failed_documents: [] });
-
-    const reset = JSON.parse(await runCli(["reset", "--force"], projectRoot));
-    expect(reset.cleaned_context_files).toEqual(["CLAUDE.md"]);
-    await expect(readFile(join(projectRoot, "CLAUDE.md"), "utf8")).rejects.toThrow();
-  });
-
   it("requires explicit replace before updating a managed document", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
@@ -354,12 +220,13 @@ describe("runCli", () => {
       source: "Original source.",
       document: "# Current document\n\nFirst version."
     });
-    await runCli(["document", "add", "--draft", initial.draft_id], projectRoot);
+    const saved = JSON.parse(await runCli(["document", "add", "--draft", initial.draft_id], projectRoot));
+    const current = JSON.parse(await runCli(["document", "get", "--id", saved.id], projectRoot));
     const update = JSON.parse(await runCli(["draft", "new"], projectRoot));
     await writeFile(join(projectRoot, update.artifacts.source), "Original source.");
     await writeFile(join(projectRoot, update.artifacts.document), "# Current document\n\nUpdated version.");
     await writeFile(join(projectRoot, update.artifacts.metadata), JSON.stringify(metadata));
-    const sealed = JSON.parse(await runCli(["draft", "seal", "--id", update.draft_id, "--file", "docs/memory/auth.md"], projectRoot));
+    const sealed = JSON.parse(await runCli(["draft", "seal", "--id", update.draft_id, "--file", "docs/memory/auth.md", "--base-version", current.record_version], projectRoot));
     expect(sealed).toMatchObject({ result: "draft_ready", replaces_managed_document: true });
 
     await expect(runCli(["document", "add", "--draft", update.draft_id], projectRoot)).rejects.toThrow("document add requires --replace");
@@ -368,311 +235,10 @@ describe("runCli", () => {
     expect(updated).toMatchObject({ file_path: "docs/memory/auth.md", operation: "updated" });
   });
 
-  it("recalls, physically deletes, and reports current document status", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const draft = await sealDraft(projectRoot, "cli.md", {
-      source: "CLI local recall content.",
-      document: "CLI local recall content.",
-      metadata: {
-        title: "CLI Recall Notes",
-        summary: "CLI recall notes describe local recall content for structured Graph RAG retrieval.",
-        tags: ["cli", "recall"],
-        entities: [
-          {
-            name: "CLI Recall",
-            type: "concept",
-            description: "Structured recall context returned by DocNexus CLI."
-          }
-        ],
-        relationships: []
-      }
-    });
-    const record = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
-
-    const recalled = await runCli(["recall", "local recall", "--limit", "1"], projectRoot);
-    const recallResult = JSON.parse(recalled);
-    expect(recallResult.results).toHaveLength(1);
-    expect(recallResult.results[0]).toMatchObject({
-      matched_chunk: {
-        text: expect.stringContaining("CLI local recall")
-      },
-      document_ref: { path: "cli.md", group_id: expect.any(String) },
-      ranking: {
-        primary: "chunk_similarity",
-        graph_used_as: "grouped_supporting_context"
-      }
-    });
-    expect(recallResult.results[0]).not.toHaveProperty("document_context");
-    expect(recallResult.results[0]).not.toHaveProperty("graph_context");
-    expect(recallResult.context_groups[0]).toMatchObject({
-      group_id: recallResult.results[0].document_ref.group_id,
-      document: {
-        path: "cli.md",
-        document_id: record.id,
-        title: "CLI Recall Notes",
-        summary: expect.stringContaining("structured Graph RAG")
-      },
-      graph_context: {
-        concepts: expect.arrayContaining(["CLI Recall"]),
-        supporting_chunks: [],
-        paths: []
-      }
-    });
-    expect(recallResult.results[0]).not.toHaveProperty("file_path");
-    expect(recallResult.results[0]).not.toHaveProperty("chunk_id");
-    expect(recallResult.results[0]).not.toHaveProperty("text");
-
-    const status = await runCli(["index", "status"], projectRoot);
-    expect(JSON.parse(status)).toMatchObject({
-      document_count: 1,
-      chunk_count: 1
-    });
-
-    const deleted = await runCli(["document", "delete", "--id", record.id, "--force"], projectRoot);
-    expect(JSON.parse(deleted)).toMatchObject({
-      id: record.id,
-      deleted: true
-    });
-    await expect(access(join(projectRoot, "docnexus/library/cli.md"))).rejects.toThrow();
-  });
-
-  it("returns one-hop graph and same-document supporting context without changing the primary hit", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const primaryText = `${"Primary graph recall paragraph. ".repeat(18)}
-
-${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
-    const supportingText = "LadybugDB stores graph context for DocNexus retrieval.";
-    await upsertManagedDocument(projectRoot, {
-      file_path: "recall.md",
-      source: primaryText,
-      document: primaryText,
-      metadata: {
-        title: "Recall",
-        summary: "Recall routes structured graph context.",
-        tags: ["recall"],
-        entities: [
-          { name: "Recall", type: "concept", description: "Recall workflow." },
-          { name: "LadybugDB", type: "tool", description: "Graph store." }
-        ],
-        relationships: [
-          { from: "Recall", to: "LadybugDB", type: "depends_on", description: "Storage dependency." }
-        ]
-      }
-    });
-    await upsertManagedDocument(projectRoot, {
-      file_path: "ladybug.md",
-      source: supportingText,
-      document: supportingText,
-      metadata: {
-        title: "Ladybug Store",
-        summary: "LadybugDB stores project graph data.",
-        tags: ["ladybug"],
-        entities: [{ name: "LadybugDB", type: "tool", description: "Graph store." }],
-        relationships: []
-      }
-    });
-
-    const output = JSON.parse(await runCli(["recall", "Primary graph recall paragraph", "--limit", "2"], projectRoot));
-    const group = output.context_groups.find((value: { document: { path: string } }) => value.document.path === "recall.md");
-    expect(group).toBeDefined();
-    expect(group.same_document_chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          text: expect.stringContaining("Nearby supporting paragraph"),
-          reason: expect.stringMatching(/^same_document_/)
-        })
-      ])
-    );
-    expect(output.context_groups.filter((value: { document: { path: string } }) => value.document.path === "recall.md")).toHaveLength(1);
-    for (const matched of group.matched_chunks) {
-      expect(group.same_document_chunks).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ chunk_id: matched.chunk_id })])
-      );
-    }
-    expect(group.graph_context.paths).toEqual(
-      expect.arrayContaining([{ from: "Recall", relationship: "DEPENDS_ON", to: "LadybugDB" }])
-    );
-    expect(group.graph_context.supporting_chunks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: "ladybug.md",
-          title: "Ladybug Store",
-          text: expect.stringContaining("LadybugDB stores"),
-          reason: "related_concept:LadybugDB"
-        })
-      ])
-    );
-  });
-
-  it("keeps recall evidence isolated between initialized project roots", async () => {
-    const projectA = await makeRoot();
-    const projectB = await makeRoot();
-    await runCli(["init"], projectA);
-    await runCli(["init"], projectB);
-
-    await upsertManagedDocument(projectA, {
-      file_path: "a.md",
-      source: "Alpha isolated recall evidence.",
-      document: "Alpha isolated recall evidence.",
-      metadata: {
-        title: "Alpha",
-        summary: "Alpha isolated recall evidence belongs only to project A.",
-        tags: ["alpha"],
-        entities: [{ name: "Alpha", type: "concept", description: "Project A evidence." }],
-        relationships: []
-      }
-    });
-    await upsertManagedDocument(projectB, {
-      file_path: "b.md",
-      source: "Beta separate memory.",
-      document: "Beta separate memory.",
-      metadata: {
-        title: "Beta",
-        summary: "Beta isolated recall evidence belongs only to project B.",
-        tags: ["beta"],
-        entities: [{ name: "Beta", type: "concept", description: "Project B evidence." }],
-        relationships: []
-      }
-    });
-
-    const outputA = JSON.parse(await runCli(["recall", "Alpha isolated recall evidence", "--limit", "5"], projectA));
-    const paths = outputA.context_groups.map((group: { document: { path: string } }) => group.document.path);
-    expect(paths).toContain("a.md");
-    expect(paths).not.toContain("b.md");
-  });
-
   it("prints usage for unknown commands", async () => {
     const projectRoot = await makeRoot();
 
     await expect(runCli(["unknown"], projectRoot)).rejects.toThrow("Unknown command");
-  });
-
-  it("requires force for rebuild", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-
-    await expect(runCli(["index", "rebuild"], projectRoot)).rejects.toThrow("rebuild requires --force");
-  });
-
-  it("audits the graph from the CLI", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const dependencies: RunCliDependencies = {
-      auditGraph: async () => ({
-        result: "clean",
-        summary: {
-          documents: 0,
-          ladybug_documents: 0,
-          ladybug_chunks: 0,
-          missing_documents: 0,
-          stale_documents: 0,
-          chunk_count_mismatches: 0,
-          orphan_concepts: 0,
-          vector_index_ok: true
-        },
-        issues: {
-          missing_documents: [],
-          stale_documents: [],
-          chunk_count_mismatches: [],
-          orphan_concepts: [],
-          vector_index: []
-        },
-        checked_at: "2026-05-21T00:00:00.000Z"
-      }),
-      repairGraph: async () => {
-        throw new Error("not used");
-      }
-    };
-
-    const audit = JSON.parse(await runCli(["graph", "audit"], projectRoot, dependencies));
-
-    expect(audit).toMatchObject({
-      result: "clean",
-      summary: {
-        documents: 0,
-        ladybug_documents: 0,
-        ladybug_chunks: 0,
-        vector_index_ok: true
-      }
-    });
-  });
-
-  it("requires force for graph repair", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const dependencies: RunCliDependencies = {
-      auditGraph: async () => {
-        throw new Error("not used");
-      },
-      repairGraph: async (_root, options) => {
-        if (!options.force) {
-          throw new Error("graph repair requires --force");
-        }
-        throw new Error("not used");
-      }
-    };
-
-    await expect(runCli(["graph", "repair"], projectRoot, dependencies)).rejects.toThrow("graph repair requires --force");
-  });
-
-  it("repairs the graph from the CLI", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-    const dependencies: RunCliDependencies = {
-      auditGraph: async () => {
-        throw new Error("not used");
-      },
-      repairGraph: async (_root, options) => {
-        if (!options.force) {
-          throw new Error("graph repair requires --force");
-        }
-        return {
-          result: "completed",
-          actions: {
-            deleted_stale_documents: 0,
-            deleted_orphan_concepts: 0,
-            rebuilt_vector_index: true
-          },
-          before: { total_issues: 0 },
-          after: {
-            total_issues: 0,
-            remaining_issue_types: []
-          },
-          recommendations: [],
-          started_at: "2026-05-21T00:00:00.000Z",
-          finished_at: "2026-05-21T00:00:00.000Z"
-        };
-      }
-    };
-
-    const repair = JSON.parse(await runCli(["graph", "repair", "--force"], projectRoot, dependencies));
-
-    expect(repair).toMatchObject({
-      result: "completed",
-      actions: {
-        rebuilt_vector_index: true
-      },
-      after: {
-        total_issues: 0,
-        remaining_issue_types: []
-      }
-    });
-  });
-
-  it("rebuilds from the CLI", async () => {
-    const projectRoot = await makeRoot();
-    await runCli(["init"], projectRoot);
-
-    const rebuilt = JSON.parse(await runCli(["index", "rebuild", "--force"], projectRoot));
-
-    expect(rebuilt).toMatchObject({
-      result: "completed",
-      processed_documents: 0,
-      rebuilt_documents: 0,
-      failed_documents: []
-    });
   });
 
   it("removes standalone index mutations and guards destructive document commands", async () => {
@@ -684,4 +250,50 @@ ${"Nearby supporting paragraph from the same document. ".repeat(18)}`;
     await expect(runCli(["document", "delete", "--file", "memory.md"], projectRoot)).rejects.toThrow("--force");
     await expect(runCli(["reset"], projectRoot)).rejects.toThrow("--force");
   });
+  it("finds a document, reads full current knowledge and history, adopts edits and deletes it", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init", "--agent", "codex"], projectRoot);
+    const draft = await sealDraft(projectRoot, "auth.md", { source: "User chose hourly rotation.", document: "# Auth\n\nTokens rotate hourly." });
+    const added = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
+    const found = JSON.parse(await runCli(["search", "rotate hourly"], projectRoot));
+    expect(found.results[0]).toMatchObject({ id: added.id, library_path: "docnexus/library/auth.md", line: 3 });
+    const recalled = JSON.parse(await runCli(["recall", "rotate hourly"], projectRoot));
+    expect(recalled.results[0].document_ref.document_id).toBe(added.id);
+    expect(recalled.context_groups[0].document.path).toBe("auth.md");
+    const read = JSON.parse(await runCli(["document", "get", "--id", added.id, "--include", "document,timeline"], projectRoot));
+    expect(read.document).toContain("Tokens rotate hourly");
+    expect(read.timeline).toContain("User chose hourly rotation");
+    await expect(stat(join(projectRoot, "docnexus/store/brain.pglite"))).resolves.toBeDefined();
+    await writeFile(join(projectRoot, "docnexus/library/auth.md"), "# Auth\n\nTokens rotate per use.");
+    expect(JSON.parse(await runCli(["status"], projectRoot)).records.edited).toEqual([added.id]);
+    await runCli(["document", "sync", "--id", added.id], projectRoot);
+    expect(JSON.parse(await runCli(["search", "per use"], projectRoot)).results[0].id).toBe(added.id);
+    expect(JSON.parse(await runCli(["index", "sync"], projectRoot))).toMatchObject({ result: "completed", rebuilt_documents: 1 });
+    expect(JSON.parse(await runCli(["doctor"], projectRoot)).result).toBe("ok");
+    await runCli(["document", "delete", "--id", added.id, "--force"], projectRoot);
+    expect(JSON.parse(await runCli(["search", "rotate"], projectRoot)).results).toEqual([]);
+    await expect(access(join(projectRoot, "docnexus/records", added.id))).rejects.toThrow();
+  });
+
+  it("validates search limits and document includes", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    await expect(runCli(["search", "x", "--limit", "0"], projectRoot)).rejects.toThrow("positive integer");
+    await expect(runCli(["search", "x", "--limit", "NaN"], projectRoot)).rejects.toThrow("positive integer");
+    await expect(runCli(["search"], projectRoot)).rejects.toThrow("non-empty");
+    await expect(runCli(["document", "get", "--id", "doc_0000000000000000", "--include", "chunks"], projectRoot)).rejects.toThrow("--include");
+  });
+
+  it("exposes graph maintenance and requires force for repairs and full rebuilds", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    await runCli(["index", "sync"], projectRoot);
+    expect(JSON.parse(await runCli(["graph", "audit"], projectRoot)).result).toBe("clean");
+    await expect(runCli(["graph", "repair"], projectRoot)).rejects.toThrow("--force");
+    await expect(runCli(["index", "rebuild"], projectRoot)).rejects.toThrow("--force");
+    expect(JSON.parse(await runCli(["graph", "repair", "--force"], projectRoot)).actions.rebuilt_vector_index).toBe(false);
+    expect(JSON.parse(await runCli(["index", "rebuild", "--force"], projectRoot)).result).toBe("completed");
+    await expect(runCli(["embeddings", "install"], projectRoot)).rejects.toThrow("--from");
+  });
+
 });

@@ -27,6 +27,13 @@ describe("validateMetadata", () => {
     expect(validateMetadata(validMetadata)).toEqual({ valid: true, errors: [] });
   });
 
+  it("accepts explicit observation time and rejects undated or timezone-free values", () => {
+    expect(validateMetadata({ ...validMetadata, observed_at: "2026-10-10T08:00:00+08:00" }).valid).toBe(true);
+    for (const observed_at of ["2026-10-10", "2026-10-10T08:00:00", "yesterday", 123]) {
+      expect(validateMetadata({ ...validMetadata, observed_at }).errors).toContain("observed_at must be an ISO timestamp with timezone");
+    }
+  });
+
   it("rejects missing required fields", () => {
     const result = validateMetadata({ title: "Missing summary" });
 
@@ -49,9 +56,9 @@ describe("validateMetadata", () => {
     expect(result.errors).toContain("relationships[0].type must be one of depends_on, mentions, implements, replaces, relates_to, decides");
   });
 
-  it("requires at least one entity for graph-backed recall", () => {
+  it("accepts documents without entities", () => {
     const result = validateMetadata({ ...validMetadata, entities: [] });
 
-    expect(result).toEqual({ valid: false, errors: ["entities must contain at least one entity"] });
+    expect(result).toEqual({ valid: true, errors: [] });
   });
 });

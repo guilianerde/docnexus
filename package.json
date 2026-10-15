@@ -1,6 +1,6 @@
 {
   "name": "@rowansenne/docnexus",
-  "version": "0.5.0",
+  "version": "0.14.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -18,6 +18,7 @@
   "files": [
     "dist/src",
     "models",
+    "viewer",
     "skills",
     "README.md",
     "README.zh-CN.md",
@@ -37,18 +38,25 @@
     "prepack": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
-  },
-  "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
-    "@ladybugdb/core": "^0.16.1"
-  },
-  "overrides": {
-    "sharp": "^0.35.4"
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "eval:retrieval": "npm run build && node scripts/eval-retrieval.mjs",
+    "eval:knowledge": "npm run build && node scripts/eval-knowledge.mjs",
+    "eval:agent": "npm run build && node scripts/eval-agent.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.13",
     "@types/node": "^24.0.0",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite-pgvector": "^0.0.11",
+    "@huggingface/transformers": "^3.8.1",
+    "markdown-it": "^15.0.2",
+    "postgres": "^3.4.9"
+  },
+  "overrides": {
+    "sharp": "^0.35.5"
   }
 }

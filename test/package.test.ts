@@ -1,14 +1,13 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("npm package contract", () => {
   it("publishes the scoped package through the docnexus executable with packaged skills", async () => {
     const packageJson = JSON.parse(await readFile("package.json", "utf8"));
     const cliSource = await readFile("src/cli.ts", "utf8");
-    const packagedModel = await stat("models/BAAI/bge-small-zh-v1.5/onnx/model_quantized.onnx");
 
     expect(packageJson.name).toBe("@rowansenne/docnexus");
-    expect(packageJson.version).toBe("0.5.0");
+    expect(packageJson.version).toBe("0.14.0");
     expect(packageJson.private).toBe(false);
     expect(packageJson.license).toBe("MIT");
     expect(packageJson.repository).toEqual({
@@ -22,7 +21,7 @@ describe("npm package contract", () => {
     expect(packageJson.files).toEqual(
       expect.arrayContaining([
         "dist/src",
-        "models",
+        "viewer",
         "skills",
         "README.md",
         "README.zh-CN.md",
@@ -32,12 +31,16 @@ describe("npm package contract", () => {
         "docs"
       ])
     );
-    expect(packagedModel.size).toBeGreaterThan(1_000_000);
+    expect(packageJson.files).toContain("models");
     expect(packageJson.scripts.build).toContain("rmSync('dist'");
     expect(packageJson.scripts.prepack).toBe("npm run build");
     expect(packageJson.scripts["audit:prod"]).toBe("npm audit --omit=dev --audit-level=high");
-    expect(packageJson.dependencies["@huggingface/transformers"]).toBe("^3.8.1");
-    expect(packageJson.dependencies).not.toHaveProperty("@xenova/transformers");
+    expect(packageJson.dependencies).toHaveProperty("@electric-sql/pglite");
+    expect(packageJson.dependencies).toHaveProperty("@electric-sql/pglite-pgvector");
+    expect(packageJson.dependencies).toHaveProperty("postgres");
+    expect(packageJson.dependencies).not.toHaveProperty("@ladybugdb/core");
+    expect(packageJson.dependencies).toHaveProperty("@huggingface/transformers");
+    expect(packageJson.dependencies).toHaveProperty("markdown-it");
     expect(cliSource.startsWith("#!/usr/bin/env node\n")).toBe(true);
   });
 

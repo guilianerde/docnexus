@@ -1,39 +1,55 @@
 # Release Checklist
 
-Use this checklist before publishing `@rowansenne/docnexus`. A failed item blocks the release unless the exception and owner are recorded in the release notes.
-
-## Maintainer-owned metadata
-
-- [x] The minimum supported Node.js version is declared in `package.json`, and the supported Node 22/24 LTS lines are covered by CI.
-- [x] The maintainer selected the MIT license and added the corresponding package metadata and license file.
-- [x] The canonical repository URL and issue tracker are declared in `package.json`.
-- [x] Security reports are directed to `rowansenne@gmail.com` in `SECURITY.md`.
-- [ ] Version `0.5.0` is intentional, is not already published, and its user-visible changes are recorded in `CHANGELOG.md`.
-
-## Automated gates
-
-Run from a clean checkout of the release commit:
+## Local verification
 
 ```bash
 npm ci
 npm test
 npm run typecheck
 npm run build
+npm run eval:retrieval
+npm run eval:knowledge
 npm pack --dry-run
-DOCNEXUS_EMBEDDER=hash node scripts/tarball-smoke.mjs
 npm run audit:prod
+node scripts/tarball-smoke.mjs
 ```
 
-- [ ] Tests, typechecking, build, and package dry run pass on every supported Node.js version.
-- [ ] The test run includes `test/real-runtime-e2e.test.ts`; it must use the packaged ONNX model with remote loading disabled rather than the hash embedder or a mocked pipeline.
-- [ ] The tarball smoke passes on Node.js 24. It must install the generated `.tgz` inside a temporary project and run its local `docnexus` bin through `init --agent codex` (workspace, skill links, and the `AGENTS.md` block), `doctor`, `draft new`, `draft seal`, `document add --draft`, `document list`, `recall`, and `concepts`, verify that `CONCEPTS.md` is regenerated, then delete `docnexus/store/` and confirm `recall` rebuilds it from the text records.
-- [ ] The tarball contains both root READMEs, the current `docs/` set, every bundled skill, the default model manifest/tokenizer/config, and the quantized ONNX model.
-- [ ] Production dependency audit has no unreviewed critical or high severity finding. Any accepted finding records its package path, exposure analysis, mitigation, owner, and review date.
-- [ ] The separate offline real-model end-to-end gate passes with remote model loading disabled; the hash embedder smoke does not replace this gate.
+- [ ] CI passes on supported Node.js 22 and 24.
+- [ ] Runtime dependencies and lockfile contain the local graph/embedding stack; the production audit has no unaccepted high/critical findings.
+- [ ] The tarball contains the CLI, six skills, the document query adapter, current docs and the complete q8 ONNX model.
+- [ ] The packaged local viewer serves its HTML/JS/CSS and current documents, rejects writes and foreign hosts/origins, and restarts pagination after source revisions. Desktop/mobile reading, empty/error states and classification changes are checked.
+- [ ] Full/page document queries agree, return current fact-backed Markdown and dynamic category counts, and refuse stale revisions after writes or effective-time changes.
+- [ ] Project-defined categories and reasons work; category-only edits preserve content/facts, append audit history, reject stale context and recover from write failures.
+- [ ] Sealed drafts reject changed, deleted/recreated and newly occupied targets; unrelated writes remain valid. Reread/merge/reseal preserves newer knowledge. Old draft manifests require resealing.
+- [ ] Real-source knowledge replay passes with source anchors intact. Recorded model decisions and simulated changes are labeled, and live model judgment is evaluated separately.
+- [ ] The installed orchestration query script works from an explicit project root; a text clone can query without retrieval stores.
+- [ ] The smoke test installs the release tarball using the repository's locked runtime dependencies in an isolated project. Offline installation requires a populated npm cache; normal CI prepares it with `npm ci`.
+- [ ] `init --agent codex`, doctor, sealed capture, keyword search, real local semantic recall, full document/timeline reads and concepts work.
+- [ ] Removing derived stores from a text clone causes hybrid recall to rebuild PGLite/pgvector projections without changing sources or timelines.
+- [ ] Native Postgres + pgvector integration passes through `DOCNEXUS_TEST_DATABASE_URL`; local wire-protocol tests alone do not establish native server parity.
+- [ ] Ordinary inserts, updates, deletion of all chunks and reinsertion retain the HNSW index; classification-only changes reuse vectors, and a failed relationship write rolls back the complete document projection.
+- [ ] Deletion removes current knowledge, timeline and database projections; dangling fact references are refused.
+- [ ] Process crash tests cover save, deletion, rollback, draft receipt recovery and lock release; concurrent updates preserve both timeline sources.
+- [ ] Fact references generate attributed Markdown, refresh dependent pages and indexes, and recover with the canonical fact write without changing dependent timelines.
+- [ ] Generated block repair preserves authored prose; missing references, deletion with references and preview drift/tampering are refused.
+- [ ] `npm run eval:retrieval` reports vector/hybrid ranks on the fixed bilingual corpus.
+- [ ] Chinese short terms do not admit isolated-character distractions, complete phrases/coverage outrank field weights, snippets show actual strongest evidence, and identifiers, aliases and active-fact lookup remain intact.
+- [ ] Actual tokenizer budgets include headings, overlap and special tokens; long paragraphs, code and facts retain ending conclusions in offline pure-vector top-3 regression. Oversized queries fail explicitly, old chunk signatures rebuild and text/history remain unchanged.
+- [ ] Alias resolution, future activation, expiry, withdrawal and cross-document replacement invalidate the appropriate projections without rewriting text.
+- [ ] Tests cover relation ownership on update, embedding signature changes, retry after model failure, text failure compensation, project isolation and path boundaries.
+- [ ] Real-runtime E2E uses the packaged ONNX model with a network sentinel. Deterministic hash tests do not replace this check.
 
-## Publish and verify
+## Documentation and compatibility
 
-- [ ] npm authentication, organization access, and the intended dist-tag have been confirmed by the publisher.
-- [ ] The release commit and version match the source used by the passing tarball smoke test.
-- [ ] After publication, install into a new temporary directory and verify `docnexus init --agent claude`, `docnexus doctor`, the draft → `document add --draft` pipeline, `concepts`, and recall from the registry package.
-- [ ] Confirm the published package page shows the intended README, version, Node.js requirement, license, repository, issue tracker, and unpacked files.
+- [ ] Both READMEs distinguish literal `search`, default hybrid `recall` and `recall --mode vector`.
+- [ ] Documentation explains text truth, rebuildable databases and separate backup for custom model overrides.
+- [ ] Workspace format remains 6, with no migration from earlier formats.
+- [ ] Documentation distinguishes save dates from event dates and source history from compiled-page versions.
+- [ ] Current architecture, product scope, roadmap and changelog match shipped behavior.
+- [ ] Package metadata, license and security contact are correct.
+
+Publishing requires the maintainer's authorization. Passing these checks does not publish the package.
+
+## Audit snapshot — 2026-10-14
+
+The production audit passes the high/critical gate after upgrading the sharp override to `^0.35.5`. Five moderate findings remain in the `sprintf-js → roarr → global-agent → onnxruntime-node → transformers` dependency chain. The underlying [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) has no patched release; npm proposes a breaking Transformers upgrade. Evaluate that upgrade separately rather than treating this gate as a zero-vulnerability result.

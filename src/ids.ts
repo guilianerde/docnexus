@@ -4,10 +4,12 @@ export function createDocumentId(): string {
   return `doc_${randomHex()}`;
 }
 
-export function createChunkId(): string {
-  return `chunk_${randomHex()}`;
-}
+
 
 function randomHex(): string {
   return randomBytes(8).toString("hex");
+}
+
+export function createChunkId(): string {
+  return `chunk_${randomHex()}`;
 }

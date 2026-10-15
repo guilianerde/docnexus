@@ -1,6 +1,6 @@
 ---
 name: docnexus-library
-description: Use when the user asks DocNexus to list concepts, list or show stored memory documents or drafts, adopt hand edits of library files, permanently delete a managed document, or discard a draft.
+description: Browse or query DocNexus documents, classify and reorganize their categories using project context and existing knowledge, adopt reviewed edits, delete managed documents, or discard drafts.
 ---
 
 # DocNexus Library
@@ -13,20 +13,43 @@ Browse and curate what DocNexus holds.
 ./node_modules/.bin/docnexus concepts [--type <entity_type>] [--query <text>] [--format md]
 ./node_modules/.bin/docnexus document list [--limit 50] [--tag <tag>]
 ./node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./node_modules/.bin/docnexus document get --id <document_id> --include template,metadata
+./node_modules/.bin/docnexus document render
 ./node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
+./node_modules/.bin/docnexus facts list [--entity <name-or-alias>] [--at <ISO-timestamp>] [--include-inactive]
 ```
 
 - Present documents as `title` — `docnexus/library/<file_path>` with tags and `updated_at`.
-- `--include` accepts any of `source,document,metadata`; request only what the user needs.
+- `--include` accepts any of `source,document,metadata,timeline,template`. `template` contains author-owned prose and fact placeholders; `document` contains the current generated view. No separate template file is stored.
+- Generated fact blocks are read-only projections of metadata. Changing their text does not change a fact and is repaired on access. Edit the owner's facts through a reviewed draft or metadata sync; references in other pages refresh automatically. Render refreshes derived views without changing source history.
 - Draft status: `open` (not sealed), `ready` (sealed, awaiting ingest), `ingested`, `invalid` (unreadable manifest).
+
+## Query for a document viewer
+
+```bash
+./node_modules/.bin/docnexus document query --all
+./node_modules/.bin/docnexus document query --page 1 --page-size 20
+./node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
+node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
+```
+
+The script is a thin adapter to the project's installed CLI. From another directory, start its arguments with `--project-root <project>`. It returns JSON on stdout; errors use stderr and a nonzero exit code.
+
+- The query reads canonical text and renders current fact values in memory; it does not build retrieval indexes, load embedding models or rewrite memory. `documents[].document` is complete current Markdown, suitable for a viewer. Treat it as data; render raw HTML only through the viewer's sanitization policy.
+- Each document has one primary `category` and `category_label`, plus tags. Classification is an orchestration judgment recorded in metadata during extraction/update. Legacy documents without a category show `uncategorized`; do not claim they were classified automatically by the script.
+- Categories are model-chosen project names. `categories[]` derives currently used categories and counts from metadata; `category_reason` explains the document's classification. Legacy ids retain display labels for compatibility; they are not an allow-list. `total` counts the selected category and `total_documents` counts all documents.
+- `--all` returns every matching document with `pagination: null`. Otherwise page numbers start at 1, default page size is 20 and maximum is 100. Documents sort by file path, independent of update time.
+- After a write/update/delete, fetch a fresh first page. Pass its `revision` to later pages using `--revision <hash>`. On `document_revision_changed`, discard accumulated pages and restart; revisions detect changes, not retained historical snapshots. Effective fact activation/expiry also changes the revision.
+- The response includes attributed facts with statuses. Only active facts support current claims; avoid displaying raw historical facts as current truth. For document history use the separate `document get` command.
+- For context-based classification, renaming, merging or splitting groups, read [contextual classification](references/classification.md). Use `document classify --id <id> --category <name> --reason <basis> [--revision <snapshot>]` for category-only edits within existing authorization. Keep facts, aliases, relationships and source content intact.
 
 ## Adopt hand edits
 
-Users may edit `docnexus/library/<file_path>` directly. Until adopted, the index keeps the old content and `status` lists the file under `index.edited_library_files`.
+Users may edit `docnexus/library/<file_path>` directly. Until adopted, search and document reads report the edit; `status` lists its id under `records.edited`.
 
-1. Read the edited file and its current metadata: `./node_modules/.bin/docnexus document get --id <id> --include metadata`.
-2. Check whether title, summary, tags, entities, or relationships are now wrong. If they are, allocate a draft (`docnexus draft new --slug <topic>`), write the corrected `metadata.json` there, and validate it with `docnexus metadata validate --file <path>`.
-3. Confirm with the user, then run one of:
+1. Use `document list` to identify the path and read the edited library file and `docnexus/records/<id>/metadata.json` directly. `document get` intentionally refuses unadopted edits.
+2. Check whether title, summary, tags, entities, relationships or structured facts are now wrong. Preserve earlier fact ids and entries; use explicit replacements or withdrawals following `docnexus-extract`'s [fact lifecycle](../docnexus-extract/references/facts.md). If metadata needs updating, allocate a draft (`docnexus draft new --slug <topic>`), write the corrected `metadata.json` there, and validate it with `docnexus metadata validate --file <path>`.
+3. Ensure the user has authorized adopting the reviewed edit, then run one of:
 
 ```bash
 ./node_modules/.bin/docnexus document sync --id <document_id>
@@ -38,8 +61,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, the index
 ## Delete a document
 
 1. Resolve exactly one target by `id` or `file_path`; use `document list` if the user described it loosely.
-2. Tell the user deletion permanently removes `docnexus/library/<file_path>`, its sidecars, chunks, embeddings, and graph state, with no retained version.
-3. Ask for confirmation. Only after explicit confirmation run one of:
+2. Tell the user deletion permanently removes `docnexus/library/<file_path>`, its source, metadata, record, entire timeline and derived database entries.
+3. If the user has not already explicitly confirmed deleting this target, ask. With authorization, run one of:
 
 ```bash
 ./node_modules/.bin/docnexus document delete --id <document_id> --force
@@ -47,6 +70,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, the index
 ```
 
 4. Report the deleted `id` and `file_path`.
+
+Deletion is refused if it would leave a Markdown fact reference, another fact's replacement reference or entity identity unresolved, or revive a predecessor by removing cross-document replacement history. Prefer preserving a historical fact's owner and removing obsolete prose through a reviewed update. Do not remove replacement references merely to bypass the check.
 
 ## Discard a draft
 
@@ -60,5 +85,5 @@ Offer to discard `ingested` drafts when the user asks to tidy up.
 
 ## Constraints
 
-- `--force` records a confirmation that already happened; never use it to skip asking.
+- `--force` records a confirmation that already happened; use it only when the user has authorized that action.
 - To change a document's content, run the capture pipeline with the same `file_path` instead of editing the library file.

@@ -1,0 +1,18 @@
+{
+  "documents": [
+    { "path": "auth/rotation.md", "title": "令牌轮换", "summary": "刷新凭证在每次使用后轮换，防止重放。", "body": "# 令牌轮换\n\nRefresh tokens rotate on every use. Call rotate_refresh_token to issue a new credential and invalidate the previous token. 刷新令牌使用后立即失效，避免被重复使用。", "entities": [{ "name": "Token rotation", "type": "concept", "description": "刷新令牌轮换", "aliases": ["令牌轮换策略", "RefreshPolicy"] }], "relationships": [] },
+    { "path": "auth/logout.md", "title": "退出登录与会话撤销", "summary": "用户退出后撤销会话，让旧凭证失效。", "body": "# 会话撤销\n\nWhen a user signs out, revoke the server session and reject its old credentials. 用户退出登录后必须撤销服务端会话，以阻止旧凭证继续访问。", "entities": [], "relationships": [] },
+    { "path": "runtime/local-model.md", "title": "本地嵌入模型", "summary": "离线运行 ONNX 模型以避免远程服务依赖。", "body": "# 本地模型\n\nEmbedding uses a bundled ONNX model. No model download or remote embedding request is needed at runtime. 选择本地模型是为了离线运行并减少对远程服务的依赖。", "entities": [{ "name": "Local embedding", "type": "component", "description": "本地嵌入运行时", "aliases": ["离线向量模型"] }, { "name": "ONNX", "type": "tool", "description": "本地推理" }], "relationships": [{ "from": "Local embedding", "to": "ONNX", "type": "depends_on", "description": "通过 ONNX 本地推理生成向量。" }] },
+    { "path": "storage/backup.md", "title": "Git 备份与索引重建", "summary": "知识文本提交 Git，克隆后重建数据库索引。", "body": "# 备份\n\nCommit library and records to Git. Exclude derived databases. After cloning, rebuild the retrieval indexes from confirmed text. 文本是真源，数据库可以从当前知识重新生成。", "entities": [], "relationships": [] },
+    { "path": "frontend/theme.md", "title": "界面主题", "summary": "界面支持浅色和深色主题。", "body": "# Theme\n\nUse CSS variables for light and dark themes. Theme changes do not alter authentication policies or stored project knowledge.", "entities": [], "relationships": [] }
+  ],
+  "queries": [
+    { "kind": "identifier", "query": "rotate_refresh_token", "expected": "auth/rotation.md" },
+    { "kind": "alias", "query": "RefreshPolicy", "expected": "auth/rotation.md" },
+    { "kind": "Chinese", "query": "用户退出登录后如何让旧会话失效", "expected": "auth/logout.md" },
+    { "kind": "English", "query": "revoking a session after sign out", "expected": "auth/logout.md" },
+    { "kind": "semantic", "query": "克隆项目后数据库丢失怎么办", "expected": "storage/backup.md" },
+    { "kind": "relationship", "query": "本地嵌入依赖什么推理工具", "expected": "runtime/local-model.md", "edge": "DEPENDS_ON" },
+    { "kind": "no-answer", "query": "ZXQ_UNDOCUMENTED_火星基地预算", "expected": null }
+  ]
+}

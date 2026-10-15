@@ -1,118 +1,48 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runDoctor, type DoctorDependencies } from "../src/doctor.js";
-import { EMBEDDING_DIMENSION } from "../src/embedding-config.js";
+import { runDoctor } from "../src/doctor.js";
 import { initializeProject } from "../src/project.js";
+import { upsertManagedDocument } from "../src/managed-documents.js";
 
 const roots: string[] = [];
-
-async function makeRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "docnexus-doctor-"));
-  roots.push(root);
-  return root;
+async function root() {
+  const path = await mkdtemp(join(tmpdir(), "docnexus-doctor-"));
+  roots.push(path);
+  return path;
 }
-
-function healthyDependencies(): DoctorDependencies {
-  return {
-    checkLadybugVectorIndex: async () => ({ ok: true }),
-    checkEmbeddingRuntime: async () => ({
-      ok: true,
-      provider: "local-transformers",
-      model: "BAAI/bge-small-zh-v1.5",
-      dimension: EMBEDDING_DIMENSION,
-      local_only: true,
-      remote_allowed: false
-    })
-  };
-}
-
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-describe("runDoctor", () => {
+describe("text workspace diagnostics", () => {
   it("reports an uninitialized project without throwing", async () => {
-    const projectRoot = await makeRoot();
-
-    const output = await runDoctor(projectRoot, healthyDependencies());
-
-    expect(output.result).toBe("issues_found");
-    expect(output.checks.project).toMatchObject({
-      ok: false,
-      initialized: false,
-      project_root: projectRoot
-    });
-    expect(output.recommendations).toContain(`Run "docnexus init" in ${projectRoot}.`);
+    const path = await root();
+    const output = await runDoctor(path);
+    expect(output).toMatchObject({ result: "issues_found", checks: { project: { initialized: false }, records: { skipped: true } } });
+    expect(output.recommendations).toContain(`Run "docnexus init" in ${path}.`);
   });
 
-  it("reports a healthy initialized local runtime", async () => {
-    const projectRoot = await makeRoot();
-    await initializeProject(projectRoot, { agents: ["claude"] });
-
-    const output = await runDoctor(projectRoot, healthyDependencies());
-
-    expect(output).toMatchObject({
-      result: "ok",
-      checks: {
-        node: {
-          ok: true,
-          sqlite_available: true
-        },
-        project: {
-          ok: true,
-          initialized: true,
-          project_root: projectRoot
-        },
-        skills: {
-          ok: true,
-          missing: [],
-          links: { claude: { missing: [] } }
-        },
-        sqlite: {
-          ok: true,
-          tables: ["documents", "file_chunks"]
-        },
-        ladybug: {
-          ok: true
-        },
-        embedding: {
-          ok: true,
-          provider: "local-transformers",
-          local_only: true,
-          remote_allowed: false
-        }
-      },
-      recommendations: []
-    });
+  it("checks the text workspace, local embedding runtime and derived stores", async () => {
+    const path = await root();
+    await initializeProject(path, { agents: ["codex"] });
+    const output = await runDoctor(path);
+    expect(output).toMatchObject({ result: "ok", checks: { records: { ok: true, record_count: 0 }, skills: { ok: true } }, recommendations: [] });
+    expect(Object.keys(output.checks)).toEqual(["node", "project", "skills", "records", "index", "database", "embedding"]);
   });
 
-  it("keeps embedding failures actionable", async () => {
-    const projectRoot = await makeRoot();
-    await initializeProject(projectRoot);
-    const dependencies = healthyDependencies();
-    dependencies.checkEmbeddingRuntime = async () => ({
-      ok: false,
-      provider: "local-transformers",
-      model: "BAAI/bge-small-zh-v1.5",
-      dimension: EMBEDDING_DIMENSION,
-      local_only: true,
-      remote_allowed: false,
-      message: "local model files were not found"
-    });
-
-    const output = await runDoctor(projectRoot, dependencies);
-
-    expect(output.result).toBe("issues_found");
-    expect(output.checks.embedding).toMatchObject({
-      ok: false,
-      local_only: true,
-      remote_allowed: false,
-      message: "local model files were not found"
-    });
-    expect(output.checks.skills).toMatchObject({ ok: true, message: "skills are not linked into any agent directory" });
-    expect(output.recommendations).toContain("Run docnexus skills link --target claude (or codex, all) so your agent can discover the skills.");
-    expect(output.recommendations).toContain("Install or cache the DocNexus embedding model locally, then rerun docnexus doctor.");
+  it("reports edits, missing files and corruption without modifying them", async () => {
+    const path = await root();
+    await initializeProject(path);
+    const added = await upsertManagedDocument(path, { file_path: "notes.md", source: "Original", document: "# Current", metadata: { title: "Notes", summary: "Notes", tags: [], entities: [], relationships: [] } });
+    const file = join(path, "docnexus/library/notes.md");
+    await writeFile(file, "Edited");
+    expect((await runDoctor(path)).checks.records.edited).toEqual([added.id]);
+    expect(await readFile(file, "utf8")).toBe("Edited");
+    await rm(file);
+    expect((await runDoctor(path)).checks.records.missing_library).toEqual([added.id]);
+    await writeFile(join(path, "docnexus/records", added.id, "record.json"), "broken JSON");
+    expect((await runDoctor(path)).result).toBe("issues_found");
   });
 });

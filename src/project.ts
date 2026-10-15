@@ -1,13 +1,15 @@
+import { DocNexusError } from "./errors.js";
+import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { writeConceptIndex } from "./concepts.js";
 import { draftsPath, libraryPath, projectMarkerPath, WORKSPACE_DIRNAME, workspacePath } from "./layout.js";
-import { ensureManagedStore } from "./managed-documents.js";
+import { assertNoSymbolicLinks, ensureManagedWorkspace } from "./managed-documents.js";
 import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
 
 export { projectMarkerPath };
 
-export const PROJECT_FORMAT_VERSION = 5;
+export const PROJECT_FORMAT_VERSION = 6;
 
 interface ProjectMarker {
   format_version: number;
@@ -32,10 +34,10 @@ async function assertProjectDirectory(projectRoot: string): Promise<string> {
   const root = resolve(projectRoot);
   const info = await stat(root).catch(() => undefined);
   if (!info) {
-    throw new Error(`project root does not exist: ${root}`);
+    throw new DocNexusError("project_not_found", `project root does not exist: ${root}`);
   }
   if (!info.isDirectory()) {
-    throw new Error(`project root is not a directory: ${root}`);
+    throw new DocNexusError("unsupported_format", `project root is not a directory: ${root}`);
   }
   return root;
 }
@@ -52,7 +54,7 @@ async function readMarker(projectRoot: string): Promise<ProjectMarker | undefine
   }
   const marker = JSON.parse(content) as Partial<ProjectMarker>;
   if (marker.format_version !== PROJECT_FORMAT_VERSION || typeof marker.initialized_at !== "string") {
-    throw new Error(
+    throw new DocNexusError("unsupported_format",
       `unsupported DocNexus project format at ${projectMarkerPath(projectRoot)}; run "docnexus reset --force" and then "docnexus init"`
     );
   }
@@ -60,57 +62,62 @@ async function readMarker(projectRoot: string): Promise<ProjectMarker | undefine
 }
 
 export async function requireInitializedProject(projectRoot: string): Promise<string> {
-  const root = await assertProjectDirectory(projectRoot);
-  if (!(await readMarker(root))) {
-    throw new Error(`DocNexus project is not initialized: ${root}. Run "docnexus init" in that project first.`);
-  }
-  return root;
+  return withProjectLock(projectRoot, async () => {
+    const root = await assertProjectDirectory(projectRoot);
+    await assertNoSymbolicLinks(root, WORKSPACE_DIRNAME);
+    if (!(await readMarker(root))) {
+      throw new DocNexusError("project_not_initialized", `DocNexus project is not initialized: ${root}. Run "docnexus init" in that project first.`);
+    }
+    return root;
+  });
 }
 
 /**
- * Creates the `docnexus/` workspace (skills, drafts, library, store) and optionally links the skills
+ * Creates the `docnexus/` workspace (skills, drafts, library, records) and optionally links the skills
  * into agent directories. Re-running on an initialized project refreshes skills and links only.
  */
 export async function initializeProject(
   projectRoot: string,
   input: InitializeProjectInput = {}
 ): Promise<InitializeProjectOutput> {
-  const root = await assertProjectDirectory(projectRoot);
-  const marker = await readMarker(root);
-  if (!marker) {
-    const entries = await readdir(workspacePath(root)).catch(() => []);
-    if (entries.length > 0) {
-      throw new Error(
-        `${workspacePath(root)} already exists and is not a DocNexus workspace; move it before running "docnexus init"`
+  return withProjectLock(projectRoot, async () => {
+    const root = await assertProjectDirectory(projectRoot);
+    await assertNoSymbolicLinks(root, WORKSPACE_DIRNAME);
+    const marker = await readMarker(root);
+    if (!marker) {
+      const entries = await readdir(workspacePath(root)).catch(() => []);
+      if (entries.length > 0) {
+        throw new DocNexusError("unsupported_format",
+          `${workspacePath(root)} already exists and is not a DocNexus workspace; move it before running "docnexus init"`
+        );
+      }
+      await mkdir(workspacePath(root), { recursive: true });
+      await mkdir(draftsPath(root), { recursive: true });
+      await mkdir(libraryPath(root), { recursive: true });
+      await ensureManagedWorkspace(root);
+      await writeFile(workspaceReadmePath(root), WORKSPACE_README);
+    } else {
+      // A clone already carries all memory; only empty directories may need recreating.
+      await mkdir(draftsPath(root), { recursive: true });
+      await ensureManagedWorkspace(root);
+    }
+    await writeConceptIndex(root);
+
+    const skills = await syncSkills(root, input.packagedSkillsRoot);
+    const links: LinkSkillsOutput[] = [];
+    for (const agent of input.agents ?? []) {
+      links.push(await linkSkills(root, agent));
+    }
+
+    if (!marker) {
+      await writeFile(
+        projectMarkerPath(root),
+        `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString() }, null, 2)}\n`,
+        { flag: "wx" }
       );
     }
-    await mkdir(workspacePath(root), { recursive: true });
-    await mkdir(draftsPath(root), { recursive: true });
-    await mkdir(libraryPath(root), { recursive: true });
-    await ensureManagedStore(root);
-    await writeFile(workspaceReadmePath(root), WORKSPACE_README);
-    await writeFile(resolve(workspacePath(root), ".gitignore"), "store/\n");
-  } else {
-    // A cloned workspace carries text files only; recreate the derived store and empty folders.
-    await mkdir(draftsPath(root), { recursive: true });
-    await ensureManagedStore(root);
-  }
-  await writeConceptIndex(root);
-
-  const skills = await syncSkills(root, input.packagedSkillsRoot);
-  const links: LinkSkillsOutput[] = [];
-  for (const agent of input.agents ?? []) {
-    links.push(await linkSkills(root, agent));
-  }
-
-  if (!marker) {
-    await writeFile(
-      projectMarkerPath(root),
-      `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString() }, null, 2)}\n`,
-      { flag: "wx" }
-    );
-  }
-  return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links };
+    return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links };
+  });
 }
 
 function workspaceReadmePath(projectRoot: string): string {
@@ -125,14 +132,18 @@ DocNexus project workspace. Everything DocNexus owns for this project lives here
 | --- | --- |
 | \`skills/\` | Project skills. Start from \`skills/docnexus/SKILL.md\`. |
 | \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
-| \`library/\` | Managed Markdown documents. You may edit them; adopt edits with \`docnexus document sync\`. |
-| \`records/\` | Per-document source, metadata, and \`record.json\`; the text source of truth. |
+| \`library/\` | Author-owned Markdown and fact references with generated read-only fact blocks. Adopt authored edits with \`docnexus document sync\`. |
+| \`records/\` | Per-document source, metadata, timeline, and \`record.json\`; the text source of truth. |
 | \`CONCEPTS.md\` | Generated concept index that agents load while working. |
 | \`schemas/\` | Metadata JSON schema used by the skills. |
-| \`store/\` | Derived state (SQLite, LadybugDB graph, optional models). Safe to ignore in Git. |
+| \`store/\` | Rebuildable PostgreSQL/PGLite retrieval projections and optional local model overrides. |
+| \`.runtime/\` | Pending text transaction recovery journal; do not delete during recovery. |
 
-Everything except \`store/\` is plain text and can be committed. After cloning or pulling, run
-\`./node_modules/.bin/docnexus index sync\` to rebuild \`store/\` from the text files.
+Everything except \`store/\` and \`.runtime/\` is plain text and can be committed. CLI access takes the local project lock and recovers pending text transactions first.
+Run \`./node_modules/.bin/docnexus index sync\` after a Git pull; default hybrid recall also syncs automatically. Avoid Git changes and external edits during writes or pending recovery.
+Entity aliases and optional facts track identity, provenance and effective validity. Run \`docnexus facts list --include-inactive\` to inspect fact history.
+Define a fact only in its owner's metadata; reference it on a standalone \`{{fact:fact_id}}\` line. The CLI renders attributed current values and updates dependent pages. Use \`document get --include template,metadata\` for the editable structure and \`document render\` to refresh all views; there is no background timer.
+The model running skills chooses project-defined \`metadata.category\` names and \`category_reason\` from project context and existing documents. Use \`document classify --id <id> --category <name> --reason <basis>\` for category-only adjustments. \`document query\` derives current Markdown, used-category counts and revision from text without another stored document source.
 
 Run \`./node_modules/.bin/docnexus status\` for an overview.
 `;

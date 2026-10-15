@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_EMBEDDING_MODEL,
   RealEmbedder,
@@ -45,9 +45,9 @@ describe("RealEmbedder", () => {
         env,
         pipeline: async (...args) => {
           calls.push(args);
-          return async () => ({
+          return Object.assign(async () => ({
             data: Array.from({ length: EMBEDDING_DIMENSION }, (_, index) => (index === 0 ? 1 : 0))
-          });
+          }), { tokenizer: { model_max_length: 512, encode: () => [101, 42, 102] } });
         }
       })
     });
@@ -69,5 +69,27 @@ describe("RealEmbedder", () => {
       allowLocalModels: true,
       allowRemoteModels: false
     });
+  });
+
+  it("counts special tokens, uses the lower model limit and refuses silent truncation", async () => {
+    const extract = vi.fn().mockResolvedValue({ data: Array(512).fill(0) });
+    const encode = vi.fn((text: string) => [101, ...Array.from(text).map(() => 42), 102]);
+    const pipeline = vi.fn().mockResolvedValue(Object.assign(extract, {
+      tokenizer: { model_max_length: 12, encode }, model: { config: { max_position_embeddings: 10 } }
+    }));
+    const embedder = new RealEmbedder({ loadPipelineFactory: async () => ({ pipeline }) });
+    const budget = await embedder.tokenBudget();
+    expect(budget.maxTokens).toBe(10);
+    expect(budget.countTokens("中文")).toBe(4);
+    await expect(embedder.embed("字".repeat(9))).rejects.toThrow("11 > 10");
+    expect(extract).not.toHaveBeenCalled();
+    await embedder.embed("字".repeat(8));
+    expect(extract).toHaveBeenCalledOnce();
+    expect(pipeline).toHaveBeenCalledOnce();
+    expect(encode).toHaveBeenCalledWith("中文", { add_special_tokens: true });
+    const withoutTokenizerLimit = new RealEmbedder({ loadPipelineFactory: async () => ({ pipeline: async () => Object.assign(extract, {
+      tokenizer: { encode }, model: { config: { max_position_embeddings: 10 } }
+    }) }) });
+    expect((await withoutTokenizerLimit.tokenBudget()).maxTokens).toBe(10);
   });
 });

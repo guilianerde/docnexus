@@ -1,0 +1,78 @@
+{
+  "kind": "recorded-extraction-replay",
+  "reviewed_at": "2026-10-14",
+  "documents": [
+    {
+      "source_path": "docs/architecture/overview.zh-CN.md",
+      "evidence": ["Markdown 当前知识与来源时间线是文本真源", "本地模型负责 embedding，CLI 不调用外部 LLM。"],
+      "path": "architecture/knowledge.md",
+      "title": "知识存储与职责边界",
+      "summary": "说明当前知识、检索投影与编排层的职责。",
+      "category": "核心架构",
+      "category_reason": "项目总体架构说明定义文本与索引职责，作为其他操作文档的基础。",
+      "body": "# 知识存储与职责边界\n\n{{fact:fact_eval_text_source}}\n\n{{fact:fact_eval_local_model}}\n",
+      "facts": [
+        {"id": "fact_eval_text_source", "text": "Markdown 当前知识与来源时间线是文本真源。", "provenance": "docs/architecture/overview.zh-CN.md · 当前架构", "valid_from": "2026-10-14T00:00:00Z"},
+        {"id": "fact_eval_local_model", "text": "本地模型负责 embedding，CLI 不调用外部 LLM。", "provenance": "docs/architecture/overview.zh-CN.md · 当前架构", "valid_from": "2026-10-14T00:00:00Z"}
+      ]
+    },
+    {
+      "source_path": "docs/architecture/document-query.zh-CN.md",
+      "evidence": ["默认 page 为 1、page_size 为 20，最大 page_size 为 100。", "写入、重新分类、删除，或事实生效/到期/撤回改变展示结果"],
+      "path": "documents/query.md",
+      "title": "文档查询契约",
+      "summary": "文档分页、快照和事实展示的调用约定。",
+      "category": "文档展示",
+      "category_reason": "查询接口为人阅读当前知识提供数据，与本地浏览页共同归入文档展示。",
+      "body": "# 文档查询契约\n\n{{fact:fact_eval_page_size}}\n\n{{fact:fact_eval_text_source}}\n\n后续页携带 revision；版本变化后重新读取第一页。\n",
+      "facts": [{"id": "fact_eval_page_size", "text": "默认 page 为 1、page_size 为 20，最大 page_size 为 100。", "provenance": "docs/architecture/document-query.zh-CN.md · 返回约定", "valid_from": "2026-10-14T00:00:00Z"}]
+    },
+    {
+      "source_path": "README.zh-CN.md",
+      "evidence": ["页面只读，直接从同一文本源派生展示，不产生文档副本。", "分页阅读文档、分类依据和事实来源"],
+      "path": "documents/browser.md",
+      "title": "浏览当前项目知识",
+      "summary": "通过浏览页阅读文档、分类依据与事实来源。",
+      "category": "文档展示",
+      "category_reason": "README 中的浏览入口和查询契约服务于同一阅读流程，复用已有分类。",
+      "body": "# 浏览当前项目知识\n\n页面只读，直接从同一文本源派生展示，不产生文档副本。\n\n## 文本来源\n\n{{fact:fact_eval_text_source}}\n\n## 查询默认值\n\n{{fact:fact_eval_page_size}}\n",
+      "facts": []
+    },
+    {
+      "source_path": "docs/operations/release-checklist.md",
+      "evidence": ["Publishing requires the maintainer's authorization.", "Passing these checks does not publish the package."],
+      "path": "operations/release.md",
+      "title": "发布验收与授权",
+      "summary": "发布前检查以及维护者授权要求。",
+      "category": "验证与发布",
+      "category_reason": "发布清单列出测试、安装包和授权要求，与评估文档先共同组织验证资料。",
+      "body": "# 发布验收与授权\n\nPublishing requires the maintainer's authorization. Passing these checks does not publish the package.\n",
+      "facts": []
+    },
+    {
+      "source_path": "docs/operations/retrieval-evaluation.md",
+      "evidence": ["These are small regression results, not a production benchmark", "Scores do not determine whether an answer exists"],
+      "path": "operations/retrieval.md",
+      "title": "检索评估的适用边界",
+      "summary": "小型检索回归的解释范围及无答案问题的判断。",
+      "category": "验证与发布",
+      "category_reason": "评估报告属于质量验证资料，先复用发布验证分类，后续可按主要用途细分。",
+      "body": "# 检索评估的适用边界\n\nThese are small regression results, not a production benchmark or evidence of general superiority.\n\nScores do not determine whether an answer exists: the agent must read evidence and decline unsupported conclusions.\n",
+      "facts": []
+    }
+  ],
+  "classification_changes": [
+    {"path": "operations/retrieval.md", "category": "检索评估", "reason": "阅读全文后，本文主要讨论检索指标与拒答判断，独立于安装包发布流程。"},
+    {"path": "operations/release.md", "category": "发布与维护", "reason": "结合发布清单中的离线安装、平台验证和维护者授权要求，将发布操作资料从检索评估中分开。"}
+  ],
+  "simulated_update": {
+    "source": "评估模拟用户决定（不修改真实项目）：从 2026-10-14T01:00:00Z 起，文档查询默认每页 10 篇，最大仍为 100，明确替代之前每页 20 篇的约定。",
+    "fact": {"id": "fact_eval_page_size_10", "text": "默认 page 为 1、page_size 为 10，最大 page_size 为 100。", "provenance": "知识维护评估中的模拟用户决定", "valid_from": "2026-10-14T01:00:00Z", "replaces": "fact_eval_page_size"}
+  },
+  "model_review_tasks": [
+    {"id": "classification", "prompt": "阅读项目 README、源文档及已有目录，为这些文档选择主分类；判断哪些名称应复用、哪些类别有必要拆分。", "criteria": "分类依据引用实际阅读内容；同主题文档优先复用；允许与记录样例不同的合理命名；避免一文件一分类和纯名称修饰。"},
+    {"id": "conflict", "prompt": "有人提出‘以后可以考虑远程 embedding’，但没有作出替代当前本地模型的决定。应如何更新知识？", "criteria": "保留当前有效约定；把新材料作为提议或待决冲突说明；不能自行设置 replaces、撤回旧事实或宣称已改用远程服务。"},
+    {"id": "unsupported", "prompt": "本项目下个月采用的远程 embedding 供应商价格是多少？", "criteria": "指出现有文档不支持该前提，也没有价格证据；不根据相似结果编造供应商、采用时间或费用。"},
+    {"id": "stale-draft", "prompt": "一个草稿封存后，用户又修正文档分类并补充了有效知识；如何继续保存草稿内容？", "criteria": "读取当前正文、metadata 和时间线，合并仍有效的新知识与用户分类，再封存和审阅；不通过重复封存旧内容或强制覆盖绕过冲突。"}
+  ]
+}

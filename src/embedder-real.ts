@@ -1,5 +1,7 @@
+import { DocNexusError } from "./errors.js";
 import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSION } from "./embedding-config.js";
 import type { Embedder } from "./embedder.js";
+import type { TextTokenBudget } from "./chunker.js";
 
 export { DEFAULT_EMBEDDING_MODEL };
 
@@ -14,10 +16,13 @@ type FeatureExtractionResult = {
   data?: Float32Array | number[];
 };
 
-type FeatureExtractionPipeline = (
+type FeatureExtractionPipeline = ((
   text: string,
   options?: { pooling?: "mean"; normalize?: boolean }
-) => Promise<FeatureExtractionResult>;
+) => Promise<FeatureExtractionResult>) & {
+  tokenizer: { model_max_length?: number; encode(text: string, options: { add_special_tokens: true }): number[] };
+  model?: { config?: { max_position_embeddings?: number } };
+};
 
 type PipelineOptions = {
   local_files_only?: boolean;
@@ -126,11 +131,12 @@ export class RealEmbedder implements Embedder {
   private readonly localModelPath?: string;
   private readonly cacheDir?: string;
   private readonly loadPipelineFactory: PipelineModuleLoader;
+  private pipelinePromise?: Promise<FeatureExtractionPipeline>;
 
   constructor(options: RealEmbedderOptions = {}) {
     const dimension = options?.dimension ?? EMBEDDING_DIMENSION;
     if (!Number.isInteger(dimension) || dimension <= 0) {
-      throw new Error("embedding dimension must be a positive integer");
+      throw new DocNexusError("invalid_params", "embedding dimension must be a positive integer");
     }
     this.dimension = dimension;
     this.model = options?.model ?? DEFAULT_EMBEDDING_MODEL;
@@ -139,24 +145,35 @@ export class RealEmbedder implements Embedder {
     this.loadPipelineFactory = options.loadPipelineFactory ?? loadPipelineFactory;
   }
 
-  async embed(text: string): Promise<number[]> {
-    const normalized = text.trim();
-    if (normalized.length === 0) {
-      return Array.from({ length: this.dimension }, () => 0);
-    }
-
-    const extractor = await loadFeatureExtractionPipeline({
+  private extractor(): Promise<FeatureExtractionPipeline> {
+    return this.pipelinePromise ??= loadFeatureExtractionPipeline({
       dimension: this.dimension,
       model: this.model,
       localModelPath: this.localModelPath,
       cacheDir: this.cacheDir,
       loadPipelineFactory: this.loadPipelineFactory
     });
+  }
+
+  async tokenBudget(): Promise<TextTokenBudget> {
+    const extractor = await this.extractor();
+    const maxTokens = Math.min(extractor.tokenizer.model_max_length ?? Infinity, extractor.model?.config?.max_position_embeddings ?? Infinity);
+    if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) throw new DocNexusError("embedding_failed", "embedding model has no valid tokenizer input limit");
+    return { maxTokens, countTokens: (text) => extractor.tokenizer.encode(text, { add_special_tokens: true }).length };
+  }
+
+  async embed(text: string): Promise<number[]> {
+    const normalized = text.trim();
+    if (normalized.length === 0) return Array.from({ length: this.dimension }, () => 0);
+    const budget = await this.tokenBudget();
+    const length = budget.countTokens(normalized);
+    if (length > budget.maxTokens) throw new DocNexusError("embedding_input_too_long", `embedding input exceeds model token limit (${length} > ${budget.maxTokens}); shorten the query or split the document before embedding`);
+    const extractor = await this.extractor();
     const result = await extractor(normalized, { pooling: "mean", normalize: true });
     const data = Array.from(result.data ?? []);
 
     if (data.length !== this.dimension) {
-      throw new Error(`embedding dimension mismatch: expected ${this.dimension}, got ${data.length}`);
+      throw new DocNexusError("embedding_failed", `embedding dimension mismatch: expected ${this.dimension}, got ${data.length}`);
     }
 
     return data;

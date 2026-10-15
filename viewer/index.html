@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DocNexus · 项目知识</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#reader">跳到文档正文</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="DocNexus 首页"><span class="brand-mark" aria-hidden="true">N</span>DocNexus<span class="brand-divider">/</span><span class="brand-subtitle">项目知识</span></a>
+    <div class="top-actions"><span class="readonly">只读浏览</span><button id="refresh" type="button">刷新文档 <span aria-hidden="true">↻</span></button></div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="分类导航">
+      <div class="project"><span class="eyebrow">WORKSPACE</span><h1 id="project-name">项目文档</h1><p id="project-path">正在连接本地项目…</p></div>
+      <div class="section-label">文档分类</div>
+      <nav id="categories" aria-label="文档分类"></nav>
+      <div class="sidebar-foot"><span class="live-dot" aria-hidden="true"></span>跟随项目知识更新<p>分类随文档与项目演进</p></div>
+    </aside>
+    <section class="document-list" aria-labelledby="list-title">
+      <div class="list-heading"><span class="eyebrow">KNOWLEDGE LIBRARY</span><div class="list-title-row"><h2 id="list-title">全部文档</h2><span id="document-count" class="count">—</span></div><p>选择一份文档，阅读当前知识。</p></div>
+      <div class="list-controls"><label for="page-size">每页</label><select id="page-size"><option value="10">10 篇</option><option value="20" selected>20 篇</option><option value="50">50 篇</option></select><span id="list-position"></span></div>
+      <div id="documents" class="list-items" aria-busy="true"><p class="empty">正在读取文档…</p></div>
+      <nav class="pagination" aria-label="文档分页"><button id="previous" disabled>上一页</button><span id="page-label">—</span><button id="next" disabled>下一页</button></nav>
+    </section>
+    <main id="reader" class="reader" tabindex="-1">
+      <div class="reader-toolbar"><span id="document-path">文档阅读</span><span id="sync-status" role="status" aria-live="polite">正在加载…</span></div>
+      <div id="error" role="alert" hidden></div>
+      <div id="detail"><div class="reader-empty"><span class="eyebrow">YOUR PROJECT, IN CONTEXT</span><h2>知识，从这里连接。</h2><p>在左侧选择文档，查看正文、分类依据与事实来源。</p></div></div>
+    </main>
+  </div>
+</body>
+</html>

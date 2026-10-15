@@ -21,8 +21,8 @@ afterEach(async () => {
 describe("recall", () => {
   it("returns ranked results linked to complete document context groups", async () => {
     const projectRoot = await makeRoot();
-    const output = await recall(projectRoot, { query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
-      recallFromLadybug: async () => groupedData("auth", 0.9)
+    const output = await recall(projectRoot, { mode: "vector", query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
+      recallFromPostgres: async () => groupedData("auth", 0.9)
     });
 
     expect(output.query).toBe("JWT authentication");
@@ -43,7 +43,7 @@ describe("recall", () => {
   it("returns an empty grouped response when no indexed content is recalled", async () => {
     const projectRoot = await makeRoot();
 
-    await expect(recall(projectRoot, { query: "nothing" }, new LocalHashEmbedder(), emptyRecallReader())).resolves.toEqual({
+    await expect(recall(projectRoot, { mode: "vector", query: "nothing" }, new LocalHashEmbedder(), emptyRecallReader())).resolves.toEqual({
       query: "nothing",
       results: [],
       context_groups: []
@@ -53,8 +53,8 @@ describe("recall", () => {
   it("validates query and limit", async () => {
     const projectRoot = await makeRoot();
 
-    await expect(recall(projectRoot, { query: "" })).rejects.toThrow("query must be a non-empty string");
-    await expect(recall(projectRoot, { query: "x", limit: 0 })).rejects.toThrow("limit must be a positive integer");
+    await expect(recall(projectRoot, { mode: "vector", query: "" })).rejects.toThrow("query must be a non-empty string");
+    await expect(recall(projectRoot, { mode: "vector", query: "x", limit: 0 })).rejects.toThrow("limit must be a positive integer");
   });
 
   it("preserves populated same-document and one-hop supporting context in its group", async () => {
@@ -83,8 +83,8 @@ describe("recall", () => {
       }
     ];
 
-    const output = await recall(projectRoot, { query: "graph retrieval", limit: 1 }, new LocalHashEmbedder(), {
-      recallFromLadybug: async () => data
+    const output = await recall(projectRoot, { mode: "vector", query: "graph retrieval", limit: 1 }, new LocalHashEmbedder(), {
+      recallFromPostgres: async () => data
     });
 
     expect(output.context_groups[0].same_document_chunks).toHaveLength(1);
@@ -112,8 +112,8 @@ describe("recall", () => {
         reason: "related_concept:Support"
       }
     ];
-    const output = await recall(projectRoot, { query: "ranking", limit: 2 }, new LocalHashEmbedder(), {
-      recallFromLadybug: async () => ({
+    const output = await recall(projectRoot, { mode: "vector", query: "ranking", limit: 2 }, new LocalHashEmbedder(), {
+      recallFromPostgres: async () => ({
         results: [...high.results, ...low.results],
         context_groups: [...high.context_groups, ...low.context_groups]
       })
@@ -128,28 +128,28 @@ describe("recall", () => {
     data.context_groups[0].document.summary = "";
 
     await expect(
-      recall(projectRoot, { query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
-        recallFromLadybug: async () => data
+      recall(projectRoot, { mode: "vector", query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
+        recallFromPostgres: async () => data
       })
     ).rejects.toThrow("recall requires document metadata");
   });
 
-  it("fails when required graph context is missing", async () => {
+  it("accepts a current document with no declared concepts", async () => {
     const projectRoot = await makeRoot();
     const data = groupedData("auth", 0.9);
     data.context_groups[0].graph_context.concepts = [];
 
     await expect(
-      recall(projectRoot, { query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
-        recallFromLadybug: async () => data
+      recall(projectRoot, { mode: "vector", query: "JWT authentication", limit: 1 }, new LocalHashEmbedder(), {
+        recallFromPostgres: async () => data
       })
-    ).rejects.toThrow("recall requires graph context");
+    ).resolves.toMatchObject({ context_groups: [{ graph_context: { concepts: [] } }] });
   });
 });
 
 function emptyRecallReader(): RecallReader {
   return {
-    recallFromLadybug: async () => ({ results: [], context_groups: [] })
+    recallFromPostgres: async () => ({ results: [], context_groups: [] })
   };
 }
 

@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import type { DocNexusMetadata, EntityType, MetadataEntity, RelationshipType } from "./types.js";
 
-export type LadybugRelationshipLabel = "DEPENDS_ON" | "RELATES_TO" | "IMPLEMENTS" | "REPLACES" | "DECIDES";
+export type GraphRelationshipLabel = "DEPENDS_ON" | "RELATES_TO" | "IMPLEMENTS" | "REPLACES" | "DECIDES";
 
 export interface GraphConcept extends MetadataEntity {
   id: string;
 }
 
 export interface GraphEdge {
-  label: LadybugRelationshipLabel;
+  label: GraphRelationshipLabel;
   from: string;
   to: string;
   description: string;
@@ -20,7 +20,7 @@ export interface GraphMapping {
 }
 
 export function normalizeConceptKey(name: string, type: EntityType): string {
-  return `${type}:${name.trim().toLowerCase()}`;
+  return `${type}:${name.normalize("NFKC").trim().toLowerCase()}`;
 }
 
 export function createConceptId(name: string, type: EntityType): string {
@@ -28,7 +28,7 @@ export function createConceptId(name: string, type: EntityType): string {
   return `concept_${hash}`;
 }
 
-export function mapRelationshipTypeToEdge(type: RelationshipType): LadybugRelationshipLabel {
+export function mapRelationshipTypeToEdge(type: RelationshipType): GraphRelationshipLabel {
   switch (type) {
     case "depends_on":
       return "DEPENDS_ON";

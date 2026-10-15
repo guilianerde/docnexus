@@ -1,28 +1,19 @@
 # DocNexus 文档中心
 
-这里集中维护 DocNexus 的当前产品、架构、路线图与发布文档。首次了解项目建议按以下顺序阅读：
+当前文档描述 0.14.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。旧历史方案文档已删除。
 
-1. [产品说明（中文）](./product/mvp.zh-CN.md)：了解产品定位、使用边界和主要工作流。
-2. [当前架构](./architecture/overview.zh-CN.md)：了解组件关系、数据存储和写入/召回流程。
-3. [Skills 工作区与功能编排](./architecture/skills-workspace.zh-CN.md)：了解 `docnexus/` 工作区、skills 分工、捕获流水线、自主召回、Git 同步与破坏性变更。
-4. [当前路线图](./roadmap/current.zh-CN.md)：查看已实现能力和下一步优先级。
-5. [发布检查清单](./operations/release-checklist.md)：执行发布前验证。
+| 主题 | 文档 |
+| --- | --- |
+| 产品 | [中文产品说明](./product/mvp.zh-CN.md) / [English Product Brief](./product/mvp.en.md) |
+| 架构 | [文本存储、时间线与查找](./architecture/overview.zh-CN.md) |
+| 编排 | [Skills 工作区与功能编排](./architecture/skills-workspace.zh-CN.md) |
+| 规划 | [当前状态与路线图](./roadmap/current.zh-CN.md) |
+| 发布 | [Release Checklist](./operations/release-checklist.md) |
+| 评估 | [Retrieval Evaluation](./operations/retrieval-evaluation.md) |
+| 知识维护评估 | [真实文档回放与模型审阅任务](./operations/knowledge-evaluation.zh-CN.md) |
+| 智能体协议 | [结构化错误与诊断契约](./operations/agent-protocol.zh-CN.md) |
+| 证据交付 | [范围、预算、事实与时间](./architecture/evidence-delivery.zh-CN.md) |
+| 智能体验收 | [独立上下文、调用观测与结果审阅](./operations/agent-evaluation.zh-CN.md) |
+| 展示接口 | [全量/分页文档查询与粗分类](./architecture/document-query.zh-CN.md) |
 
-## 按主题浏览
-
-| 主题 | 文档 | 状态 |
-| --- | --- | --- |
-| 产品 | [MVP 产品说明（中文）](./product/mvp.zh-CN.md) | 当前 |
-| Product | [MVP Product Brief (English)](./product/mvp.en.md) | Current |
-| 架构 | [整体架构与数据流](./architecture/overview.zh-CN.md) | 当前 |
-| 编排 | [Skills 工作区与功能编排](./architecture/skills-workspace.zh-CN.md) | 当前 |
-| 规划 | [当前状态与实现路线图](./roadmap/current.zh-CN.md) | 当前 |
-| 运维 | [Release Checklist](./operations/release-checklist.md) | 当前 |
-| 历史 | [历史设计与实施记录](./history/README.md) | 归档 |
-
-## 维护约定
-
-- 根目录 `README.md` 和 `README.zh-CN.md` 面向安装与日常使用；详细说明放在本目录。
-- 当前文档按主题归类，中文文件使用 `.zh-CN.md`，英文文件使用 `.en.md`。
-- 已完成或被取代的方案移入 `history/`，不再作为当前行为依据。
-- 产品行为变更时，至少同步产品说明、架构说明和路线图中受影响的部分。
+安装与日常命令见根目录 README。产品行为变更时同步当前文档，避免保留已被替代的实现说明。

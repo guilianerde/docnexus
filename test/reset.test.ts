@@ -2,16 +2,11 @@ import { access, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LocalHashEmbedder } from "../src/embedder.js";
-import { upsertManagedDocument, type ManagedGraphWriter } from "../src/managed-documents.js";
+import { upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
 import { resetProjectData } from "../src/reset.js";
 
 const roots: string[] = [];
-const graphWriter: ManagedGraphWriter = {
-  replaceDocumentGraph: async () => {},
-  deleteDocumentGraph: async () => {}
-};
 const metadata = {
   title: "Reset",
   summary: "Reset current managed state.",
@@ -43,9 +38,7 @@ describe("reset", () => {
     await initializeProject(root, { agents: ["claude"] });
     await upsertManagedDocument(
       root,
-      { file_path: "docs/memory/a.md", source: "raw", document: "# A", metadata },
-      new LocalHashEmbedder(8),
-      graphWriter
+      { file_path: "docs/memory/a.md", source: "raw", document: "# A", metadata }
     );
     await mkdir(join(root, ".claude", "skills", "other-skill"), { recursive: true });
     await writeFile(join(root, ".claude", "skills", "other-skill", "SKILL.md"), "keep");

@@ -1,236 +1,110 @@
+import { DocNexusError, errorEnvelope, PROTOCOL_VERSION, type ErrorEnvelope } from "./errors.js";
+import { checkEmbeddingRuntime, type DefaultEmbeddingRuntimeCheck } from "./embedder-default.js";
+import { checkPostgresVectorIndex } from "./postgres-store.js";
+import { inspectRetrievalIndex, type RetrievalIndexState } from "./retrieval-index.js";
 import { resolve } from "node:path";
-import { checkEmbeddingRuntime } from "./embedder-default.js";
-import { checkLadybugVectorIndex } from "./ladybug-store.js";
 import { workspacePath } from "./layout.js";
-import { getManagedSchemaTables, type IndexDrift, inspectIndex } from "./managed-documents.js";
+import { inspectRecords, type RecordsState } from "./managed-documents.js";
 import { requireInitializedProject } from "./project.js";
 import { inspectSkills, type SkillsState } from "./skills.js";
 
-type EmbeddingCheck = Awaited<ReturnType<typeof checkEmbeddingRuntime>>;
-
-interface BaseCheck {
+interface Check {
   ok: boolean;
   message?: string;
   skipped?: boolean;
 }
 
-interface NodeCheck extends BaseCheck {
-  version: string;
-  sqlite_available: boolean;
-}
-
-interface ProjectCheck extends BaseCheck {
-  initialized: boolean;
-  project_root: string;
-  workspace_path?: string;
-}
-
-interface SkillsCheck extends BaseCheck, Partial<SkillsState> {}
-
-interface IndexCheck extends BaseCheck, Partial<IndexDrift> {}
-
-interface SqliteCheck extends BaseCheck {
-  tables?: string[];
-}
-
-interface LadybugCheck extends BaseCheck {
-  vector_index_ok?: boolean;
-}
-
-export interface DoctorDependencies {
-  checkLadybugVectorIndex: typeof checkLadybugVectorIndex;
-  checkEmbeddingRuntime: (projectRoot?: string) => Promise<EmbeddingCheck>;
-}
-
 export interface DoctorOutput {
+  protocol_version: 1;
+  issues: ErrorEnvelope[];
   result: "ok" | "issues_found";
   checked_at: string;
   checks: {
-    node: NodeCheck;
-    project: ProjectCheck;
-    skills: SkillsCheck;
-    sqlite: SqliteCheck;
-    index: IndexCheck;
-    ladybug: LadybugCheck;
-    embedding: EmbeddingCheck;
+    node: Check & { version: string };
+    project: Check & { initialized: boolean; project_root: string; workspace_path?: string };
+    skills: Check & Partial<SkillsState>;
+    records: Check & Partial<RecordsState>;
+    index: Check & Partial<RetrievalIndexState>;
+    database: Check;
+    embedding: Check & Partial<DefaultEmbeddingRuntimeCheck>;
   };
   recommendations: string[];
 }
 
-const defaultDependencies: DoctorDependencies = {
-  checkLadybugVectorIndex,
-  checkEmbeddingRuntime
-};
-
-export async function runDoctor(
-  projectRoot: string,
-  dependencies: DoctorDependencies = defaultDependencies
-): Promise<DoctorOutput> {
+/** Diagnose text, derived stores and the local model without repairing memory or indexes. */
+export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
   const root = resolve(projectRoot);
-  const node = await checkNodeRuntime();
-  const project = await checkProject(root);
-  const skills = project.ok ? await checkSkills(root) : skippedCheck("project is not initialized");
-  const sqlite = project.ok ? await checkSqlite(root) : skippedCheck("project is not initialized");
-  const index = project.ok && sqlite.ok ? await checkIndex(root) : skippedCheck("project or SQLite store is unavailable");
-  const ladybug = project.ok ? await checkLadybug(root, dependencies) : skippedCheck("project is not initialized");
-  const embedding = await dependencies.checkEmbeddingRuntime(root);
-  const recommendations = buildRecommendations(root, { node, project, skills, sqlite, index, ladybug, embedding });
-  const allOk = [node, project, skills, sqlite, index, ladybug, embedding].every((check) => check.ok);
-
+  const node = { ok: Number(process.versions.node.split(".")[0]) >= 22, version: process.version };
+  const recommendations: string[] = [];
+  const issues: ErrorEnvelope[] = [];
+  const project: DoctorOutput["checks"]["project"] = { ok: false, initialized: false, project_root: root };
+  let skills: DoctorOutput["checks"]["skills"] = { ok: false, skipped: true };
+  let records: DoctorOutput["checks"]["records"] = { ok: false, skipped: true };
+  let index: DoctorOutput["checks"]["index"] = { ok: false, skipped: true };
+  let database: Check = { ok: false, skipped: true };
+  let embedding: DoctorOutput["checks"]["embedding"] = { ok: false, skipped: true };
+  try {
+    await requireInitializedProject(root);
+    Object.assign(project, { ok: true, initialized: true, workspace_path: workspacePath(root) });
+  } catch (error) {
+    issues.push(errorEnvelope(error, root));
+    project.message = error instanceof Error ? error.message : String(error);
+    recommendations.push(`Run "docnexus init" in ${root}.`);
+  }
+  if (project.ok) {
+    const state = await inspectSkills(root);
+    skills = { ...state, ok: state.missing.length === 0 && !state.outdated };
+    if (!skills.ok) recommendations.push("Run docnexus skills sync to restore the project skills.");
+    if (Object.values(state.links).every((link) => link.missing.length > 0)) {
+      skills.message = "skills are not linked into any agent directory";
+      recommendations.push("Run docnexus skills link --target claude (or codex, all) so your agent can discover the skills.");
+    }
+    try {
+      const state = await inspectRecords(root);
+      records = state;
+      if (state.edited.length > 0) {
+        recommendations.push("Adopt hand-edited library files with docnexus document sync --id <id> after reviewing them.");
+      }
+      if (state.missing_library.length > 0) {
+        recommendations.push("Restore missing library files from Git or a backup.");
+      }
+      if (state.invalid_records.length > 0) {
+        recommendations.push("Restore damaged record files from Git or a backup; doctor does not rewrite them.");
+      }
+    } catch (error) {
+      records = { ok: false, message: error instanceof Error ? error.message : String(error) };
+      recommendations.push("Restore damaged record files from Git or a backup; doctor does not rewrite them.");
+    }
+  }
+  if (project.ok) {
+    try {
+      const state = await inspectRetrievalIndex(root);
+      index = { ...state, ok: state.in_sync };
+      if (!state.in_sync) recommendations.push("Run docnexus index sync to rebuild derived state from current text.");
+      database = state.available ? await checkPostgresVectorIndex(root) : state.record_count === 0 && !state.message ? { ok: true, skipped: true, message: "retrieval database is created on first sync" } : { ok: false, message: state.message ?? "retrieval store is missing" };
+      if (!database.ok && state.available) recommendations.push("Run docnexus graph repair --force, or index rebuild --force if document projections are damaged.");
+    } catch (error) {
+      index = { ok: false, message: error instanceof Error ? error.message : String(error) };
+      recommendations.push("Inspect the derived stores and rebuild them from verified text.");
+    }
+    embedding = await checkEmbeddingRuntime(root);
+    if (!embedding.ok) recommendations.push("Restore the bundled local model or install a project model override, then rerun doctor.");
+  }
+  if (!node.ok) recommendations.push("Install Node.js 22 or newer.");
+  const finding = (code: ConstructorParameters<typeof DocNexusError>[0], message: string, details?: Record<string, unknown>) => issues.push(errorEnvelope(new DocNexusError(code, message, details), root));
+  if (!node.ok) finding("node_unsupported", "Node.js does not meet the supported runtime version.");
+  if (project.ok) {
+    if (!skills.ok) finding("skills_outdated", skills.message ?? "Project skills are missing or outdated.");
+    if (!records.ok) finding("text_integrity_error", records.message ?? "Canonical text has edits, missing files or damaged records.", { edited: records.edited, missing_library: records.missing_library, invalid_records: records.invalid_records });
+    else if (!index.ok) finding(index.message ? "index_unavailable" : "index_outdated", index.message ?? "The retrieval projection is not synchronized.");
+    if (!database.ok && index.available) finding("index_unavailable", database.message ?? "The vector index is unavailable.");
+    if (!embedding.ok) finding("embedding_failed", embedding.message ?? "The offline model is unavailable.");
+  }
   return {
-    result: allOk ? "ok" : "issues_found",
+    protocol_version: PROTOCOL_VERSION, issues,
+    result: [node, project, skills, records, index, database, embedding].every((check) => check.ok) ? "ok" : "issues_found",
     checked_at: new Date().toISOString(),
-    checks: {
-      node,
-      project,
-      skills,
-      sqlite,
-      index,
-      ladybug,
-      embedding
-    },
+    checks: { node, project, skills, records, index, database, embedding },
     recommendations
   };
-}
-
-async function checkNodeRuntime(): Promise<NodeCheck> {
-  try {
-    await import("node:sqlite");
-    return {
-      ok: true,
-      version: process.version,
-      sqlite_available: true
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      version: process.version,
-      sqlite_available: false,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-async function checkProject(projectRoot: string): Promise<ProjectCheck> {
-  try {
-    const root = await requireInitializedProject(projectRoot);
-    return {
-      ok: true,
-      initialized: true,
-      project_root: root,
-      workspace_path: workspacePath(root)
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      initialized: false,
-      project_root: projectRoot,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-async function checkSkills(projectRoot: string): Promise<SkillsCheck> {
-  const state = await inspectSkills(projectRoot);
-  const linked = Object.values(state.links).some((link) => link.missing.length === 0);
-  return {
-    ok: state.missing.length === 0 && !state.outdated,
-    ...state,
-    message: state.missing.length > 0
-      ? `missing skills: ${state.missing.join(", ")}`
-      : state.outdated
-        ? `skills were synced from ${state.version ?? "an unknown version"}; package is ${state.package_version}`
-        : linked ? undefined : "skills are not linked into any agent directory"
-  };
-}
-
-async function checkIndex(projectRoot: string): Promise<IndexCheck> {
-  try {
-    const drift = await inspectIndex(projectRoot);
-    const problems = [
-      drift.in_sync ? undefined : "index is out of sync with docnexus/records",
-      drift.edited.length > 0 ? `${drift.edited.length} library file(s) edited after ingestion` : undefined,
-      drift.missing_library.length > 0 ? `${drift.missing_library.length} library file(s) missing` : undefined
-    ].filter(Boolean);
-    return { ok: problems.length === 0, ...drift, message: problems.length > 0 ? problems.join("; ") : undefined };
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function checkSqlite(projectRoot: string): Promise<SqliteCheck> {
-  try {
-    const tables = await getManagedSchemaTables(projectRoot);
-    const missing = ["documents", "file_chunks"].filter((table) => !tables.includes(table));
-    return {
-      ok: missing.length === 0,
-      tables,
-      message: missing.length > 0 ? `missing SQLite tables: ${missing.join(", ")}` : undefined
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-async function checkLadybug(projectRoot: string, dependencies: DoctorDependencies): Promise<LadybugCheck> {
-  const health = await dependencies.checkLadybugVectorIndex(projectRoot);
-  return {
-    ok: health.ok,
-    vector_index_ok: health.ok,
-    message: health.message
-  };
-}
-
-function skippedCheck(message: string): SqliteCheck & LadybugCheck {
-  return {
-    ok: false,
-    skipped: true,
-    message
-  };
-}
-
-function buildRecommendations(
-  projectRoot: string,
-  checks: {
-    node: NodeCheck;
-    project: ProjectCheck;
-    skills: SkillsCheck;
-    sqlite: SqliteCheck;
-    index: IndexCheck;
-    ladybug: LadybugCheck;
-    embedding: EmbeddingCheck;
-  }
-): string[] {
-  const recommendations: string[] = [];
-  if (!checks.node.sqlite_available) {
-    recommendations.push("Install a Node.js version that supports node:sqlite.");
-  }
-  if (!checks.project.initialized) {
-    recommendations.push(`Run "docnexus init" in ${projectRoot}.`);
-  }
-  if (checks.index.in_sync === false) {
-    recommendations.push("Run docnexus index sync to rebuild derived state from docnexus/records.");
-  }
-  if (checks.index.edited && checks.index.edited.length > 0) {
-    recommendations.push(`Adopt hand-edited library files with docnexus document sync --id <id> (${checks.index.edited.join(", ")}).`);
-  }
-  if (checks.skills.ok === false && !checks.skills.skipped) {
-    recommendations.push("Run docnexus skills sync to restore the project skills.");
-  }
-  if (checks.skills.links && Object.values(checks.skills.links).every((link) => link.missing.length > 0)) {
-    recommendations.push("Run docnexus skills link --target claude (or codex, all) so your agent can discover the skills.");
-  }
-  if (checks.sqlite.ok === false && !checks.sqlite.skipped) {
-    recommendations.push("Run docnexus reset --force and docnexus init if the SQLite store cannot be repaired.");
-  }
-  if (checks.ladybug.ok === false && !checks.ladybug.skipped) {
-    recommendations.push("Run docnexus graph repair --force, then docnexus index rebuild --force if graph issues remain.");
-  }
-  if (!checks.embedding.ok && checks.embedding.provider === "local-transformers") {
-    recommendations.push("Install or cache the DocNexus embedding model locally, then rerun docnexus doctor.");
-  }
-  return recommendations;
 }
