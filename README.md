@@ -6,17 +6,20 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.16.0 keeps workspace format 6. Existing format-6 text needs only `index sync` to build the new projections; no reset is needed. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.17.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
 Requires Node.js 22.13.0 or newer and npm. Run in the target project:
 
 ```bash
-npm install --save-dev @rowansenne/docnexus
-./node_modules/.bin/docnexus init --agent codex  # or claude / all
-./node_modules/.bin/docnexus doctor
+mkdir -p docnexus
+npm install --prefix ./docnexus --save-exact @rowansenne/docnexus
+./docnexus/node_modules/.bin/docnexus init --agent codex  # or claude / all
+./docnexus/node_modules/.bin/docnexus doctor
 ```
+
+The installation manifest, lockfile and dependencies stay in `docnexus/`, separate from the host project’s npm files. Run commands from the project root; from another directory pass `--project-root <project>`. Update with `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus@latest`; after a clone, restore with `npm ci --prefix ./docnexus`. Existing root installations remain supported with `./node_modules/.bin/docnexus`; do not move or delete the host project’s own manifests.
 
 The agent reads `docnexus/CONCEPTS.md` and consults relevant files when a task touches recorded knowledge. Ask it to remember a decision, explain a project convention or list saved documents.
 
@@ -24,6 +27,9 @@ The agent reads `docnexus/CONCEPTS.md` and consults relevant files when a task t
 
 ```text
 docnexus/
+  package.json          # DocNexus npm dependencies
+  package-lock.json     # Locked installation
+  node_modules/         # Reinstallable runtime, Git-ignored
   project.json          # workspace format marker
   CONCEPTS.md           # generated document and concept directory
   skills/               # entry skill and five workflow skills
@@ -43,15 +49,17 @@ docnexus/
 
 `library/` contains current knowledge; the timeline records how it changed. Before updating a page, the agent reads its existing knowledge and timeline, preserves valid facts, replaces explicitly superseded conclusions and identifies unresolved conflicts. The CLI saves the reviewed author-owned text and fact references, renders fact blocks and appends an event when authored content or metadata changes. View-only refreshes add no event. An identical write adds no event.
 
+Before each capture, the agent must search/recall existing knowledge and read plausible candidates in full. It chooses an existing-page update, a separate new document, a duplicate skip, or an unresolved conflict, and carries the reason and read versions into review. Distinct review reports/events remain separate; related durable pages need their own authorized updates. Direct ingestion of a ready draft also checks this decision. This is a skill workflow, not CLI-enforced semantic deduplication. See [capture resolution](skills/docnexus-extract/references/capture-resolution.md).
+
 Timeline dates are save times, not necessarily the dates of events described in a source. Keyword and vector indexes exclude source material and timelines; request the timeline for historical questions. Entities and relationships project to graph nodes and edges; edges retain the declaring document and description. Both arrays may be empty, and entity-free documents still support semantic recall. The generated directory includes documents even without entities, showing at most 300 documents and 300 concepts. Use `document list` and `concepts` for the full information.
 
 ## Find, read and answer
 
 ```bash
-./node_modules/.bin/docnexus search "Refresh token" --limit 5
-./node_modules/.bin/docnexus recall "When should refresh tokens rotate?" --limit 5
-./node_modules/.bin/docnexus document get --id <id> --include document,metadata
-./node_modules/.bin/docnexus document get --id <id> --include document,timeline
+./docnexus/node_modules/.bin/docnexus search "Refresh token" --limit 5
+./docnexus/node_modules/.bin/docnexus recall "When should refresh tokens rotate?" --limit 5
+./docnexus/node_modules/.bin/docnexus document get --id <id> --include document,metadata
+./docnexus/node_modules/.bin/docnexus document get --id <id> --include document,timeline
 ```
 
 Use `--category codeReview` on `search` or `recall` to search an exact, case-sensitive project category; it also works with `--mode vector` and budgeted evidence. Filtering applies before candidate limits/fusion and to graph supporting documents and relation owners. `--category uncategorized` includes documents with no category; an unknown category returns no results. Referenced facts retain their canonical owners, including across categories. Omit the option to search all categories.
@@ -65,19 +73,19 @@ Chinese literal lookup supplements word segmentation with adjacent Han character
 Optional metadata entity `aliases` resolve alternative names to canonical graph identities. Optional `facts` track stable ids, mandatory provenance and timezone-qualified effective times, explicit `replaces`, expiry and withdrawal. Only active facts generate extra retrieval chunks; historical fact entries remain. Define a fact once in its owner metadata and reference it on a standalone `{{fact:fact_id}}` line in any project document. The CLI generates attributed Markdown blocks and follows effective replacement, expiry and withdrawal. Skills maintain explanations; existing free-prose duplicates need one reviewed conversion to references. See the [fact workflow](skills/docnexus-extract/references/facts.md). `document get --include template,metadata` returns the editable structure; `document render` refreshes all generated blocks. There is no background timer; document reads, search and index sync refresh effective-time changes.
 
 ```bash
-./node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
-./node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
 
 ## Document viewer query
 
-Run `./node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Visible pages check for updates every 15 seconds; manual refresh is also available. Revision changes restart pagination at page one. ETag/304 responses skip HTML rendering and full-body transfer for unchanged views while retaining canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
+Run `./docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Visible pages check for updates every 15 seconds; manual refresh is also available. Revision changes restart pagination at page one. ETag/304 responses skip HTML rendering and full-body transfer for unchanged views while retaining canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
 
 When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
 
 ```bash
-./node_modules/.bin/docnexus document query --all
-./node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
+./docnexus/node_modules/.bin/docnexus document query --all
+./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
 node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
@@ -101,10 +109,10 @@ Capture: `draft new` → write three artifacts → `draft seal` → user review 
 A calling skill can supply an explicit category for this write and skip model classification. For example, after a code-review skill prepares the three draft artifacts:
 
 ```bash
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
+./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
   --category codeReview --category-reason "Produced by the code-review skill"
 # Review the document and sealed metadata, then ingest.
-./node_modules/.bin/docnexus document add --draft <draft_id>
+./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
 The category name is preserved exactly. The basis is optional, defaulting to `Explicit category supplied by caller.` Classification is included in the sealed metadata hash, and ingestion uses that reviewed value. Updates still require the current `--base-version <record_version>` and `--replace`. Category maintenance in the same capture pipeline preserves the caller's choice; a later authorized update can change it.
@@ -117,7 +125,7 @@ Sealing records the target document version. Ingestion rejects newer prose, sour
 
 ## Git and hand edits
 
-Everything except `store/` and `.runtime/` is text and can be committed. After cloning, pulling or switching branches, keyword search and document reads use the current text immediately; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
+Everything except `node_modules/`, `store/` and `.runtime/` is text and can be committed. After cloning, pulling or switching branches, keyword search and document reads use the current text immediately; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
 
 ## Database engines
 
@@ -139,7 +147,7 @@ Deletion removes the current document, source, metadata, timeline and derived en
 
 ## CLI
 
-Use `./node_modules/.bin/docnexus` from the project root, or prefix a command with `--project-root <path>`.
+Use `./docnexus/node_modules/.bin/docnexus` from the project root, or prefix a command with `--project-root <path>`.
 
 ```text
 init [--agent claude|codex|all]

@@ -5,18 +5,20 @@ description: Browse or query DocNexus documents, classify and reorganize their c
 
 # DocNexus Library
 
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+
 Browse and curate what DocNexus holds.
 
 ## Read
 
 ```bash
-./node_modules/.bin/docnexus concepts [--type <entity_type>] [--query <text>] [--format md]
-./node_modules/.bin/docnexus document list [--limit 50] [--tag <tag>]
-./node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
-./node_modules/.bin/docnexus document get --id <document_id> --include template,metadata
-./node_modules/.bin/docnexus document render
-./node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
-./node_modules/.bin/docnexus facts list [--entity <name-or-alias>] [--at <ISO-timestamp>] [--include-inactive]
+./docnexus/node_modules/.bin/docnexus concepts [--type <entity_type>] [--query <text>] [--format md]
+./docnexus/node_modules/.bin/docnexus document list [--limit 50] [--tag <tag>]
+./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include template,metadata
+./docnexus/node_modules/.bin/docnexus document render
+./docnexus/node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
+./docnexus/node_modules/.bin/docnexus facts list [--entity <name-or-alias>] [--at <ISO-timestamp>] [--include-inactive]
 ```
 
 - Present documents as `title` — `docnexus/library/<file_path>` with tags and `updated_at`.
@@ -27,9 +29,9 @@ Browse and curate what DocNexus holds.
 ## Query for a document viewer
 
 ```bash
-./node_modules/.bin/docnexus document query --all
-./node_modules/.bin/docnexus document query --page 1 --page-size 20
-./node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
+./docnexus/node_modules/.bin/docnexus document query --all
+./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20
+./docnexus/node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
 node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
@@ -52,8 +54,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 3. Ensure the user has authorized adopting the reviewed edit, then run one of:
 
 ```bash
-./node_modules/.bin/docnexus document sync --id <document_id>
-./node_modules/.bin/docnexus document sync --id <document_id> --metadata-file docnexus/drafts/<draft_id>/metadata.json
+./docnexus/node_modules/.bin/docnexus document sync --id <document_id>
+./docnexus/node_modules/.bin/docnexus document sync --id <document_id> --metadata-file docnexus/drafts/<draft_id>/metadata.json
 ```
 
 4. Report `id`, `library_path`, and `metadata_updated`. The original `source.md` is kept unchanged.
@@ -65,8 +67,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 3. If the user has not already explicitly confirmed deleting this target, ask. With authorization, run one of:
 
 ```bash
-./node_modules/.bin/docnexus document delete --id <document_id> --force
-./node_modules/.bin/docnexus document delete --file <file_path> --force
+./docnexus/node_modules/.bin/docnexus document delete --id <document_id> --force
+./docnexus/node_modules/.bin/docnexus document delete --file <file_path> --force
 ```
 
 4. Report the deleted `id` and `file_path`.
@@ -78,7 +80,7 @@ Deletion is refused if it would leave a Markdown fact reference, another fact's 
 Drafts are disposable but may hold unsaved work. Confirm with the user, then:
 
 ```bash
-./node_modules/.bin/docnexus draft discard --id <draft_id> --force
+./docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force
 ```
 
 Offer to discard `ingested` drafts when the user asks to tidy up.

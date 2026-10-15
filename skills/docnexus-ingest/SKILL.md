@@ -5,6 +5,8 @@ description: Use when the user asks DocNexus to save, store, or add a sealed dra
 
 # DocNexus Ingest
 
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+
 Stage 3 of the capture pipeline. Stores one sealed draft as a managed document in `docnexus/library/` and appends a source-attributed timeline event in a single command.
 
 Use the sealed metadata category exactly, including categories selected explicitly by a user or calling skill. Do not run classification or pass a category override to `document add`. To change the category before ingestion, return to `draft seal --category <name>`, then review the updated metadata before saving. Existing version and overwrite checks still apply.
@@ -14,26 +16,27 @@ Use the sealed metadata category exactly, including categories selected explicit
 1. Identify the draft. Use the `draft_id` handed over by `docnexus-extract`; otherwise list candidates:
 
 ```bash
-./node_modules/.bin/docnexus draft list --status ready
+./docnexus/node_modules/.bin/docnexus draft list --status ready
 ```
 
    If several drafts are ready and the user did not name one, ask which to ingest. If none is ready, run `docnexus-extract` first.
-2. Ingest:
+2. Verify the capture-resolution handoff matches the sealed content and target. For a direct ready-draft request or older draft without that handoff, run [capture resolution](../docnexus-extract/references/capture-resolution.md) against its source and proposed document first. `skip`/`conflict` ends without ingestion; a changed target or capture intent goes back to extraction as a new draft for review. Same-target content changes require rereading, editing, resealing and review before saving. Never infer an update merely from similarity or silently retarget a sealed draft.
+3. Ingest:
 
 ```bash
-./node_modules/.bin/docnexus document add --draft <draft_id>
+./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
-3. If the path is already managed, ensure the user explicitly authorized replacing that `file_path` after seeing the proposed current document. Ask only when that authorization is missing. Then run:
+4. If the path is already managed, ensure the user explicitly authorized replacing that `file_path` after seeing the proposed current document. Ask only when that authorization is missing. Then run:
 
 ```bash
-./node_modules/.bin/docnexus document add --draft <draft_id> --replace
+./docnexus/node_modules/.bin/docnexus document add --draft <draft_id> --replace
 ```
 
-4. If the target changed since sealing, reread its current document/template, metadata and timeline. Merge those changes with the draft, preserving still-valid knowledge and user classification corrections, then seal and review again. Resealing old content alone would discard the newer knowledge. A newly occupied path or a deleted/recreated target also requires a fresh review; `--replace` does not bypass the version check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain format 6.
+5. If the target changed since sealing, reread its current document/template, metadata and timeline. Merge those changes with the draft, preserving still-valid knowledge and user classification corrections, then seal and review again. Resealing old content alone would discard the newer knowledge. A newly occupied path or a deleted/recreated target also requires a fresh review; `--replace` does not bypass the version check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain format 6.
    If the draft or its referenced facts changed after sealing, read the changes and seal again. For a fact-backed document, review the generated `preview.md` before ingestion; show materially changed conclusions when existing authorization does not cover them. The CLI checks the sealed preview hash against current effective facts.
-5. Memory files and the draft's ingested receipt are covered by one recoverable text transaction. The next CLI access completes an interrupted transaction before reading memory. Derived vectors and graph projections are synchronized by the next recall or `docnexus index sync`; this does not add another timeline event. If a command was interrupted, inspect the draft status before retrying ingestion.
-6. Report `id`, `library_path`, `operation`, and `timeline_path`. The draft is now marked `ingested` and cannot be ingested again.
+6. Memory files and the draft's ingested receipt are covered by one recoverable text transaction. The next CLI access completes an interrupted transaction before reading memory. Derived vectors and graph projections are synchronized by the next recall or `docnexus index sync`; this does not add another timeline event. If a command was interrupted, inspect the draft status before retrying ingestion.
+7. Report `id`, `library_path`, `operation`, and `timeline_path`. The draft is now marked `ingested` and cannot be ingested again.
 
 ## Constraints
 

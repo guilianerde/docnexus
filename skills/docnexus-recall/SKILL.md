@@ -5,6 +5,8 @@ description: Use proactively, without waiting to be asked, when a project task t
 
 # DocNexus Recall
 
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+
 ## When to recall
 
 Read `docnexus/CONCEPTS.md` at the start of a project task. When a listed concept, earlier decision or project convention matters, consult its documents before planning or changing code. Skip trivial, self-contained work and documents already read in this conversation.
@@ -14,13 +16,13 @@ Read `docnexus/CONCEPTS.md` at the start of a project task. When a listed concep
 Use the project-local CLI from the project root:
 
 ```bash
-./node_modules/.bin/docnexus search "<exact name, identifier or keywords>" --limit 5
-./node_modules/.bin/docnexus recall "<concept and what you need to know>" --limit 5
-./node_modules/.bin/docnexus search "<keywords>" --category codeReview
-./node_modules/.bin/docnexus recall "<question>" --category codeReview --return-unit section --context-budget 4000
-./node_modules/.bin/docnexus --json recall "<question>" --return-unit section --context-budget 4000
-./node_modules/.bin/docnexus facts list --entity "<name or alias>" --include-inactive
-./node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./docnexus/node_modules/.bin/docnexus search "<exact name, identifier or keywords>" --limit 5
+./docnexus/node_modules/.bin/docnexus recall "<concept and what you need to know>" --limit 5
+./docnexus/node_modules/.bin/docnexus search "<keywords>" --category codeReview
+./docnexus/node_modules/.bin/docnexus recall "<question>" --category codeReview --return-unit section --context-budget 4000
+./docnexus/node_modules/.bin/docnexus --json recall "<question>" --return-unit section --context-budget 4000
+./docnexus/node_modules/.bin/docnexus facts list --entity "<name or alias>" --include-inactive
+./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
 ```
 
 - If the directory identifies the file, read its Markdown directly for ordinary prose. If it contains `<!-- docnexus:fact ... -->` blocks, use `document get` first to refresh effective-time changes and then read/cite the current view.

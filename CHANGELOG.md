@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0 — 2026-10-15
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing root npm installations remain supported. New installations keep npm assets under `docnexus/`; reset preserves those installation entries and reports `preserved_installation: true`. No knowledge reset or migration is required.
+
+- Isolate consumer npm manifests, lockfiles and dependencies under `docnexus/`. Allow initialization over a recognized installation, prefer the nested CLI in skills and query adapters while retaining root-install compatibility, ignore runtime dependencies in Git and preserve the installation when resetting project knowledge.
+
+- Require capture skills to search and read existing knowledge before allocating a draft, then hand off create/update/skip/conflict decisions and read versions for review. Check direct ready-draft ingestion too, preserve independent reports and caller classifications, and retain existing version/sealing guards without changing manifests. Document semantic decisions as agent behavior, with separate model review scenarios.
+
 ## 0.16.0 — 2026-10-15
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces require no reset. Category-scoped vector retrieval ranks the eligible subset exactly; broad categories may be slower than unfiltered HNSW retrieval.

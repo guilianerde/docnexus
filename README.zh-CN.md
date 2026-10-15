@@ -6,17 +6,20 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.16.0 保持工作区格式 6。已有格式 6 文本只需 `index sync` 补建新投影，无需 reset；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.17.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
 需要 Node.js 22.13.0 或更高版本及 npm。在目标项目根目录执行：
 
 ```bash
-npm install --save-dev @rowansenne/docnexus
-./node_modules/.bin/docnexus init --agent codex   # 或 claude / all
-./node_modules/.bin/docnexus doctor
+mkdir -p docnexus
+npm install --prefix ./docnexus --save-exact @rowansenne/docnexus
+./docnexus/node_modules/.bin/docnexus init --agent codex   # 或 claude / all
+./docnexus/node_modules/.bin/docnexus doctor
 ```
+
+安装清单、锁文件和依赖均保存在 `docnexus/`，与宿主项目的 npm 文件分开。命令仍从项目根目录执行；从其他目录调用需指定 `--project-root <project>`。升级使用 `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus@latest`，克隆后用 `npm ci --prefix ./docnexus` 恢复依赖。现有根目录安装仍可使用 `./node_modules/.bin/docnexus`；不要移动或删除宿主项目本身的 npm 清单。
 
 然后正常工作。智能体读取 `docnexus/CONCEPTS.md`，任务涉及项目记忆时自行查找并阅读相关文档。也可以说“记住这段设计说明”“鉴权为什么这样设计”“列出 DocNexus 文档”。
 
@@ -24,6 +27,9 @@ npm install --save-dev @rowansenne/docnexus
 
 ```text
 docnexus/
+  package.json          # DocNexus 独立安装清单
+  package-lock.json     # 锁定安装版本
+  node_modules/         # 可重装运行依赖，Git 忽略
   project.json          # 工作区格式标记
   CONCEPTS.md           # 自动生成的文档与概念目录
   skills/               # 入口 skill 与五个工作流 skill
@@ -43,6 +49,8 @@ docnexus/
 
 `library/` 保存当前知识；`timeline.md` 保存来源与更新轨迹。更新文档时，智能体先阅读已有知识与时间线，再合并新材料，保留仍有效的约定、替换明确失效的结论，并说明未解决的冲突。CLI 不推断自然语言矛盾；可选 facts 字段显式记录来源、生效、到期、替代和撤回，由代码计算有效状态。解释正文由智能体维护，结构化事实通过 ID 引用自动生成；人工正文或 metadata 变化时追加时间线，纯视图刷新不追加事件。重复提交相同内容不会新增事件。
 
+每次沉淀前，智能体必须检索已有知识并阅读全文，判断更新旧页、新建独立文档、重复无增量跳过或未决冲突，并将理由与读取版本一起交接审阅。不同提交的评审报告/独立事件分别保留；关联的长期知识页需单独提炼并在授权范围内更新。直接保存已有草稿也需补齐这一判断。该环节由 skill 编排，不是 CLI 自动语义去重或相似度阈值覆盖。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
+
 时间线中的日期是入库时间，不等同于来源所描述事件的发生时间。关键词查找和向量索引都不包含原始材料或历史时间线，历史问题可通过 `document get --include timeline` 查看。
 
 实体用于概念目录并投影为图节点，关系投影为带声明文档和描述的图边；两个数组允许为空，没有实体的文档仍可语义召回。没有实体的文档也会列在 `CONCEPTS.md` 的文档目录中。目录最多展示 300 份文档和 300 个概念；完整信息通过 `document list` 与 `concepts` 查看。
@@ -50,10 +58,10 @@ docnexus/
 ## 查找与回答
 
 ```bash
-./node_modules/.bin/docnexus search "Refresh token" --limit 5
-./node_modules/.bin/docnexus recall "刷新令牌在什么情况下需要轮换" --limit 5
-./node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
-./node_modules/.bin/docnexus document get --id <document_id> --include document,timeline
+./docnexus/node_modules/.bin/docnexus search "Refresh token" --limit 5
+./docnexus/node_modules/.bin/docnexus recall "刷新令牌在什么情况下需要轮换" --limit 5
+./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,timeline
 ```
 
 `search` 对当前正文、路径、标题、摘要、标签、实体名称及别名、有效事实进行字面匹配，支持中英文和代码标识符。`recall` 使用本地 `BAAI/bge-small-zh-v1.5` q8 ONNX 模型生成 512 维向量，以文档级 RRF 融合关键词与向量名次，每份文档返回一个代表片段，并补充相邻片段和一跳图谱证据。`ranking.rrf_score` 排序，`source_ranks` 和 `keyword_match` 解释命中；`matched_chunk.score` 仅为向量相似度，关键词独有候选为 0。`--mode vector` 可单独查看原有向量结果。图谱不参与主排序，所有分数都不是事实置信度。关系引用使用实际声明文档 `source_path`。
@@ -69,19 +77,19 @@ docnexus/
 可选实体别名与事实生命周期保存在 metadata 中。事实使用稳定 id、来源和带时区的 `valid_from`；通过 `replaces` 显式替代旧事实，通过 `valid_until` 或 `withdrawn_at` 到期或撤回。仅 active 事实生成额外检索片段，历史记录保留。每个事实只在所属 metadata 中定义一次，正文用独立一行 `{{fact:fact_id}}` 引用，CLI 生成带来源与状态的内容。其他页面可引用同一 id；有效替代、到期或撤回会刷新派生内容，无需手工改写多个页面。自由叙述中的重复值仍需一次性换为引用。示例见 [事实工作流](skills/docnexus-extract/references/facts.md)。`document get --include template,metadata` 返回可编辑结构；`document render` 刷新所有生成块。没有后台刷新定时器；正文读取、搜索和索引同步会刷新时间变化。
 
 ```bash
-./node_modules/.bin/docnexus facts list --entity "<规范名或别名>" --include-inactive
-./node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --entity "<规范名或别名>" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
 
 ## 文档展示接口
 
-在已初始化的项目中运行 `./node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页打开时每 15 秒检查更新，也可手动刷新；数据版本变化后回到第一页。未变化的当前页通过 ETag/304 跳过 HTML 渲染和完整正文传输，仍校验真源与事实时间。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
+在已初始化的项目中运行 `./docnexus/node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页打开时每 15 秒检查更新，也可手动刷新；数据版本变化后回到第一页。未变化的当前页通过 ETag/304 跳过 HTML 渲染和完整正文传输，仍校验真源与事实时间。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
 
 未提供显式分类时，运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
 
 ```bash
-./node_modules/.bin/docnexus document query --all
-./node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
+./docnexus/node_modules/.bin/docnexus document query --all
+./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
 node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
@@ -105,10 +113,10 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 其他 skill 可为本次写入显式指定分类，跳过 DocNexus 的智能体分类。例如 code-review skill 准备好三份草稿产物后：
 
 ```bash
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
+./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
   --category codeReview --category-reason "Produced by the code-review skill"
 # 审阅文档及封存后的 metadata，再入库
-./node_modules/.bin/docnexus document add --draft <draft_id>
+./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
 分类名按原样采用，分类依据可省略，默认记录 `Explicit category supplied by caller.`。显式分类包含在封存哈希中，入库时使用已审阅值；更新已有文档仍需读取当前版本并提供 `--base-version <record_version>`，入库使用 `--replace`。同次分类维护不覆盖调用方选择，后续仍可显式调整。
@@ -119,7 +127,7 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 ## Git、手动编辑与完整性
 
-除 `store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取或切换分支后，关键词查找和全文读取直接使用当前文本；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
+除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取或切换分支后，关键词查找和全文读取直接使用当前文本；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
 
 ## 数据库引擎
 
@@ -141,43 +149,43 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 ## CLI
 
-所有命令均使用项目内 `./node_modules/.bin/docnexus`。也支持在命令前指定 `--project-root <path>`。
+所有命令均使用项目内 `./docnexus/node_modules/.bin/docnexus`。也支持在命令前指定 `--project-root <path>`。
 
 ```bash
 # 设置与诊断
-./node_modules/.bin/docnexus init [--agent claude|codex|all]
-./node_modules/.bin/docnexus doctor
-./node_modules/.bin/docnexus status
-./node_modules/.bin/docnexus skills sync
-./node_modules/.bin/docnexus skills link --target claude|codex|all
+./docnexus/node_modules/.bin/docnexus init [--agent claude|codex|all]
+./docnexus/node_modules/.bin/docnexus doctor
+./docnexus/node_modules/.bin/docnexus status
+./docnexus/node_modules/.bin/docnexus skills sync
+./docnexus/node_modules/.bin/docnexus skills link --target claude|codex|all
 
 # 捕获
-./node_modules/.bin/docnexus draft new --slug auth
-./node_modules/.bin/docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
-./node_modules/.bin/docnexus document add --draft <draft_id> [--replace]
-./node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
-./node_modules/.bin/docnexus draft discard --id <draft_id> --force
+./docnexus/node_modules/.bin/docnexus draft new --slug auth
+./docnexus/node_modules/.bin/docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
+./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
+./docnexus/node_modules/.bin/docnexus document add --draft <draft_id> [--replace]
+./docnexus/node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
+./docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force
 
 # 查找与阅读
-./node_modules/.bin/docnexus search "令牌轮换" --limit 5
-./node_modules/.bin/docnexus concepts [--type component] [--query auth] [--format json|md]
-./node_modules/.bin/docnexus document list [--limit 50] [--tag auth]
-./node_modules/.bin/docnexus document get --id <id> [--include source,document,metadata,timeline,template]
-./node_modules/.bin/docnexus document render
-./node_modules/.bin/docnexus facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
+./docnexus/node_modules/.bin/docnexus search "令牌轮换" --limit 5
+./docnexus/node_modules/.bin/docnexus concepts [--type component] [--query auth] [--format json|md]
+./docnexus/node_modules/.bin/docnexus document list [--limit 50] [--tag auth]
+./docnexus/node_modules/.bin/docnexus document get --id <id> [--include source,document,metadata,timeline,template]
+./docnexus/node_modules/.bin/docnexus document render
+./docnexus/node_modules/.bin/docnexus facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
 
 # 维护
-./node_modules/.bin/docnexus document sync --id <id> [--metadata-file <path>]
-./node_modules/.bin/docnexus document delete --id <id> --force
-./node_modules/.bin/docnexus document delete --file auth/rotation.md --force
-./node_modules/.bin/docnexus index status
-./node_modules/.bin/docnexus index sync
-./node_modules/.bin/docnexus index rebuild --force
-./node_modules/.bin/docnexus graph audit
-./node_modules/.bin/docnexus graph repair --force
-./node_modules/.bin/docnexus embeddings install --from <model_dir> [--replace]
-./node_modules/.bin/docnexus reset --force
+./docnexus/node_modules/.bin/docnexus document sync --id <id> [--metadata-file <path>]
+./docnexus/node_modules/.bin/docnexus document delete --id <id> --force
+./docnexus/node_modules/.bin/docnexus document delete --file auth/rotation.md --force
+./docnexus/node_modules/.bin/docnexus index status
+./docnexus/node_modules/.bin/docnexus index sync
+./docnexus/node_modules/.bin/docnexus index rebuild --force
+./docnexus/node_modules/.bin/docnexus graph audit
+./docnexus/node_modules/.bin/docnexus graph repair --force
+./docnexus/node_modules/.bin/docnexus embeddings install --from <model_dir> [--replace]
+./docnexus/node_modules/.bin/docnexus reset --force
 ```
 
 工作区命令会按包版本刷新 skills；`doctor` 只报告版本偏差。`file_path` 相对于 `docnexus/library/`，CLI 输入文件必须在项目内。

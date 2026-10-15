@@ -5,14 +5,16 @@ description: Diagnose DocNexus text, PGLite/Postgres pgvector indexes, graph pro
 
 # DocNexus Maintain
 
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+
 ## Diagnose
 
 ```bash
-./node_modules/.bin/docnexus doctor --json
-./node_modules/.bin/docnexus protocol
-./node_modules/.bin/docnexus status
-./node_modules/.bin/docnexus index status
-./node_modules/.bin/docnexus graph audit
+./docnexus/node_modules/.bin/docnexus doctor --json
+./docnexus/node_modules/.bin/docnexus protocol
+./docnexus/node_modules/.bin/docnexus status
+./docnexus/node_modules/.bin/docnexus index status
+./docnexus/node_modules/.bin/docnexus graph audit
 ```
 
 Machine failures carry protocol_version, code, retryable, next_action and verify. Doctor exposes the same contracts in issues[] alongside checks and recommendations; inspect stable codes instead of parsing messages. Follow action suggestions only within existing authorization. A review action never authorizes resealing, adopting text or clearing data. Full contract: packaged `docs/operations/agent-protocol.zh-CN.md`.
@@ -24,10 +26,10 @@ The default engine is PGLite at `docnexus/store/brain.pglite`. An explicit `DOCN
 ## Synchronize
 
 ```bash
-./node_modules/.bin/docnexus index sync
-./node_modules/.bin/docnexus document render
-./node_modules/.bin/docnexus skills sync
-./node_modules/.bin/docnexus skills link --target claude
+./docnexus/node_modules/.bin/docnexus index sync
+./docnexus/node_modules/.bin/docnexus document render
+./docnexus/node_modules/.bin/docnexus skills sync
+./docnexus/node_modules/.bin/docnexus skills link --target claude
 ```
 
 `index sync` refreshes generated fact blocks, indexes new/changed current documents, removes obsolete projections, restores missing graph documents and refreshes `CONCEPTS.md`. Recall also runs it automatically. It reuses unchanged chunks and vectors; ordinary writes maintain HNSW incrementally. Entity aliases, fact validity and referenced fact changes invalidate affected projections. `document render` refreshes only generated Markdown blocks. These operations never adopt authored edits or append source history. A changed local embedding probe causes all current documents to be re-embedded. Skill linking also supports `codex` and `all`.
@@ -44,11 +46,11 @@ The default engine is PGLite at `docnexus/store/brain.pglite`. An explicit `DOCN
 
 ## Reset
 
-Existing format-6 text needs only an index sync for this engine change. There is no migration from formats before 6. Reset removes the entire workspace, its sources and timelines, derived stores and custom models, skill links and marked agent instructions. With a configured Postgres URL, it first drops only this project's remote schema; a failed remote cleanup blocks reset. Only run it when the user has explicitly authorized clearing that workspace:
+Existing format-6 text needs only an index sync for this engine change. There is no migration from formats before 6. Reset removes project knowledge, sources and timelines, derived stores and custom models, skill links and marked agent instructions. It retains workspace-local `package.json`, `package-lock.json` and `node_modules/` so the CLI can initialize again; the result includes `preserved_installation: true` when these entries remain. With a configured Postgres URL, it first drops only this project's remote schema; a failed remote cleanup blocks reset. Only run it when the user has explicitly authorized clearing that workspace:
 
 ```bash
-./node_modules/.bin/docnexus reset --force
-./node_modules/.bin/docnexus init --agent claude
+./docnexus/node_modules/.bin/docnexus reset --force
+./docnexus/node_modules/.bin/docnexus init --agent claude
 ```
 
 Existing authorization need not be requested again. `--force` and `--replace` record authorization already obtained.

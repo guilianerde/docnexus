@@ -1,17 +1,20 @@
 import { withProjectLock } from "./project-lock.js";
-import { lstat, readFile, rm } from "node:fs/promises";
+import { lstat, readdir, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { removeAgentContext } from "./agent-context.js";
-import { projectMarkerPath, workspacePath } from "./layout.js";
+import { projectMarkerPath, WORKSPACE_INSTALLATION_ENTRIES, workspacePath } from "./layout.js";
 import { unlinkSkills } from "./skills.js";
 import { withRetrievalDatabase } from "./postgres-engine.js";
+import { ensureIgnoredEntries } from "./workspace-io.js";
 
 export interface ResetOutput {
   removed_workspace: string;
   removed_links: string[];
   cleaned_context_files: string[];
+  preserved_installation?: boolean;
 }
 
-/** Deletes the whole `docnexus/` workspace, the agent skill links into it, and the DocNexus instruction blocks. */
+/** Removes project memory and agent integration, retaining a workspace-local npm installation. */
 export async function resetProjectData(projectRoot: string, options: { force: boolean }): Promise<ResetOutput> {
   return withProjectLock(projectRoot, async () => {
     if (!options.force) {
@@ -33,8 +36,16 @@ export async function resetProjectData(projectRoot: string, options: { force: bo
     }
     const removedLinks = await unlinkSkills(projectRoot);
     const cleaned = await removeAgentContext(projectRoot);
-    await rm(workspace, { recursive: true, force: true });
-    return { removed_workspace: workspace, removed_links: removedLinks, cleaned_context_files: cleaned };
+    const entries = await readdir(workspace);
+    const preserveInstallation = entries.some(entry => WORKSPACE_INSTALLATION_ENTRIES.includes(entry));
+    if (preserveInstallation) {
+      for (const entry of entries) {
+        if (!WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore") await rm(join(workspace, entry), { recursive: true, force: true });
+      }
+      await ensureIgnoredEntries(projectRoot, ["node_modules/"]);
+    } else await rm(workspace, { recursive: true, force: true });
+    return { removed_workspace: workspace, removed_links: removedLinks, cleaned_context_files: cleaned,
+      ...(preserveInstallation ? { preserved_installation: true } : {}) };
   });
 }
 

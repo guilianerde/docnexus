@@ -5,21 +5,24 @@ description: Use when the user asks DocNexus to extract, refine, or capture sour
 
 # DocNexus Extract
 
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+
 Stage 1 of the capture pipeline. The output is a sealed draft; this skill does not store the draft in the library.
 
 ## Workflow
 
 1. Identify the original content the user selected: pasted text, a named project file, or the relevant conversation excerpt. Ask if it is ambiguous.
-2. Allocate a draft (use a short topic slug):
+2. Before allocating any draft, follow [capture resolution](references/capture-resolution.md): search/recall and read existing candidate pages, then decide `create`, `update`, `skip` or `conflict`. Hand off the decision, reason, checked document versions and proposed target. `skip` and `conflict` end without sealing or ingestion.
+3. For `create` or `update`, allocate a draft (use a short topic slug):
 
 ```bash
-./node_modules/.bin/docnexus draft new --slug <topic>
+./docnexus/node_modules/.bin/docnexus draft new --slug <topic>
 ```
 
    The JSON result gives `draft_id` and the exact `artifacts.source`, `artifacts.document`, and `artifacts.metadata` paths. Write only to those paths.
-3. Write `source.md`: the original material, preserving its meaning. It must not be empty.
-4. Write `document.md`: a refined Markdown document with a `#` title and sections suited to the material. Keep facts faithful to the source.
-5. Write `metadata.json` matching `docnexus/schemas/metadata.schema.json`:
+4. Write `source.md`: the original material, preserving its meaning. It must not be empty.
+5. Write `document.md`: a refined Markdown document with a `#` title and sections suited to the material. Keep facts faithful to the source.
+6. Write `metadata.json` matching `docnexus/schemas/metadata.schema.json`:
 
 ```json
 {
@@ -47,17 +50,17 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
    - `entities` and `relationships` may be empty; include only useful, source-grounded names and links.
    - Check canonical names and aliases in `docnexus/CONCEPTS.md` before creating entities. Reuse the canonical name and type. Put source-grounded alternative names in `aliases`; ambiguous aliases are rejected rather than silently merged.
    - For decisions, conventions or claims whose validity changes over time, define optional `facts` once in the owning metadata and reference them through standalone `{{fact:fact_id}}` lines in the document; see [fact lifecycle and generated views](references/facts.md). Preserve existing fact entries and ids. New claims need source attribution and an explicit effective timestamp; use `replaces` only when the source explicitly supersedes a known fact.
-6. Choose a library `file_path`: a relative Markdown path such as `auth/token-rotation.md`. It is stored at `docnexus/library/<file_path>`. Check `./node_modules/.bin/docnexus document list` to reuse an existing path only when the user intends to update that document.
+7. Use the resolution's library `file_path`: a relative Markdown path such as `auth/token-rotation.md`. It is stored at `docnexus/library/<file_path>`. Check `./docnexus/node_modules/.bin/docnexus document list` to reuse an existing path only when the user intends to update that document.
    When updating a path, read and retain its `record_version` together with its current document, reference template and timeline with `docnexus document get --id <id> --include document,template,metadata,timeline`. Compile the existing knowledge plus the new source into a complete current document: preserve still-valid facts, replace explicitly superseded conclusions, and identify unresolved conflicts. Edit the reference template, keeping explanations and references; the CLI generates fact wording. Convert old hand-written duplicates to references after reviewing their meaning, retaining structured history. Do not replace a whole page with only the latest fragment. The CLI appends the new source to `timeline.md`; do not copy old timeline events into the current knowledge.
-7. For an update, seal with `--base-version <record_version>` from the read used to compose the draft. If the target changed since that read, reread its document/template, metadata and timeline, merge the draft with that knowledge, preserve user classification corrections, then use the reread version. Never refresh only the version without merging the content. For a new path, use `--base-version new`. Seal the draft. Sealing validates all three artifacts and the metadata, records their hashes and the target record version, and writes `manifest.json`:
+8. For an update, seal with `--base-version <record_version>` from the read used to compose the draft. If the target changed since that read, reread its document/template, metadata and timeline, merge the draft with that knowledge, preserve user classification corrections, then use the reread version. Never refresh only the version without merging the content. For a new path, use `--base-version new`. Seal the draft. Sealing validates all three artifacts and the metadata, records their hashes and the target record version, and writes `manifest.json`:
 
 ```bash
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file <file_path> --base-version <record_version|new>
+./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file <file_path> --base-version <record_version|new>
 ```
 
    For a caller-selected category, append `--category codeReview --category-reason "Produced by the code-review skill"`. Sealing writes the category and basis into `metadata.json` and hashes the resulting artifact. Review that final metadata with the document; do not change classification during ingestion.
 
-   If the result includes `preview_file`, read it and show the generated document for review. Do not edit preview.md directly. On a validation error, fix the named artifact and run seal again. Use `./node_modules/.bin/docnexus metadata validate --file <metadata_path>` to iterate on metadata alone.
+   If the result includes `preview_file`, read it and show the generated document for review. Do not edit preview.md directly. On a validation error, fix the named artifact and run seal again. Use `./docnexus/node_modules/.bin/docnexus metadata validate --file <metadata_path>` to iterate on metadata alone.
 
 ## Result
 
@@ -68,17 +71,22 @@ result: draft_ready
 draft_id: <draft_id>
 file_path: <file_path>
 replaces_managed_document: <true|false>
+capture_decision: <create|update>
+decision_reason: <basis>
+checked_documents: <read ids, paths and record_version values>
 title: <metadata.title>
 category: <metadata.category>
 category_reason: <metadata.category_reason>
 entities: <entity names>
 ```
 
+For `skip`, report `result: capture_skipped`, the existing document references and why there is no new knowledge/provenance. For `conflict`, report `result: capture_conflict`, the conflicting evidence/targets and the unresolved decision. Neither outcome has a new `draft_id`.
+
 On failure report `result: draft_failed`, the failed step, the CLI error, and the draft id if one was allocated.
 
 ## Constraints
 
 - Never run `docnexus document add` here; ingestion belongs to `docnexus-ingest`.
-- Never write outside the draft directory returned by `draft new`, and never reuse a sealed or ingested draft for different content; allocate a new one.
+- Never write outside the draft directory returned by `draft new`, and never reuse a sealed or ingested draft for a different capture or target; allocate a new one. Same-target corrections and stale merges must be resealed and reviewed.
 - Editing an artifact after sealing invalidates the draft until it is sealed again.
 - Never invent entities or relationships absent from the source.

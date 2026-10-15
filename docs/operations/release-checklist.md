@@ -58,3 +58,9 @@ Publishing requires the maintainer's authorization. Passing these checks does no
 ## Audit snapshot — 2026-10-14
 
 The production audit passes the high/critical gate after upgrading the sharp override to `^0.35.5`. Five moderate findings remain in the `sprintf-js → roarr → global-agent → onnxruntime-node → transformers` dependency chain. The underlying [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) has no patched release; npm proposes a breaking Transformers upgrade. Evaluate that upgrade separately rather than treating this gate as a zero-vulnerability result.
+
+## Workspace-local installation
+
+- [ ] Install the tarball under docnexus/ in a host project without npm files. Init, capture, category search/recall, viewer and the query adapter work without adding root package.json, package-lock.json or node_modules.
+- [ ] Init preserves the installation and host manifests, rejects unrelated nonempty directories, and does not create docnexus/docnexus when invoked from the project root or with an explicit project root.
+- [ ] Reset clears knowledge and agent integration while preserving the nested manifest, lockfile and executable; reinitialization works. Legacy root installations and query adapters still work.

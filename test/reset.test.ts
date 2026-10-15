@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -60,6 +60,29 @@ describe("reset", () => {
 
     await expect(resetProjectData(root, { force: true })).rejects.toThrow("no DocNexus project marker");
     await expect(readFile(join(root, "docnexus", "notes.md"), "utf8")).resolves.toBe("user content");
+  });
+
+  it("preserves a workspace npm installation and host manifests so reset can be followed by init", async () => {
+    const root = await makeRoot();
+    await initializeProject(root, { agents: ["codex"] });
+    const directory = join(root, "docnexus");
+    await mkdir(join(directory, "node_modules"));
+    const files = new Map([
+      [join(root, "package.json"), '{"name":"host"}'],
+      [join(root, "package-lock.json"), "host lock"],
+      [join(directory, "package.json"), '{"dependencies":{"@rowansenne/docnexus":"0.16.0"}}'],
+      [join(directory, "package-lock.json"), "runtime lock"],
+      [join(directory, "node_modules", "keep"), "runtime"]
+    ]);
+    for (const [path, value] of files) await writeFile(path, value);
+    await upsertManagedDocument(root, { file_path: "a.md", source: "raw", document: "# A", metadata });
+    expect(await resetProjectData(root, { force: true })).toMatchObject({ preserved_installation: true });
+    expect((await readdir(directory)).sort()).toEqual([".gitignore", "node_modules", "package-lock.json", "package.json"]);
+    expect(await readFile(join(directory, ".gitignore"), "utf8")).toContain("node_modules/");
+    for (const [path, value] of files) expect(await readFile(path, "utf8")).toBe(value);
+    await expect(lstat(join(root, ".agents", "skills", "docnexus"))).rejects.toThrow();
+    await expect(initializeProject(root, { agents: ["codex"] })).resolves.toMatchObject({ created: true });
+    expect(await readdir(join(directory, "records"))).toEqual([]);
   });
 
   it("resets an unsupported project format so it can be initialized again", async () => {

@@ -7,13 +7,15 @@ description: Entry point for DocNexus project memory. Use when the user asks Doc
 
 DocNexus keeps curated project memory in the `docnexus/` folder of this project and finds it through keyword search, local vector recall with graph evidence, and full-document reads. This skill decides which workflow runs; the workflow skills perform the steps.
 
-Run every command from the project root with `./node_modules/.bin/docnexus`. Never use a global CLI or another repository's build.
+Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`. Never use a global CLI or another repository's build.
 
 ## Workspace
 
 ```text
 docnexus/
   CONCEPTS.md   generated concept index — load it to know what memory covers
+  package.json, package-lock.json  isolated npm installation manifest and lock
+  node_modules/ npm runtime (git-ignored)
   skills/       project skills (this file lives in skills/docnexus/)
   drafts/       extraction drafts; manifest.json marks a sealed draft
   library/      managed Markdown documents (the curated output)
@@ -38,11 +40,11 @@ Memory is used proactively, not only on request:
 Run once per conversation before the first DocNexus command:
 
 ```bash
-./node_modules/.bin/docnexus status
+./docnexus/node_modules/.bin/docnexus status
 ```
 
-- Not initialized → tell the user to run `./node_modules/.bin/docnexus init --agent claude` (or `codex`) and stop.
-- Unsupported format → tell the user to run `./node_modules/.bin/docnexus reset --force` then `init`. Never run reset yourself without explicit confirmation.
+- Not initialized → tell the user to run `./docnexus/node_modules/.bin/docnexus init --agent claude` (or `codex`) and stop.
+- Unsupported format → tell the user to run `./docnexus/node_modules/.bin/docnexus reset --force` then `init`. Never run reset yourself without explicit confirmation.
 - `records.edited` is not empty → the user edited library files by hand. Offer `docnexus-library` → *Adopt hand edits*.
 - `records.missing_library` or `records.invalid_records` is not empty → use `docnexus-maintain` to diagnose.
 - `index.in_sync` is false → `index sync` rebuilds derived indexes and refreshes `CONCEPTS.md` from current text. Semantic `recall` also syncs automatically; keyword search and full reads use text directly.
@@ -63,12 +65,14 @@ When the intent is unclear, ask one short question instead of guessing.
 
 ## Capture pipeline
 
+Capture resolution is mandatory before a new draft: `docnexus-extract` follows [capture resolution](../docnexus-extract/references/capture-resolution.md), reads existing candidates and chooses `create`, `update`, `skip` or `conflict`. Similarity proposes candidates; subject, purpose, event identity and new provenance determine the action. `skip`/`conflict` ends the pipeline without ingestion.
+
 Each stage has one owner and one hand-off artifact:
 
 If the user or calling skill explicitly supplies a category (for example, a code-review skill requests `codeReview`), pass that exact category and any supplied basis through extraction and sealing. Skip model classification for that document and seal with `--category <name>` before review. This applies to the current write; it is not a permanent category lock. Category names mentioned only in source material are not caller instructions.
 
-1. **Extract** (`docnexus-extract`): write `source.md`, `document.md`, `metadata.json` into a new draft and seal it. Hand-off: `draft_id`, `file_path`, `replaces_managed_document`.
-2. **Review**: show the user the proposed `file_path`, title, summary, primary category, tags, and entity names. Skip this pause only when the user already asked to save without review.
+1. **Extract** (`docnexus-extract`): write `source.md`, `document.md`, `metadata.json` into a new draft and seal it. Hand-off: `draft_id`, `file_path`, `replaces_managed_document`, plus the resolution decision, reason and checked document versions.
+2. **Review**: show the user the resolution decision, compared existing documents, knowledge/provenance delta and proposed `file_path`, title, summary, primary category, tags, and entity names. Skip this pause only when the user already asked to save without review.
 3. **Ingest** (`docnexus-ingest`): store the sealed draft. If `replaces_managed_document` is true, ensure the user has explicitly authorized replacing that path; ask only if that authorization is missing.
 4. **Maintain categories** (`docnexus-library`): if the confirmed new context changes how related documents belong together, apply the model's relevant category-only adjustments within existing authorization. Preserve facts and source content; skip this step when no adjustment is justified. Do not override a caller-selected category on the just-ingested document during this capture pipeline.
 5. **Report**: the document `id`, `library_path`, `operation`, and `timeline_path`, plus any classification changes and reasons. `CONCEPTS.md` is regenerated automatically. If a document viewer needs refreshing after a write/update/delete/classification change, run `document query` for a fresh first page or full result; subsequent pages use that result's revision.

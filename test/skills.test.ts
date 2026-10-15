@@ -1,6 +1,6 @@
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { initializeProject } from "../src/project.js";
 import { ensureSkillsCurrent, inspectSkills, linkSkills, packageVersion, SKILL_NAMES, syncSkills } from "../src/skills.js";
@@ -71,6 +71,24 @@ describe("packaged skills", () => {
 });
 
 describe("skills sync and link", () => {
+  it("installs capture resolution and keeps workflow reference links inside the portable skill bundle", async () => {
+    const root = await makeRoot();
+    await initializeProject(root);
+    const installed = join(root, "docnexus", "skills");
+    const reference = "docnexus-extract/references/capture-resolution.md";
+    expect(await readFile(join(installed, reference), "utf8")).toBe(await readFile(join(process.cwd(), "skills", reference), "utf8"));
+    for (const name of ["docnexus", "docnexus-extract", "docnexus-ingest"]) {
+      const path = join(installed, name, "SKILL.md");
+      const content = await readFile(path, "utf8");
+      for (const [, target] of content.matchAll(/\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
+        if (/^https?:/.test(target)) continue;
+        const resolved = resolve(dirname(path), target);
+        expect(relative(installed, resolved).startsWith("..")).toBe(false);
+        expect((await stat(resolved)).isFile()).toBe(true);
+      }
+    }
+  });
+
   it("links workspace skills into agent directories and reports their state", async () => {
     const root = await makeRoot();
     await initializeProject(root);

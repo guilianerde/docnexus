@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 /** Text memory and rebuildable local indexes live under the visible docnexus/ workspace. */
 export const WORKSPACE_DIRNAME = "docnexus";
+export const WORKSPACE_INSTALLATION_ENTRIES = ["package.json", "package-lock.json", "node_modules"];
 
 export function workspacePath(projectRoot: string): string {
   return join(projectRoot, WORKSPACE_DIRNAME);

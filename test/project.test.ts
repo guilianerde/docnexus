@@ -55,6 +55,37 @@ describe("project initialization", () => {
     await expect(readFile(join(root, "docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
   });
 
+  it.each(["dependencies", "devDependencies"])("initializes over a scoped npm installation using %s without changing host or install manifests", async dependencyField => {
+    const root = await makeRoot();
+    const directory = join(root, "docnexus");
+    await mkdir(join(directory, "node_modules"), { recursive: true });
+    const files = new Map([
+      [join(root, "package.json"), '{"name":"host","scripts":{"build":"host-build"}}'],
+      [join(root, "package-lock.json"), "host lock sentinel"],
+      [join(directory, "package.json"), JSON.stringify({ private: true, [dependencyField]: { "@rowansenne/docnexus": "0.16.0" } })],
+      [join(directory, "package-lock.json"), "installation lock sentinel"],
+      [join(directory, "node_modules", "keep"), "installed runtime sentinel"]
+    ]);
+    for (const [path, value] of files) await writeFile(path, value);
+    await expect(initializeProject(root)).resolves.toMatchObject({ created: true, project_root: root });
+    for (const [path, value] of files) expect(await readFile(path, "utf8")).toBe(value);
+    expect(await readFile(join(directory, ".gitignore"), "utf8")).toContain("node_modules/");
+    await expect(stat(join(directory, "docnexus"))).rejects.toThrow();
+  });
+
+  it.each(["unrelated", "extra-content", "missing-manifest"])("rejects %s beside an uninitialized npm installation", async kind => {
+    const root = await makeRoot();
+    const directory = join(root, "docnexus");
+    await mkdir(join(directory, "node_modules"), { recursive: true });
+    if (kind !== "missing-manifest") await writeFile(join(directory, "package.json"), JSON.stringify({
+      dependencies: { [kind === "unrelated" ? "other-package" : "@rowansenne/docnexus"]: "1.0.0" }
+    }));
+    if (kind === "extra-content") await writeFile(join(directory, "notes.md"), "user content");
+    await expect(initializeProject(root)).rejects.toThrow("is not a DocNexus workspace");
+    await expect(readFile(projectMarkerPath(root), "utf8")).rejects.toThrow();
+    if (kind === "extra-content") expect(await readFile(join(directory, "notes.md"), "utf8")).toBe("user content");
+  });
+
   it("refuses to adopt an unrelated docnexus folder", async () => {
     const root = await makeRoot();
     await mkdir(join(root, "docnexus"), { recursive: true });

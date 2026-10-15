@@ -5,7 +5,7 @@ Use optional `metadata.facts` for claims that need explicit source and validity 
 Before adding a fact about an entity, inspect its existing facts:
 
 ```bash
-./node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
 ```
 
 Example metadata fields (inside a complete metadata object):
@@ -68,7 +68,7 @@ The same reference can appear in another document without a second `facts` entry
 Historical inspection:
 
 ```bash
-./node_modules/.bin/docnexus facts list --entity "AuthSvc" --at "2026-10-14T14:00:00+08:00" --include-inactive
+./docnexus/node_modules/.bin/docnexus facts list --entity "AuthSvc" --at "2026-10-14T14:00:00+08:00" --include-inactive
 ```
 
 This evaluates validity using the currently stored fact history; it does not reconstruct a Git snapshot of what was known at that time.

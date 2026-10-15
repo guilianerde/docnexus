@@ -7,7 +7,7 @@ Categories are project-defined names, not a fixed list. An explicit category sup
 When a calling skill already knows its output type, such as `codeReview`, skip model classification for that document. Preserve the exact category name rather than translating it, changing its case, or replacing it with a similar existing category. Seal before review:
 
 ```bash
-./node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
+./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
   --base-version <record_version|new> --category codeReview \
   --category-reason "Produced by the code-review skill"
 ```
@@ -33,7 +33,7 @@ For a new/updated document, put category and reason in the extraction draft meta
 For an existing document whose content is already correct, use the category-only operation:
 
 ```bash
-./node_modules/.bin/docnexus document classify --id <document_id> \
+./docnexus/node_modules/.bin/docnexus document classify --id <document_id> \
   --category "接口契约" \
   --reason "项目 API 规范及相关端点文档都以请求和响应约定组织，本文应归入该组" \
   --revision <query_revision>

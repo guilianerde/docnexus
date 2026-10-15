@@ -9,9 +9,10 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const smokeRoot = await mkdtemp(join(tmpdir(), "docnexus-tarball-smoke-"));
+const smokeRoot = await realpath(await mkdtemp(join(tmpdir(), "docnexus-tarball-smoke-")));
 const packDirectory = join(smokeRoot, "pack");
 const projectDirectory = join(smokeRoot, "project");
+const installationDirectory = join(projectDirectory, "docnexus");
 const npmEnvironment = { ...process.env };
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 const sourceManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
@@ -20,7 +21,7 @@ const packageNameParts = sourceManifest.name.split("/");
 try {
   await Promise.all([
     mkdir(packDirectory, { recursive: true }),
-    mkdir(projectDirectory, { recursive: true })
+    mkdir(installationDirectory, { recursive: true })
   ]);
 
   const packed = await run(npmExecutable, ["pack", "--json", "--pack-destination", packDirectory], {
@@ -46,17 +47,17 @@ try {
     bin: sourceManifest.bin,
     engines: sourceManifest.engines
   };
-  await writeFile(join(projectDirectory, "package.json"), JSON.stringify({
+  await writeFile(join(installationDirectory, "package.json"), JSON.stringify({
     name: lock.name, version: lock.version, private: true,
     dependencies: { [sourceManifest.name]: dependency }, overrides: sourceManifest.overrides
   }));
-  await writeFile(join(projectDirectory, "package-lock.json"), JSON.stringify(lock));
-  await run(npmExecutable, ["ci", "--offline", "--omit=dev", "--no-audit", "--no-fund"], {
+  await writeFile(join(installationDirectory, "package-lock.json"), JSON.stringify(lock));
+  await run(npmExecutable, ["ci", "--prefix", installationDirectory, "--offline", "--omit=dev", "--no-audit", "--no-fund"], {
     cwd: projectDirectory, env: npmEnvironment
   });
 
-  const packageDirectory = join(projectDirectory, "node_modules", ...packageNameParts);
-  const cliPath = join(projectDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
+  const packageDirectory = join(installationDirectory, "node_modules", ...packageNameParts);
+  const cliPath = join(installationDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
   const installedPackagePath = await realpath(packageDirectory);
   const installedCliPath = await realpath(cliPath);
   const workspacePath = await realpath(repositoryRoot);
@@ -78,6 +79,12 @@ try {
   const initialized = await runJson(cliPath, ["init", "--agent", "codex"], projectDirectory, cliEnvironment);
   assert(initialized.initialized === true, "init did not report an initialized project");
   assert(initialized.workspace === join(await realpath(projectDirectory), "docnexus"), "init did not create the docnexus workspace");
+  for (const entry of ["package.json", "package-lock.json", "node_modules"]) {
+    assert(!await stat(join(projectDirectory, entry)).then(() => true).catch(() => false), `installation polluted the host root with ${entry}`);
+  }
+  assert(!await stat(join(installationDirectory, "docnexus")).then(() => true).catch(() => false), "init created a nested docnexus workspace");
+  const initializedExplicitly = await runJson(cliPath, ["--project-root", projectDirectory, "init"], smokeRoot, cliEnvironment);
+  assert(initializedExplicitly.created === false && initializedExplicitly.workspace === initialized.workspace, "explicit project root did not reuse the same workspace");
   await stat(join(projectDirectory, "docnexus", "skills", "docnexus", "SKILL.md"));
   await stat(join(projectDirectory, ".agents", "skills", "docnexus", "SKILL.md"));
   const agentsInstructions = await readFile(join(projectDirectory, "AGENTS.md"), "utf8");
@@ -249,7 +256,9 @@ try {
 
   const cloneDirectory = join(smokeRoot, "clone");
   await mkdir(cloneDirectory);
-  await cp(join(projectDirectory, "docnexus"), join(cloneDirectory, "docnexus"), { recursive: true });
+  await cp(join(projectDirectory, "docnexus"), join(cloneDirectory, "docnexus"), {
+    recursive: true, filter: source => source !== join(installationDirectory, "node_modules")
+  });
   await rm(join(cloneDirectory, "docnexus/store"), { recursive: true, force: true });
   const sourceOnly = await runJson(cliPath, ["document", "query", "--all"], cloneDirectory, cliEnvironment);
   assert(sourceOnly.documents[0].id === added.id && sourceOnly.revision === catalog.revision, "document query depended on retrieval stores or changed the text snapshot");
@@ -276,6 +285,15 @@ try {
   const chinese = await runJson(cliPath, ["search", "长文", "--limit", "5"], cloneDirectory, cliEnvironment);
   assert(chinese.results.length === 1 && chinese.results[0].file_path === "search/long.md", "installed Chinese search admitted a single-character distraction");
   assert(chinese.results[0].matched_terms.includes("长文") && chinese.results[0].snippet.includes("长文"), "installed search did not expose full phrase evidence");
+
+  const reset = await runJson(cliPath, ["reset", "--force"], projectDirectory, cliEnvironment);
+  assert(reset.preserved_installation === true, "reset did not preserve the workspace-local npm installation");
+  await stat(cliPath);
+  await stat(join(installationDirectory, "package.json"));
+  await stat(join(installationDirectory, "package-lock.json"));
+  const reinitialized = await runJson(cliPath, ["init", "--agent", "codex"], projectDirectory, cliEnvironment);
+  assert(reinitialized.created === true && reinitialized.workspace === initialized.workspace, "installed CLI could not initialize after reset");
+  assert((await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment)).records.length === 0, "reset retained project knowledge");
 
   process.stdout.write(`Tarball smoke test passed: ${filename}\nIntegrity: ${integrity}\n`);
 } finally {
@@ -308,6 +326,7 @@ async function verifyPackageContents(packageDirectory) {
     "skills/docnexus-library/SKILL.md",
     "skills/docnexus-library/scripts/query-documents.mjs",
     "skills/docnexus-library/references/classification.md",
+    "skills/docnexus-extract/references/capture-resolution.md",
     "skills/docnexus-maintain/SKILL.md"
 
   ];

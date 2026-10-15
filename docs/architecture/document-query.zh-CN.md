@@ -9,9 +9,9 @@
 项目已初始化并安装对应版本的 DocNexus 后，从项目目录执行：
 
 ```bash
-./node_modules/.bin/docnexus document query --all
-./node_modules/.bin/docnexus document query --page 1 --page-size 20
-./node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
+./docnexus/node_modules/.bin/docnexus document query --all
+./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20
+./docnexus/node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
 ```
 
 编排层提供的独立接口脚本使用相同参数，委托项目内安装的 CLI：
@@ -40,8 +40,8 @@ const second = await queryDocuments(projectRoot, {
 ## 本地只读浏览页
 
 ```bash
-./node_modules/.bin/docnexus view
-./node_modules/.bin/docnexus --project-root /path/to/project view --port 4317
+./docnexus/node_modules/.bin/docnexus view
+./docnexus/node_modules/.bin/docnexus --project-root /path/to/project view --port 4317
 ```
 
 命令启动固定项目的本地服务，仅绑定 `127.0.0.1`。默认自动选择空闲端口，打开终端输出的 URL；Ctrl+C 停止服务。目标项目必须先初始化，不会自动导入当前仓库文件。
@@ -96,7 +96,7 @@ Node 异常的 code 为 `document_revision_changed`，current_revision 给出新
 项目方向、新知识或文档用途变化时，模型可以复核相关文档。分类重命名、合并或拆分通过修改受影响文档的 category 实现，文件和事实不必移动、复制或删除：
 
 ```bash
-./node_modules/.bin/docnexus document classify --id <document_id> \
+./docnexus/node_modules/.bin/docnexus document classify --id <document_id> \
   --category "接口契约" \
   --reason "结合项目 API 规范与已有端点文档，本文定义请求响应约定" \
   --revision <query_revision>

@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.16.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 0.17.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
@@ -147,7 +147,7 @@ CLI 在现有 Markdown 内生成 `<!-- docnexus:fact fact_id -->` 与 `<!-- /doc
 
 ## Git、诊断与维护
 
-除 `store/` 和 `.runtime/` 外，工作区都可提交。克隆、拉取、切换分支后，关键词查找与全文读取直接使用当前文本；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
+除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都可提交。克隆、拉取、切换分支后，关键词查找与全文读取直接使用当前文本；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
 
 `doctor` 在恢复未完成事务后检查文本、索引、数据库、本地模型和 skills，不修复缺失投影。新建空工作区尚无检索库是正常状态。`graph audit` 检查已存在的文档/关系投影、孤立概念与 HNSW；缺失存储先运行同步。
 
