@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.17.1 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.18.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -76,6 +76,21 @@ Optional metadata entity `aliases` resolve alternative names to canonical graph 
 ./docnexus/node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
 ./docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
+
+## Local usage observation
+
+Opt into local records, then export one JSON file for optimization analysis. Records include command latency, error codes, pseudonymous query/document identities, retrieval and evidence metrics, index work and embedding calls. Query text, document content, paths and credentials are excluded. Nothing is uploaded; recording is off by default.
+
+```bash
+./docnexus/node_modules/.bin/docnexus usage enable
+./docnexus/node_modules/.bin/docnexus usage status
+# Optional explicit feedback on the last search/recall:
+./docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
+./docnexus/node_modules/.bin/docnexus usage export > docnexus/.runtime/usage-report.json
+./docnexus/node_modules/.bin/docnexus usage disable
+```
+
+In a development checkout, build first and replace the executable with `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/project`. Available since 0.18.0. The Git-ignored `docnexus/.runtime/usage.jsonl` stops growing at 10 MiB; recording failures do not fail ordinary commands. Reset deletes the records. Metrics do not establish answer correctness; see the [observation contract](docs/operations/usage-observation.zh-CN.md).
 
 ## Document viewer query
 

@@ -286,6 +286,17 @@ try {
   assert(chinese.results.length === 1 && chinese.results[0].file_path === "search/long.md", "installed Chinese search admitted a single-character distraction");
   assert(chinese.results[0].matched_terms.includes("长文") && chinese.results[0].snippet.includes("长文"), "installed search did not expose full phrase evidence");
 
+  const usageBefore = await runJson(cliPath, ["usage", "status"], projectDirectory, cliEnvironment);
+  assert(usageBefore.enabled === false && usageBefore.events === 0, "usage recording was not opt-in");
+  await runJson(cliPath, ["usage", "enable"], projectDirectory, cliEnvironment);
+  await runJson(cliPath, ["search", "installed DocNexus tarball", "--limit", "1"], projectDirectory, cliEnvironment);
+  await runJson(cliPath, ["usage", "feedback", "--rating", "useful"], projectDirectory, cliEnvironment);
+  const usageReport = await runJson(cliPath, ["usage", "export"], projectDirectory, cliEnvironment);
+  assert(usageReport.events.length === 2 && usageReport.events[0].result_count === 1, "installed usage collector lost its query");
+  assert(usageReport.events[1].target_event_id === usageReport.events[0].event_id, "installed feedback lost its target");
+  assert(!JSON.stringify(usageReport).includes("installed DocNexus tarball"), "installed usage export leaked query text");
+  await runJson(cliPath, ["usage", "disable"], projectDirectory, cliEnvironment);
+
   const reset = await runJson(cliPath, ["reset", "--force"], projectDirectory, cliEnvironment);
   assert(reset.preserved_installation === true, "reset did not preserve the workspace-local npm installation");
   await stat(cliPath);
@@ -294,6 +305,7 @@ try {
   const reinitialized = await runJson(cliPath, ["init", "--agent", "codex"], projectDirectory, cliEnvironment);
   assert(reinitialized.created === true && reinitialized.workspace === initialized.workspace, "installed CLI could not initialize after reset");
   assert((await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment)).records.length === 0, "reset retained project knowledge");
+  assert((await runJson(cliPath, ["usage", "status"], projectDirectory, cliEnvironment)).events === 0, "reset retained usage records");
 
   process.stdout.write(`Tarball smoke test passed: ${filename}\nIntegrity: ${integrity}\n`);
 } finally {
@@ -311,6 +323,7 @@ async function verifyPackageContents(packageDirectory) {
     "docs/architecture/overview.zh-CN.md",
     "docs/architecture/document-query.zh-CN.md",
     "docs/operations/knowledge-evaluation.zh-CN.md",
+    "docs/operations/usage-observation.zh-CN.md",
     "viewer/index.html",
     "viewer/app.js",
     "viewer/style.css",
@@ -342,7 +355,7 @@ async function verifyPackageContents(packageDirectory) {
   await stat(join(packageDirectory, "dist/src/postgres-engine.js"));
   await stat(join(packageDirectory, "dist/src/postgres-store.js"));
   await stat(join(packageDirectory, "dist/src/viewer.js"));
-  for (const file of ["project-lock", "text-transaction", "workspace-io", "knowledge", "hybrid-recall", "fact-renderer", "document-query"]) await stat(join(packageDirectory, `dist/src/${file}.js`));
+  for (const file of ["project-lock", "text-transaction", "workspace-io", "knowledge", "hybrid-recall", "fact-renderer", "document-query", "usage", "usage-metrics"]) await stat(join(packageDirectory, `dist/src/${file}.js`));
 
   const packagedManifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8"));
   assert(["@electric-sql/pglite", "@electric-sql/pglite-pgvector", "postgres", "@huggingface/transformers"].every(name => packagedManifest.dependencies?.[name]), "retrieval runtime dependencies are missing");

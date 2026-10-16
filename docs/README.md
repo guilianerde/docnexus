@@ -1,6 +1,6 @@
 # DocNexus 文档中心
 
-当前文档描述 0.17.1 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及新增的独立 npm 安装目录、写入前相似知识判定、调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、手动刷新浏览页和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0171--2026-10-16)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
+当前文档描述 0.18.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及新增的独立 npm 安装目录、写入前相似知识判定、调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、手动刷新浏览页和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0180--2026-10-16)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
 
 | 主题 | 文档 |
 | --- | --- |
@@ -17,6 +17,7 @@
 | 智能体协议 | [结构化错误与诊断契约](./operations/agent-protocol.zh-CN.md) |
 | 证据交付 | [范围、预算、事实与时间](./architecture/evidence-delivery.zh-CN.md) |
 | 智能体验收 | [独立上下文、调用观测与结果审阅](./operations/agent-evaluation.zh-CN.md) |
+| 使用观察 | [本地记录、匿名指标、显式反馈与单文件导出](./operations/usage-observation.zh-CN.md) |
 | 展示接口 | [全量/分页文档查询、分类与本地浏览页](./architecture/document-query.zh-CN.md) |
 
 安装与日常命令见根目录 README。产品行为变更时同步当前文档，避免保留已被替代的实现说明。

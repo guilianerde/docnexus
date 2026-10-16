@@ -6,6 +6,7 @@ import { projectionKnowledge, resolveKnowledge, type KnowledgeDocument } from ".
 import { listRecordFiles, readAssets } from "./workspace-reader.js";
 import { withProjectLock } from "./project-lock.js";
 import { createSourceView } from "./source-anchor.js";
+import { addUsageMetric, setUsageMetric } from "./usage-metrics.js";
 
 /** An operation-owned, validated view. Revalidate its revision before committing work prepared outside the lock. */
 export async function loadWorkspaceSnapshot(projectRoot: string, at?: string) {
@@ -13,6 +14,8 @@ export async function loadWorkspaceSnapshot(projectRoot: string, at?: string) {
     at ??= new Date().toISOString();
     const root = await realpath(projectRoot);
     const records = (await listRecordFiles(root)).sort((a, b) => a.file_path < b.file_path ? -1 : a.file_path > b.file_path ? 1 : 0);
+    addUsageMetric("snapshot_loads");
+    setUsageMetric("document_count", records.length);
     const documents: KnowledgeDocument[] = [];
     for (const record of [...records].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path))) {
       // Validate source/history hashes, but do not retain their growing contents.
@@ -20,6 +23,7 @@ export async function loadWorkspaceSnapshot(projectRoot: string, at?: string) {
       documents.push({ id: record.id, file_path: record.file_path, document_hash: record.document_hash, metadata, document });
     }
     const knowledge = resolveKnowledge(documents, at);
+    setUsageMetric("relationship_declarations", documents.reduce((sum, document) => sum + document.metadata.relationships.length, 0));
     const factIds = new Set(knowledge.facts.map(fact => fact.id));
     for (const document of documents) for (const id of factReferenceIds(document.document!)) {
       if (!factIds.has(id)) throw new DocNexusError("knowledge_conflict", `unknown fact reference: ${id}`);

@@ -44,6 +44,14 @@ The default engine is PGLite at `docnexus/store/brain.pglite`. An explicit `DOCN
 - To reconcile all current document projections: with authorization run `docnexus index rebuild --force`. Unchanged text with the same model signature reuses vectors; a healthy HNSW is retained. Graph repair also retains healthy indexes and only repairs an abnormal index.
 - Missing local model: restore packaged assets or install a complete project-local model with `docnexus embeddings install --from <project_dir> [--replace]`. Confirm replacement when needed. Custom models under `store/models/` are not included in Git and must be backed up separately.
 
+## Local usage observation
+
+Only enable local observation when the user requests it. Run `docnexus usage enable`, `usage status`, `usage disable` and `usage export` through the project-local executable above. Export one shareable file with `docnexus usage export > docnexus/.runtime/usage-report.json`; nothing is uploaded. This feature is available since 0.18.0.
+
+Records omit query text, document content, paths and credentials; pseudonyms are project-keyed and the key is not exported. The log is Git-ignored and bounded at 10 MiB. If full, export it and disable recording; never delete the entire `.runtime/` directory because it also contains recovery state. Reset deletes usage records too.
+
+With recording enabled, record only explicit feedback: `docnexus usage feedback --rating useful|partial|miss [--reason needs_multihop|missing_document|irrelevant|truncated|stale|slow|other] [--event <event_id>]`. Without `--event`, it targets the latest recorded search/recall; use the id from `usage status` or the export when multiple queries are involved. Do not infer successful answers from nonempty candidates or invent ratings. Missing query text limits semantic diagnosis; timings and recorded paths through the system do not establish answer correctness. See packaged `docs/operations/usage-observation.zh-CN.md`.
+
 ## Reset
 
 Existing format-6 text needs only an index sync for this engine change. There is no migration from formats before 6. Reset removes project knowledge, sources and timelines, derived stores and custom models, skill links and marked agent instructions. It retains workspace-local `package.json`, `package-lock.json` and `node_modules/` so the CLI can initialize again; the result includes `preserved_installation: true` when these entries remain. With a configured Postgres URL, it first drops only this project's remote schema; a failed remote cleanup blocks reset. Only run it when the user has explicitly authorized clearing that workspace:

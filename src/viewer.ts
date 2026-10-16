@@ -8,6 +8,7 @@ import { DocumentRevisionChangedError, queryDocuments, type DocumentQueryInput }
 import { requireInitializedProject } from "./project.js";
 import { isDocumentCategory } from "./types.js";
 import { sha256 } from "./hash.js";
+import { observeUsage } from "./usage.js";
 
 const markdown = new MarkdownIt({ html: false, linkify: false });
 markdown.core.ruler.before("inline", "viewer-fact-markers", (state) => {
@@ -103,7 +104,8 @@ export async function startDocumentViewer(projectRoot: string, port = 0): Promis
       return;
     }
     try {
-      const snapshot = await queryDocuments(root, input);
+      const snapshot = await observeUsage(root, ["document", "query", ...[...url.searchParams].flatMap(([key, value]) => [`--${key.replaceAll("_", "-")}`, value])],
+        () => queryDocuments(root, input), "viewer");
       const etag = `W/"${sha256(JSON.stringify([snapshot.revision, input.all ?? false, input.page ?? 1, input.page_size ?? 20, input.category ?? null]))}"`;
       response.setHeader("ETag", etag);
       // Validate canonical text and fact time before skipping HTML and transfer.

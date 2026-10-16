@@ -59,7 +59,7 @@ Run once per conversation before the first DocNexus command:
 | Save an existing sealed draft | `docnexus-ingest` |
 | Ask a question from memory, recall, search; or a task touches a known concept | `docnexus-recall` |
 | Classify/organize documents, evolve categories, list/query/show documents, adopt hand edits, delete a document or discard a draft | `docnexus-library` |
-| Health check, damaged text records, refresh concepts after git pull, reset | `docnexus-maintain` |
+| Health check, damaged text records, refresh concepts after git pull, local usage recording/export, reset | `docnexus-maintain` |
 
 When the intent is unclear, ask one short question instead of guessing.
 

@@ -4,7 +4,7 @@
 
 ## 当前定位
 
-0.17.1 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。对齐 GBrain 双引擎模式，默认本地 PGLite，环境 URL 可选独立 Postgres。旧历史方案文档保持删除，不迁移格式 5 及更早的工作区。
+0.18.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。对齐 GBrain 双引擎模式，默认本地 PGLite，环境 URL 可选独立 Postgres。旧历史方案文档保持删除，不迁移格式 5 及更早的工作区。
 
 ## 已实现
 

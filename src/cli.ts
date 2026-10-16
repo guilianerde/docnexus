@@ -36,6 +36,7 @@ import { listFacts } from "./knowledge-service.js";
 import { withProjectLock } from "./project-lock.js";
 import { queryDocuments } from "./document-query.js";
 import { startDocumentViewer } from "./viewer.js";
+import { configureUsage, exportUsage, observeUsage, recordUsageFeedback, usageStatus } from "./usage.js";
 
 export interface RunCliDependencies {
   doctor?: typeof runDoctor;
@@ -54,7 +55,7 @@ export async function runCli(
     const invocation = parseInvocation(argv, cwd);
     const [command, subcommand] = invocation.argv;
     const computesEmbeddings = command === "recall" || (command === "index" && ["sync", "rebuild"].includes(subcommand)) || (command === "graph" && subcommand === "repair");
-    return await (computesEmbeddings ? runCliUnlocked(argv, cwd, dependencies)
+    return await observeUsage(invocation.projectRoot, invocation.argv, () => computesEmbeddings ? runCliUnlocked(argv, cwd, dependencies)
       : withProjectLock(invocation.projectRoot, () => runCliUnlocked(argv, cwd, dependencies)));
   } catch (error) { throw asDocNexusError(error); }
 }
@@ -66,6 +67,21 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
   const projectRoot = invocation.projectRoot;
 
   if (command === "protocol") return json({ protocol_version: PROTOCOL_VERSION, errors: errorDefinitions });
+
+  if (command === "usage") {
+    await requireInitializedProject(projectRoot);
+    if (subcommand === "feedback") {
+      for (let index = 0; index < rest.length; index += 2) {
+        if (!["--event", "--rating", "--reason"].includes(rest[index])) throw new DocNexusError("invalid_params", "unknown usage feedback option");
+      }
+      return json(await recordUsageFeedback(projectRoot, parseOptions(rest)));
+    }
+    if (rest.length) throw new DocNexusError("invalid_params", "usage commands do not accept extra arguments");
+    if (subcommand === "enable" || subcommand === "disable") return json(await configureUsage(projectRoot, subcommand === "enable"));
+    if (subcommand === "status") return json(await usageStatus(projectRoot));
+    if (subcommand === "export") return json(await exportUsage(projectRoot));
+    throw new DocNexusError("invalid_params", "Usage: docnexus usage enable|disable|status|export|feedback");
+  }
 
   if (command === "init") {
     const options = parseOptions(invocation.argv.slice(1));
@@ -356,6 +372,9 @@ Library
   docnexus document delete --id doc_0000000000000000 --force
 
 Maintenance
+  docnexus usage enable|disable|status
+  docnexus usage export   # Redirect JSON to a file to share for analysis
+  docnexus usage feedback --rating useful|partial|miss [--reason needs_multihop|missing_document|irrelevant|truncated|stale|slow|other] [--event <event_id>]
   docnexus index status
   docnexus index sync
   docnexus index rebuild --force

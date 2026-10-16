@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.17.1 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.18.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -80,6 +80,22 @@ docnexus/
 ./docnexus/node_modules/.bin/docnexus facts list --entity "<规范名或别名>" --include-inactive
 ./docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
+
+## 本地使用记录
+
+可选启用本地记录，使用一段时间后导出单个 JSON 文件用于优化分析。记录命令耗时、错误码、匿名查询/文档标识、召回与证据预算、索引增量和模型调用指标；不记录原始问题、正文、文件路径或凭据，不上传网络，默认关闭。
+
+```bash
+./docnexus/node_modules/.bin/docnexus usage enable
+./docnexus/node_modules/.bin/docnexus usage status
+# 正常使用；如最近一次查询确实需要跨关系查找，可显式反馈：
+./docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
+# 使用一段时间后，分享这一份导出文件：
+./docnexus/node_modules/.bin/docnexus usage export > docnexus/.runtime/usage-report.json
+./docnexus/node_modules/.bin/docnexus usage disable
+```
+
+开发仓库先运行 `npm run build`，将上述可执行文件替换为 `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/project`。该能力从 0.18.0 起可用。原始记录位于 Git 忽略的 `docnexus/.runtime/usage.jsonl`，上限 10 MiB；满后停止记录，正常命令继续运行。重置项目会删除记录。指标不能自动证明回答正确；详见[字段、反馈和分析边界](docs/operations/usage-observation.zh-CN.md)。
 
 ## 文档展示接口
 

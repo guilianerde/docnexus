@@ -17,6 +17,7 @@ import { projectionKnowledge, resolveKnowledge } from "./knowledge.js";
 import { loadKnowledgeDocuments } from "./knowledge-service.js";
 import { withRetrievalDatabase, type RetrievalDatabase } from "./postgres-engine.js";
 import { deletePostgresDocument, ensurePostgresStore, inspectProjectionSchema, readChunks, readIndexedProjections, readIndexState, replacePostgresProjection, writeIndexState } from "./postgres-store.js";
+import { addUsageMetric } from "./usage-metrics.js";
 
 export interface RetrievalIndexState {
   available: boolean; record_count: number; indexed_count: number; chunk_count: number;
@@ -72,6 +73,7 @@ export async function syncRetrievalIndex(root: string, options: { all?: boolean 
 export async function withSyncedRetrieval<T>(root: string, options: { all?: boolean }, embedder: Embedder,
   operation: (db: RetrievalDatabase, snapshot: WorkspaceSnapshot, result: IndexSyncResult) => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
+    addUsageMetric("sync_attempts");
     const snapshot = await loadWorkspaceSnapshot(root).catch((error: Error) => {
       const failure = asDocNexusError(error, "text_integrity_error");
       if (failure.code !== "text_integrity_error") throw failure;
@@ -149,6 +151,10 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
         });
         const result: IndexSyncResult = { result: "completed", processed_documents: prepared.length, rebuilt_documents: prepared.length,
           removed_documents: plan.orphaned.length, embedded_chunks: embedded, reused_chunks: reused };
+        addUsageMetric("sync_processed_documents", result.processed_documents);
+        addUsageMetric("sync_embedded_chunks", result.embedded_chunks);
+        addUsageMetric("sync_reused_chunks", result.reused_chunks);
+        addUsageMetric("sync_removed_documents", result.removed_documents);
         return { retry: false as const, value: await operation(db, current, result) };
       }))!;
     });

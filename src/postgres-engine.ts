@@ -9,6 +9,7 @@ import { sha256 } from "./hash.js";
 import { storePath } from "./layout.js";
 import { assertNoSymbolicLinks, ensureIgnoredEntries } from "./workspace-io.js";
 import { withProjectLock } from "./project-lock.js";
+import { addUsageMetric } from "./usage-metrics.js";
 
 export interface RetrievalDatabase {
   kind: "pglite" | "postgres";
@@ -31,6 +32,7 @@ async function openRetrievalDatabase<T>(root: string, operation: (db: RetrievalD
   root = await realpath(root);
   const held = sessions.getStore();
   if (held?.root === root) return operation(held.db);
+  const openStart = performance.now();
   const url = process.env.DOCNEXUS_DATABASE_URL;
   const schema = `docnexus_${sha256(root).slice(0, 24)}`;
   let db: RetrievalDatabase;
@@ -67,10 +69,15 @@ async function openRetrievalDatabase<T>(root: string, operation: (db: RetrievalD
     db = adapt(pg);
     close = () => pg.close();
   }
+  addUsageMetric("database_opens");
+  addUsageMetric("database_open_ms", performance.now() - openStart);
   try { return await sessions.run({ root, db }, () => operation(db)); }
   catch (error) {
     // Do not expose credentials embedded in driver connection errors.
     if (url) throw new DocNexusError(error instanceof DocNexusError ? error.code : "index_unavailable", `Postgres retrieval operation failed: ${String((error as Error).message).replaceAll(url, "[database URL]").replace(/postgres(?:ql)?:\/\/[^\s]+/g, "[database URL]")}`);
     throw error;
-  } finally { await close(); }
+  } finally {
+    const closeStart = performance.now();
+    try { await close(); } finally { addUsageMetric("database_close_ms", performance.now() - closeStart); }
+  }
 }

@@ -8,7 +8,7 @@
       "title": "文本真源与历史边界",
       "source_path": "docs/architecture/overview.zh-CN.md",
       "excerpts": [
-        "DocNexus 0.17.1 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。",
+        "DocNexus 0.18.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。",
         "时间线记录来源和更新摘要，不是每次编译产出的完整版本库。保存日期不等同于事件发生日期。历史来源和时间线不进入向量索引，完整旧正文可查 Git 历史。"
       ]
     },

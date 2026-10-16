@@ -150,7 +150,7 @@ DocNexus project workspace. Everything DocNexus owns for this project lives here
 | \`CONCEPTS.md\` | Generated concept index that agents load while working. |
 | \`schemas/\` | Metadata JSON schema used by the skills. |
 | \`store/\` | Rebuildable PostgreSQL/PGLite retrieval projections and optional local model overrides. |
-| \`.runtime/\` | Pending text transaction recovery journal; do not delete during recovery. |
+| \`.runtime/\` | Pending text transaction recovery journal and optional local usage records; do not delete during recovery. |
 
 Everything except \`node_modules/\`, \`store/\` and \`.runtime/\` is plain text and can be committed. Restore the runtime with \`npm ci --prefix ./docnexus\` from the project root. CLI access takes the local project lock and recovers pending text transactions first.
 Run \`./docnexus/node_modules/.bin/docnexus index sync\` after a Git pull; default hybrid recall also syncs automatically. Avoid Git changes and external edits during writes or pending recovery.

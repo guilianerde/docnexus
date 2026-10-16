@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.0 — 2026-10-16
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required. Usage recording is off by default and enabled per project.
+
+- Add opt-in, local-only CLI and viewer query observation with project-keyed pseudonyms, bounded JSONL storage, a single-file JSON export and explicit query feedback. Record latency, model/database/index work, fusion retention and evidence budgets without query text, document content, paths or credentials. Recorder failures do not change ordinary command outcomes.
+
 ## 0.17.1 — 2026-10-16
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required.

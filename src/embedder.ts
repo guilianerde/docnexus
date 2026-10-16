@@ -2,6 +2,7 @@ import { asDocNexusError, DocNexusError } from "./errors.js";
 import { createHash } from "node:crypto";
 import { EMBEDDING_DIMENSION } from "./embedding-config.js";
 import type { TextTokenBudget } from "./chunker.js";
+import { addUsageMetric } from "./usage-metrics.js";
 
 export interface Embedder {
   dimension: number;
@@ -70,9 +71,12 @@ function normalize(vector: number[]): number[] {
 }
 
 export async function embedText(embedder: Embedder, text: string): Promise<number[]> {
+  const start = performance.now();
+  addUsageMetric("embedding_calls");
   try {
     const vector = await embedder.embed(text);
     if (vector.length !== embedder.dimension || !vector.every(Number.isFinite)) throw new DocNexusError("embedding_failed", "embedding dimension mismatch or non-finite values");
     return vector;
   } catch (error) { throw asDocNexusError(error, "embedding_failed"); }
+  finally { addUsageMetric("embedding_ms", performance.now() - start); }
 }

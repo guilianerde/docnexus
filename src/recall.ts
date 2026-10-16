@@ -10,6 +10,7 @@ import { type GroupedRecallData, type RecallContextGroup } from "./recall-groups
 import { hybridRecall } from "./hybrid-recall.js";
 import { withProjectLock } from "./project-lock.js";
 import { factsForDocuments } from "./knowledge.js";
+import { setUsageMetric } from "./usage-metrics.js";
 
 export interface RecallInput {
   query: string;
@@ -47,6 +48,7 @@ export async function recall(
   if (input.mode !== undefined && !["hybrid", "vector"].includes(input.mode)) throw new DocNexusError("invalid_params", "mode must be hybrid or vector");
   if ((input.mode ?? "hybrid") === "hybrid") {
     const grouped = await hybridRecall(projectRoot, query, limit, activeEmbedder, input.category);
+    recordRecallMetrics(grouped);
     grouped.context_groups.forEach(validateContextGroup);
     return { query, ...grouped };
   }
@@ -66,13 +68,19 @@ export async function recall(
       }
     }
     grouped.context_groups.forEach(validateContextGroup);
-
+    recordRecallMetrics(grouped);
     return { query, results: grouped.results, context_groups: grouped.context_groups,
       ...(snapshot ? { as_of: snapshot.at, snapshot_revision: snapshot.revision } : {}) };
   };
   return reader === defaultRecallReader
     ? withSyncedRetrieval(projectRoot, {}, activeEmbedder, async (_db, snapshot) => retrieve(snapshot))
     : withProjectLock(projectRoot, async () => retrieve(input.category === undefined ? undefined : await loadWorkspaceSnapshot(projectRoot)));
+}
+
+function recordRecallMetrics(grouped: GroupedRecallData): void {
+  setUsageMetric("recall_result_count", grouped.results.length);
+  setUsageMetric("graph_paths", grouped.context_groups.reduce((sum, group) => sum + group.graph_context.paths.length, 0));
+  setUsageMetric("graph_supporting_chunks", grouped.context_groups.reduce((sum, group) => sum + group.graph_context.supporting_chunks.length, 0));
 }
 
 function validateContextGroup(group: RecallContextGroup): void {

@@ -7,6 +7,7 @@ import { findVectorCandidates, loadPostgresContext, readChunkTexts, type VectorC
 import type { GroupedRecallData } from "./recall-groups.js";
 import { withSyncedRetrieval } from "./retrieval-index.js";
 import { searchSnapshot } from "./search.js";
+import { setUsageMetric } from "./usage-metrics.js";
 
 export interface FusedRank {
   id: string;
@@ -39,6 +40,12 @@ export async function hybridRecall(projectRoot: string, query: string, limit: nu
     const keyword = searchSnapshot(snapshot, { query, limit: candidates, category });
     const vector = await findVectorCandidates(db, embedding, candidates, true, undefined, documentIds);
     const ranked = fuseDocumentRanks(keyword.results.map((result) => result.id), vector.map((result) => result.document_id)).slice(0, limit);
+    setUsageMetric("keyword_candidates", keyword.results.length);
+    setUsageMetric("vector_candidates", vector.length);
+    if (keyword.results.length) {
+      setUsageMetric("keyword_top1_retained", Number(ranked.some(rank => rank.id === keyword.results[0].id)));
+      setUsageMetric("keyword_top3_retained", keyword.results.slice(0, 3).filter(result => ranked.some(rank => rank.id === result.id)).length);
+    }
     if (!ranked.length) return { results: [], context_groups: [], as_of: snapshot.at, snapshot_revision: snapshot.revision };
     const selected: VectorCandidate[] = [];
     const keywordOnly = ranked.filter(rank => !vector.some(result => result.document_id === rank.id));
