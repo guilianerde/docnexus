@@ -1,0 +1,77 @@
+name: Release to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.repository == 'guilianerde/docnexus' && !github.event.release.prerelease
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: Validate release version and npm OIDC support
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          assert.equal(pkg.name, '@rowansenne/docnexus');
+          assert.match(pkg.version, /^\d+\.\d+\.\d+$/, 'Only stable versions can be published to latest');
+          assert.equal(process.env.RELEASE_TAG, `v${pkg.version}`, 'Release tag must match package.json');
+          assert.equal(lock.version, pkg.version, 'Lockfile version must match package.json');
+          assert.equal(lock.packages[''].version, pkg.version, 'Lockfile root version must match package.json');
+          const [major, minor, patch] = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim().split('.').map(Number);
+          assert.ok(major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))), 'Trusted publishing requires npm >= 11.5.1');
+          NODE
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pack release
+        id: pack
+        run: |
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/npm-pack.json"
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const [pkg] = JSON.parse(readFileSync(join(process.env.RUNNER_TEMP, 'npm-pack.json'), 'utf8'));
+          appendFileSync(process.env.GITHUB_OUTPUT, `tarball=${join(process.env.RUNNER_TEMP, pkg.filename)}\n`);
+          console.log(`${pkg.filename}: ${pkg.integrity}`);
+          NODE
+
+      - name: Publish to npm with OIDC
+        env:
+          PACKAGE_TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npm publish "$PACKAGE_TARBALL" --ignore-scripts --provenance --access public --tag latest --registry https://registry.npmjs.org/

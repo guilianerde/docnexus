@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.1 — 2026-10-16
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required.
+
+- Remove the local viewer's 15-second polling and refresh on returning to the tab. Load documents on opening, manual refresh, or category/page changes; retain revision checks, error recovery and HTTP ETag/304 support.
+- Update viewer guidance and empty states to describe manual refresh.
+- Add GitHub Release publishing through npm trusted publishing, with the existing Node.js 22/24 CI required before publication.
+
 ## 0.17.0 — 2026-10-15
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing root npm installations remain supported. New installations keep npm assets under `docnexus/`; reset preserves those installation entries and reports `preserved_installation: true`. No knowledge reset or migration is required.

@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.17.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.17.1 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -79,7 +79,7 @@ Optional metadata entity `aliases` resolve alternative names to canonical graph 
 
 ## Document viewer query
 
-Run `./docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Visible pages check for updates every 15 seconds; manual refresh is also available. Revision changes restart pagination at page one. ETag/304 responses skip HTML rendering and full-body transfer for unchanged views while retaining canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
+Run `./docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Pages load on opening, manual refresh, or category/page changes, without automatic polling. Revision changes restart pagination at page one. Each request retains canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
 
 When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
 

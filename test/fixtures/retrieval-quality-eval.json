@@ -8,7 +8,7 @@
       "title": "文本真源与历史边界",
       "source_path": "docs/architecture/overview.zh-CN.md",
       "excerpts": [
-        "DocNexus 0.17.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。",
+        "DocNexus 0.17.1 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。",
         "时间线记录来源和更新摘要，不是每次编译产出的完整版本库。保存日期不等同于事件发生日期。历史来源和时间线不进入向量索引，完整旧正文可查 Git 历史。"
       ]
     },
@@ -77,11 +77,11 @@
     {
       "path": "documents/viewer.md",
       "split": "dev",
-      "title": "浏览页的本机访问与轻量轮询",
+      "title": "浏览页的本机访问与条件请求",
       "source_path": "docs/architecture/document-query.zh-CN.md",
       "excerpts": [
         "命令启动固定项目的本地服务，仅绑定 `127.0.0.1`。默认自动选择空闲端口，打开终端输出的 URL；Ctrl+C 停止服务。目标项目必须先初始化，不会自动导入当前仓库文件。",
-        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；浏览页轮询携带 `If-None-Match`，相同视图未变化时返回无正文的 304，保留当前阅读位置并跳过 Markdown HTML 渲染与完整正文传输。手动刷新和切换分页/分类仍获取完整内容。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
+        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
       ]
     },
     {
@@ -489,7 +489,7 @@
       "split": "dev",
       "origin": "repository",
       "kind": "semantic",
-      "query": "轻量轮询会跳过源文件损坏和事实到期检查吗？",
+      "query": "条件请求会跳过源文件损坏和事实到期检查吗？",
       "expected_paths": [
         "documents/viewer.md"
       ],

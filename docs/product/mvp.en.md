@@ -17,7 +17,7 @@ Project workspaces, six skills, sealed drafts, document storage and deletion, ke
 
 The agent compiles current knowledge; the CLI saves complete documents without inferring contradictions or supersession. Timeline entries contain save dates, summaries and sources, not every prior compiled document version.
 
-Calling skills can supply an exact category with `draft seal --category <name>` and an optional basis. Without an explicit category, skills classify from project context. The selection is not a permanent lock. A local read-only viewer supports categorized, paginated reading and ETag/304 polling, preserving unchanged views while retaining canonical integrity and fact-time checks.
+Calling skills can supply an exact category with `draft seal --category <name>` and an optional basis. Without an explicit category, skills classify from project context. The selection is not a permanent lock. A local read-only viewer supports categorized, paginated reading and manual refresh, retaining canonical integrity and fact-time checks on each request.
 
 The quality suite separates source-supported project questions, unsupported questions and explicit simulations, with development/holdout target families. Retrieval and budgeted evidence retention are measured separately; these checks do not establish host-agent answer or abstention quality.
 

@@ -1,5 +1,5 @@
 const $ = (id) => document.getElementById(id);
-const state = { category: "", page: 1, size: 20, revision: "", etag: "", selected: "", snapshot: null, busy: false };
+const state = { category: "", page: 1, size: 20, revision: "", selected: "", snapshot: null };
 const statuses = { active: "有效", scheduled: "待生效", expired: "已到期", superseded: "已替代", withdrawn: "已撤回" };
 let requestNumber = 0;
 let controller;
@@ -14,36 +14,28 @@ function date(value, full = false) {
   return new Date(value).toLocaleString("zh-CN", full ? { dateStyle: "medium", timeStyle: "short" } : { month: "2-digit", day: "2-digit" });
 }
 function setBusy(busy) {
-  state.busy = busy;
   $("refresh").disabled = busy;
   $("documents").setAttribute("aria-busy", String(busy));
   $("previous").disabled = busy || state.page <= 1;
   $("next").disabled = busy || !state.snapshot?.pagination?.has_more;
 }
 
-async function load({ reset = false, poll = false } = {}) {
-  if (poll && state.busy) return;
+async function load({ reset = false } = {}) {
   controller?.abort();
   controller = new AbortController();
   const signal = controller.signal;
   const number = ++requestNumber;
   if (reset) { state.page = 1; state.revision = ""; }
   setBusy(true);
-  if (!poll) $("sync-status").textContent = "正在读取…";
+  $("sync-status").textContent = "正在读取…";
   let changed = false;
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       const params = new URLSearchParams({ page: String(state.page), page_size: String(state.size) });
       if (state.category) params.set("category", state.category);
       if (state.revision) params.set("revision", state.revision);
-      const headers = poll && state.snapshot && state.etag ? { "If-None-Match": state.etag } : {};
-      const response = await fetch(`/api/documents?${params}`, { signal, headers, cache: "no-store" });
+      const response = await fetch(`/api/documents?${params}`, { signal, cache: "no-store" });
       if (number !== requestNumber) return;
-      if (response.status === 304) {
-        $("error").hidden = true;
-        $("sync-status").textContent = `已同步 ${date(new Date().toISOString(), true)}`;
-        return;
-      }
       const output = await response.json();
       if (number !== requestNumber) return;
       if (response.status === 409 && output.error === "document_revision_changed") {
@@ -64,12 +56,10 @@ async function load({ reset = false, poll = false } = {}) {
         changed = true;
         continue;
       }
-      const needsRender = !poll || output.revision !== state.snapshot?.revision || changed;
       state.snapshot = output;
       state.revision = output.revision;
-      state.etag = response.headers.get("etag") || "";
       $("error").hidden = true;
-      if (needsRender) render();
+      render();
       $("sync-status").textContent = changed ? "知识已更新 · 已回到第一页" : `已同步 ${date(output.generated_at, true)}`;
       return;
     }
@@ -115,7 +105,7 @@ function render() {
 function renderList() {
   $("documents").replaceChildren();
   if (!state.snapshot.documents.length) {
-    $("documents").append(element("p", "empty", state.snapshot.total_documents ? "此分类暂无文档。" : "项目还没有文档。保存第一份知识后会自动出现在这里。"));
+    $("documents").append(element("p", "empty", state.snapshot.total_documents ? "此分类暂无文档。" : "项目还没有文档。保存第一份知识后，点击刷新查看。"));
   }
   for (const document of state.snapshot.documents) {
     const button = element("button", "document-card");
@@ -177,6 +167,4 @@ $("refresh").onclick = () => load();
 $("previous").onclick = () => { state.page--; load(); };
 $("next").onclick = () => { state.page++; load(); };
 $("page-size").onchange = () => { state.size = Number($("page-size").value); load({ reset: true }); };
-document.addEventListener("visibilitychange", () => { if (!document.hidden) load({ poll: true }); });
-setInterval(() => { if (!document.hidden) load({ poll: true }); }, 15000);
 load();

@@ -55,6 +55,21 @@ node scripts/tarball-smoke.mjs
 
 Publishing requires the maintainer's authorization. Passing these checks does not publish the package.
 
+## GitHub Actions publishing
+
+`.github/workflows/release.yml` runs when a **stable GitHub Release is published** in `guilianerde/docnexus`. Draft releases, prereleases and ordinary commits do not trigger npm publication. Publishing a stable Release authorizes this workflow to publish its version to npm's `latest` tag.
+
+One-time setup in the npm package's [settings](https://www.npmjs.com/package/@rowansenne/docnexus/access): add a GitHub Actions Trusted Publisher with organization/user `guilianerde`, repository `docnexus`, workflow filename `release.yml` (without a directory), and no environment name. Allow direct `npm publish`. No `NPM_TOKEN` repository secret is required. Follow the current [npm trusted publishing instructions](https://docs.npmjs.com/trusted-publishers/), including the first-publication deadline for a new binding; configure it when the next version is ready to ship.
+
+For each release:
+
+1. Update `package.json`, both root versions in `package-lock.json`, the package-version test, changelog and current documentation; commit and push the release changes.
+2. Create a tag `v<package.json version>` on that commit, such as `v0.18.0`, and publish a GitHub Release for it. The workflow does not increment versions or create tags.
+3. The workflow runs the existing Node.js 22/24 CI, including native Postgres tests, evaluations, audit and installed-tarball smoke. If it passes, Node.js 24 checks tag/manifest/lockfile agreement, packs the release and publishes that tarball with OIDC and provenance.
+4. Check the workflow result and npm version/`latest` metadata. After fixing a transient failure, rerun the failed job. An already published version cannot be overwritten; release a new version for content changes.
+
+Only the publish job receives `id-token: write`. Release builds disable npm dependency caching. Keep the workflow filename aligned with the npm Trusted Publisher configuration.
+
 ## Audit snapshot — 2026-10-14
 
 The production audit passes the high/critical gate after upgrading the sharp override to `^0.35.5`. Five moderate findings remain in the `sprintf-js → roarr → global-agent → onnxruntime-node → transformers` dependency chain. The underlying [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) has no patched release; npm proposes a breaking Transformers upgrade. Evaluate that upgrade separately rather than treating this gate as a zero-vulnerability result.
