@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.20.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.21.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -34,6 +34,7 @@ docnexus/
   CONCEPTS.md           # 自动生成的文档与概念目录
   skills/               # 入口 skill 与五个工作流 skill
   drafts/<draft_id>/    # source.md、document.md、metadata.json、manifest.json
+  impacts/              # 跨页影响清单、处理状态与复核历史
   library/              # 整理后的当前知识，可人工阅读
   records/<id>/
     source.md           # 最近一次提供的原始材料
@@ -127,6 +128,19 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 捕获流程：`draft new` → 智能体写入三份产物 → `draft seal` → `draft preview --id <id>` → 用户审阅 → `document add --draft <id>`。预览返回封存正文、`document_hash` 和 `sealed_version`，普通正文和事实展开正文使用同一入口；seal 与入库结果也返回该封存版本。引用事实、目标或产物变化后需重新合并、封存与读取预览。预览交付、智能体声明审阅和用户授权分别记录，CLI 不新增必须读取才能入库的门禁。已有路径需要显式授权并使用 `--replace`。
 
 提炼时，`observed_at` 只取当前来源明确提供且带时区的观察/陈述时间；新来源未知时移除旧值，不用事件日期或保存时间补齐，历史事实的生效时间与出处独立保留。创建/更新还需交接跨页影响清单：列出实际全文读取的版本、更新/无需修改/冲突/未核对的判断及依据。事实引用继续自动联动，智能体检查周围解释和操作步骤；相关页各自走草稿、版本与授权流程，不承诺多页原子提交。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
+
+0.21.0 支持将清单持久化到 `docnexus/impacts/<impact_id>.json`。提炼时先在草稿目录保存 `impact.json` 附件；主文档确认入库后，补入其实际 ID/版本，使用 `impact save --file <附件路径>` 登记。两次保存独立执行；清单保存失败时保留附件并报告待登记，不重复入库主文档。重复提交相同输入会返回已有记录，不清空进度。详情及输入示例见[影响清单续办](skills/docnexus-library/references/impacts.md)。
+
+```bash
+./docnexus/node_modules/.bin/docnexus impact list
+./docnexus/node_modules/.bin/docnexus impact list --status pending
+./docnexus/node_modules/.bin/docnexus impact list --status needs_review
+./docnexus/node_modules/.bin/docnexus impact get --id <impact_id>
+./docnexus/node_modules/.bin/docnexus impact set --id <impact_id> --document <document_id> \
+  --status done --reason "已复读并核对相关页面" --revision <impact_revision>
+```
+
+`pending` 为待办，`done` 为已核对，`dismissed` 为有理由不再推进；`no_change` 判断初始为 done。来源或相关页的身份、版本、生成正文发生变化后，查询显示 `needs_review`，包括事实随时间到期而 record_version 不变的情况。使用 `impact get` 的最新 revision 确认状态，旧 revision 被拒绝；缺失页面不能标为 done。状态更新保留原判断和追加历史，不改知识正文，也不证明判断正确。清单随文本备份和 Git 克隆，不进入检索索引，reset 会清除它们。该能力不迁移旧聊天清单，旧材料需要复读后登记；工作区、草稿和投影格式不变。
 
 其他 skill 可为本次写入显式指定分类，跳过 DocNexus 的智能体分类。例如 code-review skill 准备好三份草稿产物后：
 

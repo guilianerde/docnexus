@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.20.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.21.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -34,6 +34,7 @@ docnexus/
   CONCEPTS.md           # generated document and concept directory
   skills/               # entry skill and five workflow skills
   drafts/<draft_id>/    # source.md, document.md, metadata.json, manifest.json
+  impacts/              # related-page impact checks, status and review history
   library/              # compiled current knowledge
   records/<id>/
     source.md           # latest supplied source material
@@ -122,6 +123,10 @@ Long documents and active facts are split with the local model's actual tokenize
 Capture: `draft new` → write three artifacts → `draft seal` → `draft preview --id <id>` → user review → `document add --draft <id>`. Preview returns ordinary or fact-expanded sealed Markdown, its `document_hash` and `sealed_version`; sealing and ingestion also return that sealed version. Changed facts, targets or artifacts require merging/resealing and a new preview read. Content delivery, declared review and user authorization are distinct; the CLI adds no mandatory read-before-ingest gate. Replacing an existing path requires explicit authorization and `--replace`.
 
 Extraction sets `observed_at` only from an explicit observation/statement timestamp with timezone in the current source. Omit an unknown replacement-source time instead of inheriting the previous value or substituting event/save dates; preserve historical fact dates and provenance independently. Creates/updates also hand off a related-page impact check: full-read versions, update/no-change/conflict/unverified decisions and evidence. Fact references continue to refresh automatically; the agent checks surrounding explanations and steps. Related edits use separate drafts, versions and authorizations, without an atomic multi-page commit. See [capture resolution](skills/docnexus-extract/references/capture-resolution.md).
+
+Version 0.21.0 persists these checks in `docnexus/impacts/<impact_id>.json`. Extraction first keeps an `impact.json` attachment in its draft directory. After authorized primary ingestion, read that document and add its actual source identity/version, then register the attachment with `impact save --file <input.json>`. These are separate operations: retain the attachment and report registration as pending if saving fails; do not re-ingest the primary. Repeated equal input returns the existing record without resetting progress. See [impact tracking](skills/docnexus-library/references/impacts.md) for the input format.
+
+Use `impact list`, `impact list --status pending`, `impact list --status needs_review` and `impact get --id <id>` to resume work. After rereading current evidence, use `impact set --id <id> --document <document_id> --status pending|done|dismissed --reason <basis> --revision <impact_revision>`. A stale revision is refused; missing pages cannot be marked done. Changes to source/target identities, versions or rendered content reopen even completed checks as `needs_review`, including effective-time fact changes. Original decisions and status history remain. These records do not edit knowledge, establish correctness or authorize related writes; keep them in text backups/Git, not the retrieval index. Reset removes them. Old chat handoffs require fresh assessment, not automatic import; workspace, draft and projection formats stay unchanged.
 
 A calling skill can supply an explicit category for this write and skip model classification. For example, after a code-review skill prepares the three draft artifacts:
 

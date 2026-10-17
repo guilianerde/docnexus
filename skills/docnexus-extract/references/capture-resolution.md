@@ -50,7 +50,7 @@ Existing `{{fact:id}}` references already follow effective replacements. Check s
 
 For each related page requiring edits, prepare a separate draft only within the user's existing scope and authorization. Each draft uses its own full read, base version, sealed preview and review. Do not write a related draft inside the primary draft's directory or silently ingest all candidates. These are independent commits, not an atomic multi-page operation; report completed and pending pages if interrupted. Recheck a page before acting when its version changes, reread/merge/reseal as needed, and revise the impact decision if the new content changes it.
 
-The impact check is agent-produced review context, not a new metadata/manifest field or a mechanically enforced whole-library consistency guarantee. It does not change the primary capture disposition or authorize cross-category writes.
+The impact check is agent-produced review context, not a new metadata/manifest field or a mechanically enforced whole-library consistency guarantee. It does not change the primary capture disposition or authorize cross-category writes. For create/update, retain it in the draft's `impact.json` and register it after primary ingestion using [impact tracking](../../docnexus-library/references/impacts.md); saving a document alone does not register its related-page work.
 
 ## Handoff and review
 

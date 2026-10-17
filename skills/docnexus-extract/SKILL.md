@@ -12,7 +12,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 ## Workflow
 
 1. Identify the original content the user selected: pasted text, a named project file, or the relevant conversation excerpt. Ask if it is ambiguous.
-2. Before allocating any draft, follow [capture resolution](references/capture-resolution.md): search/recall and read existing candidate pages, then decide `create`, `update`, `skip` or `conflict`. Hand off the decision, reason, checked document versions and proposed target. `skip` and `conflict` end without sealing or ingestion.
+2. Before allocating any draft, follow [capture resolution](references/capture-resolution.md): search/recall and read existing candidate pages, then decide `create`, `update`, `skip` or `conflict`. Hand off the decision, reason, checked document versions and proposed target. For create/update, retain the related-page impact check as a draft attachment following [impact tracking](../docnexus-library/references/impacts.md). `skip` and `conflict` end without sealing or ingestion.
 3. For `create` or `update`, allocate a draft (use a short topic slug):
 
 ```bash
@@ -76,6 +76,7 @@ decision_reason: <basis>
 checked_documents: <read ids, paths and record_version values>
 source_time: <explicit source quote and observed_at, or omission reason>
 impact_check: <scope, lookup failures and related-page decisions from capture resolution>
+impact_file: <impact.json inside this draft directory; pending registration after primary ingestion>
 preview: <draft_id, sealed_version and document_hash actually returned>
 title: <metadata.title>
 category: <metadata.category>
@@ -90,6 +91,6 @@ On failure report `result: draft_failed`, the failed step, the CLI error, and th
 ## Constraints
 
 - Never run `docnexus document add` here; ingestion belongs to `docnexus-ingest`.
-- Never write outside the draft directory returned by `draft new`, and never reuse a sealed or ingested draft for a different capture or target; allocate a new one. Same-target corrections and stale merges must be resealed and reviewed.
+- Never write outside the draft directory returned by `draft new`. Write the three knowledge artifacts to their returned paths and the impact check only to `impact.json` in that directory. Never reuse a sealed or ingested draft for a different capture or target; allocate a new one. Same-target corrections and stale merges must be resealed and reviewed. The impact attachment is reviewed context, not a sealed knowledge artifact.
 - Editing an artifact after sealing invalidates the draft until it is sealed again.
 - Never invent entities or relationships absent from the source.

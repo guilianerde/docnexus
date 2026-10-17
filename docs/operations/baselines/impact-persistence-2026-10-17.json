@@ -1,0 +1,445 @@
+{
+  "kind": "two-fresh-context-impact-persistence-forward-test",
+  "date": "2026-10-17",
+  "run_id": "2f483bda-30a2-4e8d-b4d8-118dce4e567f",
+  "scope": "Impact capture and later status resumption only; other agent-evaluation tasks were not run.",
+  "checks": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0
+  },
+  "rows": [
+    {
+      "name": "capture saves exactly the authorized primary document",
+      "passed": true
+    },
+    {
+      "name": "capture registers a durable impact record",
+      "passed": true
+    },
+    {
+      "name": "changed guide is detected before the fresh resume context",
+      "passed": true
+    },
+    {
+      "name": "resume discovers saved pending and needs-review work",
+      "passed": true
+    },
+    {
+      "name": "resume reads full current source and guide",
+      "passed": true
+    },
+    {
+      "name": "resume updates the existing record instead of saving another one",
+      "passed": true
+    },
+    {
+      "name": "original review and appended current guide acknowledgment survive",
+      "passed": true
+    },
+    {
+      "name": "unresolved conflict and historical review keep their original progress",
+      "passed": true
+    },
+    {
+      "name": "resume performs no canonical-memory writes",
+      "passed": true
+    },
+    {
+      "name": "only the deliberately changed guide differs from captured canonical versions",
+      "passed": true
+    }
+  ],
+  "observed_cli_calls": {
+    "capture": 21,
+    "resume": 11
+  },
+  "observed_failures": [
+    {
+      "argv": [
+        "impact",
+        "list",
+        "--status",
+        "pending,needs_review"
+      ],
+      "exit_code": 1,
+      "code": "invalid_params"
+    }
+  ],
+  "semantic_review": {
+    "reviewer": "parent agent",
+    "verdict": "passed_for_this_scenario",
+    "findings": [
+      "The capture agent followed project skills, persisted the primary update and a separate impact record; related current-guide work and the independent offline-use conflict remained pending, while the historical commit report remained unchanged.",
+      "The parent explicitly simulated a maintainer update to the guide between contexts. The second agent received the project/task prompt without the earlier chat, impact id, answer files or evaluator expectations.",
+      "The second agent discovered both pending and reopened work, reread current source/guide/rationale, and appended a guide acknowledgment to the same impact record without editing canonical knowledge.",
+      "The acknowledgment correctly addresses the documented refresh-before-expiry issue; it does not claim runtime implementation correctness or resolve the separate one-week-offline product requirement.",
+      "One comma-separated status query was refused and recovered via two valid queries. The raw error remains. Guidance was clarified afterward; that wording change was not separately forward-tested."
+    ]
+  },
+  "before_resume": {
+    "id": "impact_268344b36b779130",
+    "impact_path": "docnexus/impacts/impact_268344b36b779130.json",
+    "created_at": "2026-10-17T14:54:14.381Z",
+    "updated_at": "2026-10-17T14:54:14.381Z",
+    "source": {
+      "id": "doc_9235b42a9fa7b962",
+      "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279",
+      "file_path": "auth/policy.md",
+      "current_record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+    },
+    "scope": "读取概念索引、以刷新令牌及原事实 ID 搜索、相关语义 recall 和全库文档目录；完整读取鉴权主页面、客户端指南、安全设计理由及鉴权历史评审的 source/document/template/metadata/timeline。",
+    "limitations": "仅核对检索发现的鉴权相关页面，不保证全库依赖穷尽；facts list 的实体过滤返回空，主页面旧事实未设置 entity，已用无过滤事实列表和完整页面读取核实。只授权保存 auth/policy.md，其他页面的正文及分类均未授权修改。",
+    "pages": [
+      {
+        "decision": "update",
+        "evidence": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+        "file_path": "auth/client-guide.md",
+        "id": "doc_78b84787f986a304",
+        "proposed_action": "待用户另行授权后单独更新刷新步骤，使刷新发生在24小时有效期结束前；具体调度及容错要求仍待确认，保留现有事实引用，不复制事实定义。",
+        "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd",
+        "recorded_status": "pending",
+        "status": "pending",
+        "needs_review": false,
+        "current_record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "d630216ac229df9cb4be89f5f5d2f0805b36b7a46532cdb775d2fc0e017ffce6",
+              "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "conflict",
+        "evidence": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+        "file_path": "auth/security-rationale.md",
+        "id": "doc_c69c47565d077ce6",
+        "proposed_action": "保留原文，待产品确认24小时有效期与一周离线恢复要求如何协调、是否提供其他恢复机制或明确替代该需求后，再单独审阅授权更新。该局部冲突不撤销用户明确确认的TTL变更。",
+        "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "recorded_status": "pending",
+        "status": "pending",
+        "needs_review": false,
+        "current_record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "9949f58508096f94818e2210174a5c43c0a85aff5cc33aa0eb147c5ac8d7ff49",
+              "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "no_change",
+        "evidence": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+        "file_path": "reviews/auth-commit-a.md",
+        "id": "doc_ff71840255d4e11d",
+        "proposed_action": "保留历史报告原文。",
+        "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "recorded_status": "done",
+        "status": "done",
+        "needs_review": false,
+        "current_record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "done",
+            "target": {
+              "document_hash": "629328dd14856f59d6ad8db4711db763d5d989aef0457459849f8447780267c2",
+              "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b"
+            }
+          }
+        ]
+      }
+    ],
+    "revision": "659fd67205591e53f479220e0449e9cf9e0afad60afb04949e4df58bc7f8656d"
+  },
+  "resume_start": {
+    "id": "impact_268344b36b779130",
+    "impact_path": "docnexus/impacts/impact_268344b36b779130.json",
+    "created_at": "2026-10-17T14:54:14.381Z",
+    "updated_at": "2026-10-17T14:54:14.381Z",
+    "source": {
+      "id": "doc_9235b42a9fa7b962",
+      "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279",
+      "file_path": "auth/policy.md",
+      "current_record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+    },
+    "scope": "读取概念索引、以刷新令牌及原事实 ID 搜索、相关语义 recall 和全库文档目录；完整读取鉴权主页面、客户端指南、安全设计理由及鉴权历史评审的 source/document/template/metadata/timeline。",
+    "limitations": "仅核对检索发现的鉴权相关页面，不保证全库依赖穷尽；facts list 的实体过滤返回空，主页面旧事实未设置 entity，已用无过滤事实列表和完整页面读取核实。只授权保存 auth/policy.md，其他页面的正文及分类均未授权修改。",
+    "pages": [
+      {
+        "decision": "update",
+        "evidence": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+        "file_path": "auth/client-guide.md",
+        "id": "doc_78b84787f986a304",
+        "proposed_action": "待用户另行授权后单独更新刷新步骤，使刷新发生在24小时有效期结束前；具体调度及容错要求仍待确认，保留现有事实引用，不复制事实定义。",
+        "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd",
+        "recorded_status": "pending",
+        "status": "needs_review",
+        "needs_review": true,
+        "current_record_version": "905dcce6f947fdec9e72fcb6145d7e35fc8eda884c8589dfeee7bde3a2e347c0",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "d630216ac229df9cb4be89f5f5d2f0805b36b7a46532cdb775d2fc0e017ffce6",
+              "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "conflict",
+        "evidence": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+        "file_path": "auth/security-rationale.md",
+        "id": "doc_c69c47565d077ce6",
+        "proposed_action": "保留原文，待产品确认24小时有效期与一周离线恢复要求如何协调、是否提供其他恢复机制或明确替代该需求后，再单独审阅授权更新。该局部冲突不撤销用户明确确认的TTL变更。",
+        "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "recorded_status": "pending",
+        "status": "pending",
+        "needs_review": false,
+        "current_record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "9949f58508096f94818e2210174a5c43c0a85aff5cc33aa0eb147c5ac8d7ff49",
+              "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "no_change",
+        "evidence": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+        "file_path": "reviews/auth-commit-a.md",
+        "id": "doc_ff71840255d4e11d",
+        "proposed_action": "保留历史报告原文。",
+        "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "recorded_status": "done",
+        "status": "done",
+        "needs_review": false,
+        "current_record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "done",
+            "target": {
+              "document_hash": "629328dd14856f59d6ad8db4711db763d5d989aef0457459849f8447780267c2",
+              "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b"
+            }
+          }
+        ]
+      }
+    ],
+    "revision": "c07b2963d0da6f21d8c068f4412e271707b286981b3be64523cf1b0bf08f478d"
+  },
+  "final_impact": {
+    "id": "impact_268344b36b779130",
+    "impact_path": "docnexus/impacts/impact_268344b36b779130.json",
+    "created_at": "2026-10-17T14:54:14.381Z",
+    "updated_at": "2026-10-17T14:57:20.752Z",
+    "source": {
+      "id": "doc_9235b42a9fa7b962",
+      "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279",
+      "file_path": "auth/policy.md",
+      "current_record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+    },
+    "scope": "读取概念索引、以刷新令牌及原事实 ID 搜索、相关语义 recall 和全库文档目录；完整读取鉴权主页面、客户端指南、安全设计理由及鉴权历史评审的 source/document/template/metadata/timeline。",
+    "limitations": "仅核对检索发现的鉴权相关页面，不保证全库依赖穷尽；facts list 的实体过滤返回空，主页面旧事实未设置 entity，已用无过滤事实列表和完整页面读取核实。只授权保存 auth/policy.md，其他页面的正文及分类均未授权修改。",
+    "pages": [
+      {
+        "decision": "update",
+        "evidence": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+        "file_path": "auth/client-guide.md",
+        "id": "doc_78b84787f986a304",
+        "proposed_action": "待用户另行授权后单独更新刷新步骤，使刷新发生在24小时有效期结束前；具体调度及容错要求仍待确认，保留现有事实引用，不复制事实定义。",
+        "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd",
+        "recorded_status": "done",
+        "status": "done",
+        "needs_review": false,
+        "current_record_version": "905dcce6f947fdec9e72fcb6145d7e35fc8eda884c8589dfeee7bde3a2e347c0",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "页面引用 fact_eval_token_ttl 可自动跟随有效替代，但正文要求客户端每 6 天执行一次刷新；24 小时有效期下该操作会晚于过期时间。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "d630216ac229df9cb4be89f5f5d2f0805b36b7a46532cdb775d2fc0e017ffce6",
+              "record_version": "0dc51f1fb02f003c8745a1199c1f0b3904bab3843c6f83019a876db65e3ffbbd"
+            }
+          },
+          {
+            "at": "2026-10-17T14:57:20.752Z",
+            "reason": "已完整复核当前鉴权约定及客户端指南：主策略有效事实为自2026-10-01生效的24小时TTL，当前客户端指南保留原事实引用并解析到该有效替代，正文已改为24小时届满前完成刷新、失败则重新认证且禁止依赖过期凭据。原每6天刷新造成的过期风险已由维护者更新消除，本次仅记录核对结论，未修改知识正文。安全设计理由的一周离线恢复要求冲突仍未解决并保留pending。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "done",
+            "target": {
+              "document_hash": "ca93bf7bc2480167f004d3a449a154b1c1b3c205f9af642a22a0ce60ffef7a48",
+              "record_version": "905dcce6f947fdec9e72fcb6145d7e35fc8eda884c8589dfeee7bde3a2e347c0"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "conflict",
+        "evidence": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+        "file_path": "auth/security-rationale.md",
+        "id": "doc_c69c47565d077ce6",
+        "proposed_action": "保留原文，待产品确认24小时有效期与一周离线恢复要求如何协调、是否提供其他恢复机制或明确替代该需求后，再单独审阅授权更新。该局部冲突不撤销用户明确确认的TTL变更。",
+        "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "recorded_status": "pending",
+        "status": "pending",
+        "needs_review": false,
+        "current_record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "本次用户明确将有效期改为24小时；页面则写明7天用于支持一周离线，且离线一周仍能恢复登录是已确认且未授权撤销的产品要求。此次TTL替代未授权撤销或改写该独立需求。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "pending",
+            "target": {
+              "document_hash": "9949f58508096f94818e2210174a5c43c0a85aff5cc33aa0eb147c5ac8d7ff49",
+              "record_version": "4f4fc348bac3ea94985fdfda3765c55cfa4675c78cd431776ec871283281b2e4"
+            }
+          }
+        ]
+      },
+      {
+        "decision": "no_change",
+        "evidence": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+        "file_path": "reviews/auth-commit-a.md",
+        "id": "doc_ff71840255d4e11d",
+        "proposed_action": "保留历史报告原文。",
+        "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "recorded_status": "done",
+        "status": "done",
+        "needs_review": false,
+        "current_record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b",
+        "history": [
+          {
+            "at": "2026-10-17T14:54:14.381Z",
+            "reason": "该页仅描述提交 a1b2c3 当时的7天有效期及每6天刷新，明确不是当前操作指南；属于历史评审，未声明当前策略。",
+            "source": {
+              "document_hash": "ce90e89ed8d5e33fa47ce9db72a54a8ba94c0b79fa0ebfdd849cff9e3c7b6d5e",
+              "record_version": "37f383f4c510ea6486e2df4f1de4acd6dd652c82e07bdf6aae85cea391be3279"
+            },
+            "status": "done",
+            "target": {
+              "document_hash": "629328dd14856f59d6ad8db4711db763d5d989aef0457459849f8447780267c2",
+              "record_version": "7b62c1d167e3d4d43d069a73a2fbb4bae78731d309b2c48372aa39a410db363b"
+            }
+          }
+        ]
+      }
+    ],
+    "revision": "cd9421656280f89817e740d866cb4a14a936f2117bae87da58d6243ce6b7a564"
+  },
+  "artifacts": {
+    "archive": "impact-persistence-2026-10-17.raw.json.gz",
+    "sha256": "dbc3fd21fb8c3a285d662c1a759cd111ced4ab57675e1e66318b867bc59a5ef9",
+    "encoding": "gzip of a JSON mapping original filenames to their exact UTF-8 contents",
+    "files": [
+      {
+        "path": "run.json",
+        "bytes": 6586,
+        "sha256": "8af04cd731f7286f1d8e36a788035e527a4a05d38769374b4f5040e310dff8b6"
+      },
+      {
+        "path": "impact-only-prompt.txt",
+        "bytes": 1295,
+        "sha256": "b93b339d9e22e5ebf8dcaf45ab1d84355ad65a0f6eb27a2c5c434d818a143f88"
+      },
+      {
+        "path": "impact-resume-prompt.txt",
+        "bytes": 1197,
+        "sha256": "604d76e0465aa001b70fa06f2626b091fc5b67b2bf91156aabb0ebcc298eaca8"
+      },
+      {
+        "path": "events.jsonl",
+        "bytes": 572328,
+        "sha256": "a1f75dd569b2c787a923219d2420dc37b3474028962829f38a773ea28889d194"
+      },
+      {
+        "path": "impact-capture-answer.md",
+        "bytes": 7265,
+        "sha256": "3edc2f38a5ac32c739e25161fb3850ab8684288e206216a4559b88c516871c17"
+      },
+      {
+        "path": "impact-resume-answer.md",
+        "bytes": 4306,
+        "sha256": "ea0ac51557fbed5b557ba83f046dfbcfb410baf4a57e49a3b52bbc82a0039f55"
+      },
+      {
+        "path": "impact-before-resume.json",
+        "bytes": 7683,
+        "sha256": "e07cf18e86db2406c05750ca1c7710490baa410813a07ccf9779a8c604e0c4b8"
+      },
+      {
+        "path": "impact-resume-start.json",
+        "bytes": 6102,
+        "sha256": "51e8cc68f5af7cf6a3c0705cb47fd17763a90748a185196fbd4a5196e26675b8"
+      },
+      {
+        "path": "final-impact.json",
+        "bytes": 6158,
+        "sha256": "c2075e6a8f7ef856b9337556fe1f9ffdba5450f53f53d29a7e61aba8ceeabbca"
+      }
+    ]
+  },
+  "limits": [
+    "Two fresh contexts over one synthetic temporary project, not a broad accuracy or native host auto-activation benchmark.",
+    "The observer records CLI calls and state, not every surrounding tool error or whether the model understood content; capture answer preserves self-reported tooling failures separately.",
+    "Primary ingestion and impact registration are separate writes; the draft attachment supports resumption, but no atomicity across the two commands is claimed.",
+    "Revisions and rendered hashes detect context drift; semantic completeness, authorization and actual resolution remain review judgments."
+  ]
+}

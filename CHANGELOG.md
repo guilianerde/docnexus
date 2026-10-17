@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0 — 2026-10-17
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no data migration; package-version synchronization refreshes installed skills.
+
+- Persist related-page impact work as independent text records with source/read versions, original decisions and appended status history. Add `impact save/list/get/set`, idempotent capture, stale-context review flags (including fact-time changes) and revision-guarded acknowledgments. Keep draft attachments resumable without claiming atomicity with primary ingestion; workspace/draft/projection formats are unchanged.
+- Integrate impact commands with opt-in local usage recording using only pseudonyms and counts, excluding review evidence and reasons.
+
 ## 0.20.0 — 2026-10-17
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces can upgrade without reset or data migration. Skills refresh on the next workspace command after the package version changes; `skills sync` can refresh them explicitly.

@@ -1,6 +1,19 @@
 # Release Checklist
 
-## Local verification
+## Default push and release workflow
+
+Follow the project instructions in the repository-root `AGENTS.md`. Reuse successful checks from development; do not repeat the full local verification suite just because a push or release was requested.
+
+- **Git push only:** inspect the current diff, run `git diff --check`, commit the task's files and push. Do not bump versions or publish a package.
+- **npm release:** align version metadata, the version test, changelog and affected documentation; commit, push, tag that commit and publish a stable GitHub Release. Follow the release workflow through npm publication and verify the official registry's version and `latest` tag.
+
+The release workflow runs the complete Node.js 22/24 checks before its publish job. Do not wait for ordinary push CI before creating the Release, run the entire suite again locally, or publish a second time from the terminal. Run additional local checks only for changed behavior that lacks verification, failures or unresolved concerns. For documentation-only changes, inspect content, links and affected source excerpts.
+
+If npm reports processing or temporarily returns 404 after a successful upload, wait about 30 seconds between official version/latest checks. This is not a reason to rebuild, republish or increment the version again.
+
+## Optional local diagnostics
+
+Use the relevant commands below when investigating a failure or explicitly validating a change. They are not mandatory pre-push steps.
 
 ```bash
 npm ci
@@ -14,6 +27,10 @@ npm pack --dry-run
 npm run audit:prod
 node scripts/tarball-smoke.mjs
 ```
+
+## CI coverage and review reference
+
+The detailed items below document regression coverage and compatibility expectations. Consult the relevant items when changing that area; do not turn this reference into a repeated manual release gate.
 
 - [ ] CI passes on supported Node.js 22 and 24.
 - [ ] Runtime dependencies and lockfile contain the local graph/embedding stack; the production audit has no unaccepted high/critical findings.

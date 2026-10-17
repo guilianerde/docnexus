@@ -112,6 +112,7 @@ export async function recordUsageFeedback(root: string, input: { event?: string;
 const actions: Record<string, readonly string[]> = {
   search: [], recall: [], doctor: [], status: [], concepts: [],
   document: ["list", "query", "get", "render", "classify", "sync", "delete", "add"],
+  impact: ["save", "list", "get", "set"],
   draft: ["new", "seal", "list", "discard"], facts: ["list"], index: ["status", "sync", "rebuild"],
   graph: ["audit", "repair"], embeddings: ["install"], metadata: ["validate"], skills: ["sync", "link"]
 };
@@ -162,6 +163,12 @@ export async function observeUsage<T>(root: string, argv: string[], operation: (
 
 function summarize(event: UsageEvent, output: any, digest: (value: string) => string): void {
   if (!output || typeof output !== "object") return;
+  if (typeof output.id === "string" && /^impact_[a-f0-9]{16}$/.test(output.id)) event.impact_id = digest(output.id);
+  if (Array.isArray(output.impacts)) event.impact_count = output.impacts.length;
+  if (Array.isArray(output.pages)) {
+    event.impact_pages = output.pages.length;
+    event.impact_needs_review = output.pages.filter((page: any) => page.needs_review).length;
+  }
   if (Array.isArray(output.results)) {
     event.result_count = output.results.length;
     event.results = output.results.slice(0, 10).map((result: any) => ({ document_id: digest(result.document_ref?.document_id ?? result.id),

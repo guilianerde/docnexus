@@ -37,6 +37,7 @@ import { withProjectLock } from "./project-lock.js";
 import { queryDocuments } from "./document-query.js";
 import { startDocumentViewer } from "./viewer.js";
 import { configureUsage, exportUsage, observeUsage, recordUsageFeedback, usageStatus } from "./usage.js";
+import { getImpact, listImpacts, saveImpact, setImpactStatus } from "./impacts.js";
 
 export interface RunCliDependencies {
   doctor?: typeof runDoctor;
@@ -97,7 +98,7 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
     return json(await activeDependencies.doctor(projectRoot));
   }
 
-  if (["facts", "index", "graph", "embeddings", "search", "recall", "document", "draft", "metadata", "status", "skills", "concepts"].includes(command)) {
+  if (["facts", "index", "graph", "embeddings", "search", "recall", "document", "draft", "impact", "metadata", "status", "skills", "concepts"].includes(command)) {
     await withProjectLock(projectRoot, async () => {
       await requireInitializedProject(projectRoot);
       // Workspace skills follow the installed package; reads use text records directly.
@@ -195,6 +196,22 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
       throw new DocNexusError("invalid_params", "draft discard requires --id");
     }
     return json(await discardDraft(projectRoot, { draftId: options.id, force }));
+  }
+
+  if (command === "impact") {
+    const allowed = { save: ["--file"], list: ["--status"], get: ["--id"], set: ["--id", "--document", "--status", "--reason", "--revision"] };
+    if (!Object.hasOwn(allowed, subcommand)) throw new DocNexusError("invalid_params", "Usage: docnexus impact save|list|get|set");
+    for (let index = 0; index < rest.length; index += 2) {
+      if (!allowed[subcommand as keyof typeof allowed].includes(rest[index])) throw new DocNexusError("invalid_params", "unknown impact option");
+    }
+    const options = parseOptions(rest);
+    if (subcommand === "list") return json(await listImpacts(projectRoot, options.status));
+    if (subcommand === "save" && options.file) return json(await saveImpact(projectRoot, JSON.parse(await readProjectFile(projectRoot, options.file))));
+    if (subcommand === "get" && options.id) return json(await getImpact(projectRoot, options.id));
+    if (subcommand === "set" && options.id && options.document && options.status && options.reason && options.revision) {
+      return json(await setImpactStatus(projectRoot, { id: options.id, document: options.document, status: options.status, reason: options.reason, revision: options.revision }));
+    }
+    throw new DocNexusError("invalid_params", "missing required impact options; use impact save --file, get --id, or set --id --document --status --reason --revision");
   }
 
   if (command === "metadata" && subcommand === "validate") {
@@ -358,6 +375,12 @@ Capture (extract -> seal -> ingest)
   docnexus document add --draft <draft_id> [--replace]
   docnexus draft list [--status open|ready|ingested|invalid]
   docnexus draft discard --id <draft_id> --force
+
+Related-page impact tracking
+  docnexus impact save --file <project-relative-input.json>
+  docnexus impact list [--status pending|done|dismissed|needs_review]
+  docnexus impact get --id <impact_id>
+  docnexus impact set --id <impact_id> --document <document_id> --status pending|done|dismissed --reason <basis> --revision <hash>
 
 Find and read
   docnexus search "local memory" --limit 5 [--category <name>]

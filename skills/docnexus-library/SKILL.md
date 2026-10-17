@@ -1,6 +1,6 @@
 ---
 name: docnexus-library
-description: Browse or query DocNexus documents, classify and reorganize their categories using project context and existing knowledge, adopt reviewed edits, delete managed documents, or discard drafts.
+description: Browse DocNexus documents and saved related-page impact work, resume pending checks, classify documents, adopt reviewed edits, delete managed documents, or discard drafts.
 ---
 
 # DocNexus Library
@@ -8,6 +8,8 @@ description: Browse or query DocNexus documents, classify and reorganize their c
 Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
 
 Browse and curate what DocNexus holds.
+
+For saved related-page work, follow [impact tracking](references/impacts.md): list pending and needs-review pages, read current evidence, then acknowledge progress with a fresh impact revision. Status updates do not change documents or authorize edits.
 
 ## Read
 
@@ -78,6 +80,8 @@ Deletion is refused if it would leave a Markdown fact reference, another fact's 
 ## Discard a draft
 
 Drafts are disposable but may hold unsaved work. Confirm with the user, then:
+
+For ingested drafts with `impact.json`, confirm its impact check was registered before discarding the attachment. A successful primary ingestion does not prove impact registration; retain/report pending attachments until saved or the user explicitly chooses to discard that work.
 
 ```bash
 ./docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force

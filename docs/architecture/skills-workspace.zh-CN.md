@@ -31,6 +31,10 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 创建/更新还需提供 `impact_check`，记录查找范围、限制及相关页的 ID/路径、实际读取版本、update/no_change/conflict/unverified、证据和建议。未全文读取不能标为不受影响，历史事件报告通常保留原貌，事实引用联动后需核对周围解释。清单属于智能体交接信息，不进入 metadata 或 manifest，不保证全库覆盖；相关页分别封存、审阅和保存，版本变化后复读合并，不承诺多页原子性。
 
+开发版通过 `impact save/list/get/set` 将交接登记到 `docnexus/impacts/<impact_id>.json`（记录 schema 1）。输入包含已保存主文档的 source id/record_version、scope/limitations 和相关页判断。草稿中的 `impact.json` 附件不参与知识封存；主文档入库后再填写实际 source 版本并登记，失败可通过保留的附件续办，两次操作不构成同一事务。清单 ID 按规范输入哈希生成，重复保存保留进度；每个单文件写入使用项目锁和 fsync 原子替换。
+
+清单保留原始判断，状态核对追加历史及当时 source/target 的 record_version 和生成正文哈希。读取时从当前真源构建快照；身份、版本或有效事实造成的正文变化会派生 `needs_review`。`impact set` 的 revision 同时约束记录和关联正文上下文，拒绝并发旧核对；状态更新不编辑知识，不构成语义正确或授权证明。相关页独立保存后需要重新读取清单，再标记结果。清单随 Git/文本克隆，不进入向量或关键词索引，不放在可丢弃的 `.runtime/`；reset 按工作区清理它们。格式 6 工作区按需创建 impacts，无需 reset。
+
 | 判定 | 后续 |
 | --- | --- |
 | update | 同主体同用途有新知识/出处，沿用旧路径，保留有效知识并合并完整正文 |

@@ -15,6 +15,8 @@ export const errorDefinitions = {
   target_changed: { retryable: false, kind: "review", message: "Reread the current document, metadata and timeline; merge before resealing with that read's record_version.", command: ["document", "query", "--all"] },
   document_revision_changed: { retryable: false, kind: "read", message: "Discard old pages and restart the document query from page 1.", command: ["document", "query", "--page", "1"] },
   document_not_found: { retryable: false, kind: "read", message: "List documents and choose a current identity.", command: ["document", "list"] },
+  impact_not_found: { retryable: false, kind: "read", message: "List saved impact records and choose an existing identity.", command: ["impact", "list"] },
+  impact_changed: { retryable: false, kind: "read", message: "Reread the impact and affected source/documents, then reconsider the status change.", command: ["impact", "list"] },
   draft_invalid: { retryable: false, kind: "review", message: "Inspect the draft and current target; repair, merge and review before sealing again.", command: ["draft", "list"] },
   draft_changed: { retryable: false, kind: "review", message: "Review the changed draft and current target before resealing." },
   preview_changed: { retryable: false, kind: "review", message: "Read the current referenced facts, reseal, and review the new preview." },

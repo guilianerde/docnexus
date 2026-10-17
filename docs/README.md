@@ -1,6 +1,6 @@
 # DocNexus 文档中心
 
-当前文档描述 0.20.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及可选独立知识 Git 仓库与单分支检查、独立 npm 安装目录、写入前相似知识判定、调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、手动刷新浏览页和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0200--2026-10-17)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
+当前文档描述 0.21.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及可选独立知识 Git 仓库与单分支检查、独立 npm 安装目录、写入前相似知识判定、跨页影响清单持久化与续办、调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、手动刷新浏览页和扩展检索评估。版本变更见 [Changelog](../CHANGELOG.md#0210--2026-10-17)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
 
 | 主题 | 文档 |
 | --- | --- |
@@ -17,6 +17,7 @@
 | 智能体协议 | [结构化错误与诊断契约](./operations/agent-protocol.zh-CN.md) |
 | 证据交付 | [范围、预算、事实与时间](./architecture/evidence-delivery.zh-CN.md) |
 | 智能体验收 | [独立上下文、调用观测与结果审阅](./operations/agent-evaluation.zh-CN.md) |
+| 影响清单 | [持久化、待办续办与复核状态](../skills/docnexus-library/references/impacts.md) |
 | 使用观察 | [本地记录、匿名指标、显式反馈与单文件导出](./operations/usage-observation.zh-CN.md) |
 | 展示接口 | [全量/分页文档查询、分类与本地浏览页](./architecture/document-query.zh-CN.md) |
 

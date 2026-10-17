@@ -34,6 +34,8 @@
 
 命令记录覆盖主要 CLI 命令及浏览页 `/api/documents` 的查询；跳过 `init`、`reset`、`protocol` 和采集管理命令本身。查询适配脚本转调 CLI，因此也被记录。直接使用 Node 库函数、智能体直接读文件、其他程序的操作不在覆盖范围内。
 
+开发版的 `impact save/list/get/set` 也接入同一可选采集器，仅增加 `impact_id`（项目密钥 HMAC）、`impact_count`、`impact_pages`、`impact_needs_review` 等匿名标识和数量。影响清单的路径、来源、文档/清单版本、scope、证据、行动建议、处理理由和历史内容不进入导出。原始影响记录保存在可备份的 `impacts/`，与匿名使用日志用途不同。
+
 | 字段 | 含义与用途 |
 | --- | --- |
 | `command`、`action`、`surface` | 固定白名单的命令/子命令及 CLI/浏览页入口 |
