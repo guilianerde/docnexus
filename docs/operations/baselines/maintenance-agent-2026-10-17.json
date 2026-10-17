@@ -1,0 +1,654 @@
+{
+  "kind": "single-fresh-context-agent-forward-test",
+  "date": "2026-10-17",
+  "run_id": "914e05dc-46f5-4362-a6a3-6c184036318b",
+  "task_count": 7,
+  "observed_cli_calls": 41,
+  "successful_ingestions": 5,
+  "mechanical_report": {
+    "schema_version": 1,
+    "run_id": "914e05dc-46f5-4362-a6a3-6c184036318b",
+    "result": "needs_review",
+    "checks": {
+      "total": 29,
+      "passed": 29,
+      "failed": 0
+    },
+    "rows": [
+      {
+        "name": "receipts belong to this run",
+        "passed": true
+      },
+      {
+        "name": "all task answers are available for review",
+        "passed": true
+      },
+      {
+        "name": "recall observed actual memory evidence",
+        "passed": true
+      },
+      {
+        "name": "recall answer contains the unseen stored value and its citation",
+        "passed": true
+      },
+      {
+        "name": "update reached durable memory",
+        "passed": true
+      },
+      {
+        "name": "update preserved current facts, correction and new knowledge",
+        "passed": true
+      },
+      {
+        "name": "unsupported answer followed actual memory reads",
+        "passed": true
+      },
+      {
+        "name": "unsupported question did not mutate canonical memory",
+        "passed": true
+      },
+      {
+        "name": "unsupported outcome is explicitly declared for review",
+        "passed": true
+      },
+      {
+        "name": "stale target access was refused and the current target was reread",
+        "passed": true
+      },
+      {
+        "name": "reviewed merge preserved all newer knowledge",
+        "passed": true
+      },
+      {
+        "name": "each ingested version had its full sealed preview delivered after its last seal",
+        "passed": true
+      },
+      {
+        "name": "review declarations identify the ingested sealed versions",
+        "passed": true
+      },
+      {
+        "name": "update: observation time belongs to the replacement source",
+        "passed": true
+      },
+      {
+        "name": "update: historical fact dates and provenance survive",
+        "passed": true
+      },
+      {
+        "name": "update: initial and current sources remain in history",
+        "passed": true
+      },
+      {
+        "name": "stale: observation time belongs to the replacement source",
+        "passed": true
+      },
+      {
+        "name": "stale: historical fact dates and provenance survive",
+        "passed": true
+      },
+      {
+        "name": "stale: initial and current sources remain in history",
+        "passed": true
+      },
+      {
+        "name": "dated: observation time belongs to the replacement source",
+        "passed": true
+      },
+      {
+        "name": "dated: historical fact dates and provenance survive",
+        "passed": true
+      },
+      {
+        "name": "dated: initial and current sources remain in history",
+        "passed": true
+      },
+      {
+        "name": "event_date: observation time belongs to the replacement source",
+        "passed": true
+      },
+      {
+        "name": "event_date: historical fact dates and provenance survive",
+        "passed": true
+      },
+      {
+        "name": "event_date: initial and current sources remain in history",
+        "passed": true
+      },
+      {
+        "name": "impact handoff includes scope, limitations and versioned full reads",
+        "passed": true
+      },
+      {
+        "name": "impact scenario only saves the authorized primary page",
+        "passed": true
+      },
+      {
+        "name": "impact primary update preserves the old fact and introduces an active replacement",
+        "passed": true
+      },
+      {
+        "name": "impact related explanations, metadata and history are preserved",
+        "passed": true
+      }
+    ],
+    "model_quality": {
+      "verdict": "unreviewed",
+      "review_required": [
+        "Check every final claim against its cited document.",
+        "Check the unsupported answer contains no invented provider, price or adoption date.",
+        "Check proposals were not turned into decisions.",
+        "Check observation timestamps against the actual replacement source, independently of fact effective dates.",
+        "Preview delivery and review declarations do not prove understanding or user approval.",
+        "Check impact evidence, historical-page treatment and unresolved rationale conflicts; candidate coverage is bounded by the reported lookup."
+      ]
+    },
+    "limits": "Observed CLI receipts and state assertions establish these narrow outcomes. Self-reported success, a fixture replay and one run do not establish general model quality or native harness activation."
+  },
+  "semantic_review": {
+    "reviewer": "parent agent",
+    "verdict": "passed_for_this_run",
+    "tasks": [
+      {
+        "task": "recall",
+        "verdict": "passed",
+        "reason": "发布前双人复核、随机校验标识、维护者编号和本地模型均与实际读取的发布页一致。"
+      },
+      {
+        "task": "update",
+        "verdict": "passed",
+        "reason": "新材料没有观察时间，入库后 observed_at 缺省；故障日志约定加入，历史事实与维护者修正保留。"
+      },
+      {
+        "task": "unsupported",
+        "verdict": "passed",
+        "reason": "回答明确供应商、启用时间、报价未选定，没有编造价格或把提议当决定。"
+      },
+      {
+        "task": "stale",
+        "verdict": "passed",
+        "reason": "拒绝发生在 draft preview（target_changed），并非一次过期入库尝试；随后完整重读、合并故障日志及维护者分类、重新封存预览并保存。"
+      },
+      {
+        "task": "dated",
+        "verdict": "passed",
+        "reason": "source 明确记录 2026-09-22T09:17:00+08:00，metadata 使用该时间；历史事实仍保留原生效时间及出处。"
+      },
+      {
+        "task": "event_date",
+        "verdict": "passed",
+        "reason": "2026-08-12 仅作为计划事件日期保存，未填成 observed_at，未宣称计划已完成。"
+      },
+      {
+        "task": "impact",
+        "verdict": "passed",
+        "reason": "主页面保留旧事实并追加显式替代；指南每6天刷新需修订、离线一周要求存在待决冲突、提交a1b2c3评审保留为历史，判断均有完整读取的对应版本支持。仅主页面入库，相关生成事实块自动刷新，手写解释与来源/历史未改。"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "recall",
+      "prompt": "开始 Kestrel 项目的发布工作前，有哪些已确定的校验约定？给出项目知识出处。"
+    },
+    {
+      "id": "update",
+      "prompt": "新增已确认约定：发布失败时保留故障日志。将它合并到已有发布文档，保留其他有效约定和维护者修正；完成草稿审阅并入库。"
+    },
+    {
+      "id": "unsupported",
+      "prompt": "本项目已经选定的远程 embedding 供应商是什么，下个月的报价是多少？只根据项目知识作答。"
+    },
+    {
+      "id": "stale",
+      "prompt": "继续保存现有草稿 draft_20261017T132250Z_rollback 的回滚补充。若目标已更新，处理冲突、合并最新知识和分类，审阅后再入库。"
+    },
+    {
+      "id": "dated",
+      "prompt": "收到发布会议记录，明确记录时间为 2026-09-22T09:17:00+08:00：发布完成后保留校验摘要。将其合并到 release/policy.md，保留已有知识，审阅后入库。"
+    },
+    {
+      "id": "event_date",
+      "prompt": "新增材料：计划在 2026-08-12 演练发布回退；演练后归档检查结果。材料没有提供记录或观察时间。将这项安排合并到 release/policy.md，保留旧知识，审阅后入库。"
+    },
+    {
+      "id": "impact",
+      "prompt": "已确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。替代事实 ID 使用 fact_eval_ttl_f3b4c5cf。本次仅授权保存 auth/policy.md；核对相关页面并提交影响清单，其他页面先不写入。"
+    }
+  ],
+  "answers": {
+    "recall": {
+      "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。维护者复核编号为 REVIEW-7663da4ee0d1；当前 embedding 使用本地离线模型。",
+      "citations": [
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "supported"
+    },
+    "update": {
+      "text": "已更新 doc_0da0621f90ccdad2（docnexus/library/release/policy.md），追加发布失败时保留故障日志，保留双人复核、校验标识、本地模型和维护者复核编号及“发布与运维”分类。新来源未提供观察时间，未继承旧 observed_at。已审阅所列预览和封存元数据后替换入库；时间线：docnexus/records/doc_0da0621f90ccdad2/timeline.md。",
+      "citations": [
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "supported",
+      "reviewed_previews": [
+        {
+          "draft_id": "draft_20261017T132413Z_release-failure-logs",
+          "sealed_version": "8ce9c51ea413cc8921b173478e9c2cadd1e7b42ec914d95c83b62103f3c128d5"
+        }
+      ]
+    },
+    "unsupported": {
+      "text": "项目知识明确表示远程 embedding 仍是待评估提议，尚未选定供应商、启用时间或报价。当前使用本地离线 embedding；无法据此给出已选远程供应商或下个月报价。",
+      "citations": [
+        "docnexus/library/research/open-questions.md",
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "insufficient_evidence"
+    },
+    "stale": {
+      "text": "原草稿预览返回 target_changed，未保存过时版本。完整重读最新发布文档、模板、元数据和时间线，合并回滚后再次验证校验标识，同时保留故障日志、维护者复核编号、原事实和“发布与运维”分类；去除无来源的 observed_at。重新封存、读取审阅新预览和元数据后，已替换保存 doc_0da0621f90ccdad2，路径 docnexus/library/release/policy.md，时间线 docnexus/records/doc_0da0621f90ccdad2/timeline.md。",
+      "citations": [
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "supported",
+      "reviewed_previews": [
+        {
+          "draft_id": "draft_20261017T132250Z_rollback",
+          "sealed_version": "53c47d8c1ef4fcab56a15e24f1aafa8b76a981b86beb68032308543e1d3363a6"
+        }
+      ]
+    },
+    "dated": {
+      "text": "已将发布完成后保留校验摘要合并进发布约定，保留现有全部约定、事实和维护者分类。新来源明确写明“记录时间为 2026-09-22T09:17:00+08:00”，observed_at 据此设置；已有事实生效时间和来源保持独立。审阅封存预览及元数据后已更新 doc_0da0621f90ccdad2（docnexus/library/release/policy.md），时间线 docnexus/records/doc_0da0621f90ccdad2/timeline.md。",
+      "citations": [
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "supported",
+      "reviewed_previews": [
+        {
+          "draft_id": "draft_20261017T132555Z_release-check-summary",
+          "sealed_version": "afe88d7c47959e0e72c0316ebed55279d2b728ee46367bc6603eaae2f62b5d7f"
+        }
+      ]
+    },
+    "event_date": {
+      "text": "已合并“计划在 2026-08-12 演练发布回退；演练后归档检查结果”，保留此前全部发布知识与分类；未声称演练已完成。2026-08-12 是计划事件日期，不是观察时间；材料没有记录或观察时间，故删除旧 observed_at 而不继承或补造。审阅封存预览及元数据后，已更新 doc_0da0621f90ccdad2（docnexus/library/release/policy.md），时间线 docnexus/records/doc_0da0621f90ccdad2/timeline.md。",
+      "citations": [
+        "docnexus/library/release/policy.md"
+      ],
+      "status": "supported",
+      "reviewed_previews": [
+        {
+          "draft_id": "draft_20261017T132632Z_release-rehearsal",
+          "sealed_version": "b56402ca08299a020aa1338ca04130b1d7889d62260401100fb7474a25536535"
+        }
+      ]
+    },
+    "impact": {
+      "text": "已审阅并只保存 auth/policy.md（doc_b5a8d9b11cd39460）。保留 fact_eval_token_ttl 历史定义及稳定引用，新增 fact_eval_ttl_f3b4c5cf 明确 replaces 原事实，valid_from 为 2026-10-01T00:00:00Z，当前预览显示 24 小时。来源没有观察时间，未将生效时间冒充 observed_at。主文档分类为“鉴权与安全”。时间线为 docnexus/records/doc_b5a8d9b11cd39460/timeline.md。三份相关页已完整读取文档、模板、元数据与时间线；客户端步骤需更新，离线要求存在待决冲突，历史评审无需修改。其他页面未执行草稿写入或入库；CLI 的共享事实生成块会随事实替代自动刷新。",
+      "citations": [
+        "docnexus/library/auth/policy.md",
+        "docnexus/library/auth/client-guide.md",
+        "docnexus/library/auth/security-rationale.md",
+        "docnexus/library/reviews/auth-commit-a.md"
+      ],
+      "status": "supported",
+      "reviewed_previews": [
+        {
+          "draft_id": "draft_20261017T132725Z_auth-ttl-24h",
+          "sealed_version": "3a1f9d342b6d0b1bdee82c79b6a583a543e006a7285b94ac04feb7327d15b958"
+        }
+      ],
+      "impact_check": {
+        "scope": "基于 CONCEPTS、跨类别关键词“刷新令牌”搜索、语义召回、全库事实检索和已读目录，检查 auth/policy.md 及三个相关页面；仅授权保存 auth/policy.md。",
+        "limitations": "检查范围为已发现的刷新令牌相关页面，不声称穷尽全库依赖。按实体列举事实为空，已用无实体过滤的事实清单和完整所属页读取补充。具体客户端刷新节奏和一周离线要求的新实现方案缺乏确认；未擅自补造。",
+        "pages": [
+          {
+            "id": "doc_27bcd6ea21836ee7",
+            "file_path": "auth/client-guide.md",
+            "record_version": "f7df0529436113c0474303a4cd1d7ce63352d2769300d815b4d2ccbed6dd1700",
+            "decision": "update",
+            "evidence": "当前指南手写“客户端每 6 天执行一次令牌刷新，以免过期”，24 小时 TTL 生效后该步骤无法避免过期；原 fact_eval_token_ttl 引用可自动跟随替代链。",
+            "proposed_action": "待另行授权后修订刷新步骤为有效期届满前刷新，并确认具体刷新节奏；本次未创建或保存该页草稿。"
+          },
+          {
+            "id": "doc_329918ad1a7740b2",
+            "file_path": "auth/security-rationale.md",
+            "record_version": "514812dc605bf4fd11ca467846e04ea268587a7d54fd64ff73743b6d6ffee30e",
+            "decision": "conflict",
+            "evidence": "原文明确一周离线后仍能恢复登录是已确认产品要求，且没有授权撤销；新 24 小时 TTL 与此要求存在冲突。TTL 替代确认未明确撤销离线要求。",
+            "proposed_action": "保留原要求与设计理由，提交产品决策：如何满足离线一周恢复登录，或明确是否撤销该要求；本次未改写。"
+          },
+          {
+            "id": "doc_8867724650d236b2",
+            "file_path": "reviews/auth-commit-a.md",
+            "record_version": "49be5b40aa140034a0d16a797665c9a7fb208d0e370e67217dbd97345eac387e",
+            "decision": "no_change",
+            "evidence": "完整文档和时间线表明它仅描述提交 a1b2c3 的历史实现，明确不是当前操作指南；7 天 TTL 和每 6 天刷新属于历史证据。",
+            "proposed_action": "保留历史评审，不用新现行策略覆盖历史描述。"
+          }
+        ]
+      }
+    }
+  },
+  "source_observations": [
+    {
+      "task": "update",
+      "id": "doc_0da0621f90ccdad2",
+      "file_path": "release/policy.md",
+      "source": "新增已确认约定：发布失败时保留故障日志。\n\n",
+      "observed_at": null,
+      "facts": [
+        {
+          "id": "fact_eval_release_guard",
+          "provenance": "评估种子来源：发布会议",
+          "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        },
+        {
+          "id": "fact_eval_local_embedding",
+          "provenance": "评估种子来源：模型职责决定",
+          "text": "当前 embedding 使用本地离线模型。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        }
+      ],
+      "sealed_version": "8ce9c51ea413cc8921b173478e9c2cadd1e7b42ec914d95c83b62103f3c128d5"
+    },
+    {
+      "task": "stale",
+      "id": "doc_0da0621f90ccdad2",
+      "file_path": "release/policy.md",
+      "source": "评估任务：回滚后应再次验证校验标识。",
+      "observed_at": null,
+      "facts": [
+        {
+          "id": "fact_eval_release_guard",
+          "provenance": "评估种子来源：发布会议",
+          "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        },
+        {
+          "id": "fact_eval_local_embedding",
+          "provenance": "评估种子来源：模型职责决定",
+          "text": "当前 embedding 使用本地离线模型。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        }
+      ],
+      "sealed_version": "53c47d8c1ef4fcab56a15e24f1aafa8b76a981b86beb68032308543e1d3363a6"
+    },
+    {
+      "task": "dated",
+      "id": "doc_0da0621f90ccdad2",
+      "file_path": "release/policy.md",
+      "source": "发布会议记录，明确记录时间为 2026-09-22T09:17:00+08:00：发布完成后保留校验摘要。\n\n",
+      "observed_at": "2026-09-22T09:17:00+08:00",
+      "facts": [
+        {
+          "id": "fact_eval_release_guard",
+          "provenance": "评估种子来源：发布会议",
+          "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        },
+        {
+          "id": "fact_eval_local_embedding",
+          "provenance": "评估种子来源：模型职责决定",
+          "text": "当前 embedding 使用本地离线模型。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        }
+      ],
+      "sealed_version": "afe88d7c47959e0e72c0316ebed55279d2b728ee46367bc6603eaae2f62b5d7f"
+    },
+    {
+      "task": "event_date",
+      "id": "doc_0da0621f90ccdad2",
+      "file_path": "release/policy.md",
+      "source": "新增材料：计划在 2026-08-12 演练发布回退；演练后归档检查结果。材料没有提供记录或观察时间。\n\n",
+      "observed_at": null,
+      "facts": [
+        {
+          "id": "fact_eval_release_guard",
+          "provenance": "评估种子来源：发布会议",
+          "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        },
+        {
+          "id": "fact_eval_local_embedding",
+          "provenance": "评估种子来源：模型职责决定",
+          "text": "当前 embedding 使用本地离线模型。",
+          "valid_from": "2026-10-10T08:00:00Z"
+        }
+      ],
+      "sealed_version": "b56402ca08299a020aa1338ca04130b1d7889d62260401100fb7474a25536535"
+    },
+    {
+      "task": "impact",
+      "id": "doc_b5a8d9b11cd39460",
+      "file_path": "auth/policy.md",
+      "source": "已确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。替代事实 ID 使用 fact_eval_ttl_f3b4c5cf。本次仅授权保存 auth/policy.md；核对相关页面并提交影响清单，其他页面先不写入。\n\n",
+      "observed_at": null,
+      "facts": [
+        {
+          "id": "fact_eval_token_ttl",
+          "provenance": "评估种子：鉴权约定",
+          "text": "刷新令牌有效期为 7 天。",
+          "valid_from": "2026-01-01T00:00:00Z"
+        },
+        {
+          "id": "fact_eval_ttl_f3b4c5cf",
+          "provenance": "用户确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。",
+          "replaces": "fact_eval_token_ttl",
+          "text": "刷新令牌有效期为 24 小时。",
+          "valid_from": "2026-10-01T00:00:00Z"
+        }
+      ],
+      "sealed_version": "3a1f9d342b6d0b1bdee82c79b6a583a543e006a7285b94ac04feb7327d15b958"
+    }
+  ],
+  "final_records": [
+    {
+      "id": "doc_27bcd6ea21836ee7",
+      "record_version": "f7df0529436113c0474303a4cd1d7ce63352d2769300d815b4d2ccbed6dd1700",
+      "file_path": "auth/client-guide.md",
+      "source": "评估种子：客户端指南",
+      "template": "# 客户端指南\n\n{{fact:fact_eval_token_ttl}}\n\n客户端每 6 天执行一次令牌刷新，以免过期。\n",
+      "metadata": {
+        "entities": [
+          {
+            "description": "客户端的认证凭据",
+            "name": "刷新令牌",
+            "type": "concept"
+          }
+        ],
+        "facts": [],
+        "relationships": [],
+        "summary": "客户端指南",
+        "tags": [
+          "鉴权",
+          "刷新令牌"
+        ],
+        "title": "客户端指南"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:51.080Z — created\n\n客户端指南\n\n客户端指南\n\n### Source\n\n评估种子：客户端指南\n"
+    },
+    {
+      "id": "doc_b5a8d9b11cd39460",
+      "record_version": "a412be7283204b20b6cfc75636d47a4e8c1e03ec95898eed947ba86dcf1fa448",
+      "file_path": "auth/policy.md",
+      "source": "已确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。替代事实 ID 使用 fact_eval_ttl_f3b4c5cf。本次仅授权保存 auth/policy.md；核对相关页面并提交影响清单，其他页面先不写入。\n\n",
+      "template": "# 鉴权约定\n\n{{fact:fact_eval_token_ttl}}\n\n",
+      "metadata": {
+        "category": "鉴权与安全",
+        "category_reason": "文档维护刷新令牌的现行鉴权约定，与发布运维资料用途不同。",
+        "entities": [
+          {
+            "description": "客户端的认证凭据",
+            "name": "刷新令牌",
+            "type": "concept"
+          }
+        ],
+        "facts": [
+          {
+            "id": "fact_eval_token_ttl",
+            "provenance": "评估种子：鉴权约定",
+            "text": "刷新令牌有效期为 7 天。",
+            "valid_from": "2026-01-01T00:00:00Z"
+          },
+          {
+            "id": "fact_eval_ttl_f3b4c5cf",
+            "provenance": "用户确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。",
+            "replaces": "fact_eval_token_ttl",
+            "text": "刷新令牌有效期为 24 小时。",
+            "valid_from": "2026-10-01T00:00:00Z"
+          }
+        ],
+        "relationships": [],
+        "summary": "刷新令牌有效期",
+        "tags": [
+          "鉴权",
+          "刷新令牌"
+        ],
+        "title": "鉴权约定"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:50.987Z — created\n\n鉴权约定\n\n刷新令牌有效期\n\n### Source\n\n评估种子：鉴权约定\n\n## 2026-10-17T13:27:56.255Z — updated\n\n鉴权约定\n\n刷新令牌有效期\n\n### Classification\n\n{\n  \"from\": \"uncategorized\",\n  \"to\": \"鉴权与安全\",\n  \"reason\": \"文档维护刷新令牌的现行鉴权约定，与发布运维资料用途不同。\"\n}\n\n### Source\n\n已确认：刷新令牌有效期改为 24 小时，从 2026-10-01T00:00:00Z 生效，明确替代原 7 天有效期。替代事实 ID 使用 fact_eval_ttl_f3b4c5cf。本次仅授权保存 auth/policy.md；核对相关页面并提交影响清单，其他页面先不写入。\n\n\n"
+    },
+    {
+      "id": "doc_329918ad1a7740b2",
+      "record_version": "514812dc605bf4fd11ca467846e04ea268587a7d54fd64ff73743b6d6ffee30e",
+      "file_path": "auth/security-rationale.md",
+      "source": "评估种子：安全设计理由",
+      "template": "# 安全设计理由\n\n选择 7 天有效期是为了支持一周离线使用。离线一周仍能恢复登录是已确认的产品要求；没有授权撤销这一要求。\n",
+      "metadata": {
+        "entities": [
+          {
+            "description": "客户端的认证凭据",
+            "name": "刷新令牌",
+            "type": "concept"
+          }
+        ],
+        "facts": [],
+        "relationships": [],
+        "summary": "安全设计理由",
+        "tags": [
+          "鉴权",
+          "刷新令牌"
+        ],
+        "title": "安全设计理由"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:51.169Z — created\n\n安全设计理由\n\n安全设计理由\n\n### Source\n\n评估种子：安全设计理由\n"
+    },
+    {
+      "id": "doc_0da0621f90ccdad2",
+      "record_version": "bc13853c2a629126e483a9f8153eafc31f51bbc872310360ede0298bb9625a1d",
+      "file_path": "release/policy.md",
+      "source": "新增材料：计划在 2026-08-12 演练发布回退；演练后归档检查结果。材料没有提供记录或观察时间。\n\n",
+      "template": "# Kestrel 发布约定\n\n{{fact:fact_eval_release_guard}}\n\n{{fact:fact_eval_local_embedding}}\n\n维护者复核编号：REVIEW-7663da4ee0d1。\n\n发布失败时保留故障日志。\n\n回滚后应再次验证校验标识。\n\n发布完成后保留校验摘要。\n\n\n计划在 2026-08-12 演练发布回退；演练后归档检查结果。材料未确认演练已经完成。\n\n",
+      "metadata": {
+        "category": "发布与运维",
+        "category_reason": "维护者修正：发布流程与故障恢复资料统一归类。",
+        "entities": [],
+        "facts": [
+          {
+            "id": "fact_eval_release_guard",
+            "provenance": "评估种子来源：发布会议",
+            "text": "Kestrel 发布前必须双人复核，并核对校验标识 GUARD-27fff36fe7e0。",
+            "valid_from": "2026-10-10T08:00:00Z"
+          },
+          {
+            "id": "fact_eval_local_embedding",
+            "provenance": "评估种子来源：模型职责决定",
+            "text": "当前 embedding 使用本地离线模型。",
+            "valid_from": "2026-10-10T08:00:00Z"
+          }
+        ],
+        "relationships": [],
+        "summary": "Kestrel 项目的发布校验和模型职责",
+        "tags": [
+          "Kestrel",
+          "发布"
+        ],
+        "title": "发布约定"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:50.713Z — created\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Classification\n\n{\n  \"from\": \"uncategorized\",\n  \"to\": \"发布流程\",\n  \"reason\": null\n}\n\n### Source\n\n评估种子来源：发布会议与模型职责决定。记录于 2026-10-10T08:00:00Z。\n\n## 2026-10-17T13:22:50.906Z — updated\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Classification\n\n{\n  \"from\": \"发布流程\",\n  \"to\": \"发布与运维\",\n  \"reason\": \"维护者修正：发布流程与故障恢复资料统一归类。\"\n}\n\n### Source\n\n评估种子来源：维护者最新复核与分类修正。记录于 2026-10-10T08:00:00Z。\n\n## 2026-10-17T13:24:31.578Z — updated\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Source\n\n新增已确认约定：发布失败时保留故障日志。\n\n\n\n## 2026-10-17T13:25:45.265Z — updated\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Source\n\n评估任务：回滚后应再次验证校验标识。\n\n## 2026-10-17T13:26:21.607Z — updated\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Source\n\n发布会议记录，明确记录时间为 2026-09-22T09:17:00+08:00：发布完成后保留校验摘要。\n\n\n\n## 2026-10-17T13:26:50.306Z — updated\n\n发布约定\n\nKestrel 项目的发布校验和模型职责\n\n### Source\n\n新增材料：计划在 2026-08-12 演练发布回退；演练后归档检查结果。材料没有提供记录或观察时间。\n\n\n"
+    },
+    {
+      "id": "doc_e6415fc912acc543",
+      "record_version": "b54858299459aab9e47ac26c1c1a9788d25f7c1ca934fa944b442cd778e639b0",
+      "file_path": "research/open-questions.md",
+      "source": "评估种子来源：待决提议",
+      "template": "# 待决提议\n\n远程 embedding 只是以后可以评估的提议，尚未选定供应商、启用时间或报价。",
+      "metadata": {
+        "entities": [],
+        "relationships": [],
+        "summary": "远程 embedding 尚未决策",
+        "tags": [],
+        "title": "待决提议"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:50.793Z — created\n\n待决提议\n\n远程 embedding 尚未决策\n\n### Source\n\n评估种子来源：待决提议\n"
+    },
+    {
+      "id": "doc_8867724650d236b2",
+      "record_version": "49be5b40aa140034a0d16a797665c9a7fb208d0e370e67217dbd97345eac387e",
+      "file_path": "reviews/auth-commit-a.md",
+      "source": "评估种子：鉴权历史评审",
+      "template": "# 鉴权历史评审\n\n这份评审仅描述提交 a1b2c3 当时的实现：刷新令牌有效期 7 天，客户端每 6 天刷新。不是当前操作指南。\n",
+      "metadata": {
+        "entities": [
+          {
+            "description": "客户端的认证凭据",
+            "name": "刷新令牌",
+            "type": "concept"
+          }
+        ],
+        "facts": [],
+        "relationships": [],
+        "summary": "鉴权历史评审",
+        "tags": [
+          "鉴权",
+          "刷新令牌"
+        ],
+        "title": "鉴权历史评审"
+      },
+      "timeline": "# Timeline\n\n## 2026-10-17T13:22:51.264Z — created\n\n鉴权历史评审\n\n鉴权历史评审\n\n### Source\n\n评估种子：鉴权历史评审\n"
+    }
+  ],
+  "artifact_archive": {
+    "path": "maintenance-agent-2026-10-17.raw.json.gz",
+    "sha256": "49d7af92fc964bfef32b693395b24370191f1941d8f99133420aadc334be366a",
+    "encoding": "gzip of JSON mapping original filenames to their exact UTF-8 contents",
+    "files": [
+      {
+        "path": "run.json",
+        "bytes": 6586,
+        "sha256": "da6f96a7e51edbda3ddaaa8c183a52b888e73985c2810c9f8730cdd0cd1d1500"
+      },
+      {
+        "path": "prompt.txt",
+        "bytes": 3156,
+        "sha256": "21212e5e1f5cee9f79a7e4f9f31b1f8c28d90b0543ac084141d09200a7465f4e"
+      },
+      {
+        "path": "events.jsonl",
+        "bytes": 643136,
+        "sha256": "575f273d89acb6424f47897d23de52049f47fac06b11a7aaed89c9d9caf6b7da"
+      },
+      {
+        "path": "answers.json",
+        "bytes": 7619,
+        "sha256": "5eca07fffdb2a31c759b837f60097c2a4b91c948efe18a8dda3fe2495c836dd3"
+      },
+      {
+        "path": "report.json",
+        "bytes": 4145,
+        "sha256": "73a2e5b6b91004d043d9e801fe233abe7bf0bd4ed2da372360d0498897140d5b"
+      }
+    ]
+  },
+  "limits": [
+    "One fresh-context agent completed seven tasks sequentially in one temporary project; this is not seven independent trials or a general accuracy estimate.",
+    "The agent received prompt.txt and project skills, not run.json, expected values or evaluator criteria. The parent reviewed actual answers and durable state after execution.",
+    "Preview delivery and declared review are distinct observations; neither proves understanding or human approval.",
+    "Impact coverage is limited to discovered subject-related pages. The scenario intentionally authorizes only the primary write; it does not validate autonomous multi-page repair or atomic commits.",
+    "The separate deterministic preview regression covers unadopted hand edits and effective-time drift; native host auto-activation, missing-timezone behavior and live multi-page concurrent repair were not independently model-tested.",
+    "The stock Python skill validator lacked PyYAML; Ruby YAML frontmatter validation and packaged-skill tests passed instead."
+  ]
+}

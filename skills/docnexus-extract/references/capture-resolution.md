@@ -31,6 +31,27 @@ Separate event records from enduring knowledge. Two code reviews of the same mod
 
 Honor an explicit target. If the user asks for a separate file despite overlap, explain the overlap and retain that choice. If they name an update target, do not silently redirect it. An occupied target still requires the existing replacement/version checks. Caller-selected classification does not authorize reclassifying a related document to make it a merge target.
 
+## Check related-page impact
+
+For a proposed create/update, check whether the new claims affect other current pages. Use the existing subject search/recall, entity names, fact ids and links to find candidates; follow concrete dependencies as needed, without claiming an exhaustive whole-library scan. Read each plausible page's full document/template and metadata, and timeline when needed to distinguish historical reports, retaining its `record_version`. A search hit or shared entity alone is not a dependency or permission to edit.
+
+Include an `impact_check` with lookup scope/limitations and related `pages`, each with `id`, `file_path`, the actually read `record_version`, `decision`, evidence and proposed action:
+
+| Decision | Meaning |
+| --- | --- |
+| `update` | Source-backed change makes current explanations or steps inaccurate; describe the required edit. |
+| `no_change` | Read and checked; explain why it remains valid, including independent historical reports. |
+| `conflict` | Give both sources and the missing replacement authority/decision; do not rewrite the disputed claim. |
+| `unverified` | Found but not fully read, lookup failed or evidence is insufficient; use a null version when no full versioned read was obtained. Never report it as unaffected. |
+
+An empty list needs the lookup basis, not a claim that no other page can be affected. Keep a related-page conflict local when the primary change is independently supported; if it undermines the primary decision, use capture `conflict` and stop. Unresolved candidates stay visible in the handoff.
+
+Existing `{{fact:id}}` references already follow effective replacements. Check surrounding explanations and operational steps instead of duplicating the fact definition or making a draft solely to refresh a generated block. A parameter change does not itself authorize rewriting the historical design rationale.
+
+For each related page requiring edits, prepare a separate draft only within the user's existing scope and authorization. Each draft uses its own full read, base version, sealed preview and review. Do not write a related draft inside the primary draft's directory or silently ingest all candidates. These are independent commits, not an atomic multi-page operation; report completed and pending pages if interrupted. Recheck a page before acting when its version changes, reread/merge/reseal as needed, and revise the impact decision if the new content changes it.
+
+The impact check is agent-produced review context, not a new metadata/manifest field or a mechanically enforced whole-library consistency guarantee. It does not change the primary capture disposition or authorize cross-category writes.
+
 ## Handoff and review
 
 Before allocating a draft, give a compact resolution summary:
@@ -39,12 +60,14 @@ Before allocating a draft, give a compact resolution summary:
 - `decision_reason`: subject/purpose match, new information/provenance, or unresolved contradiction.
 - `checked_documents`: actual read ids, paths and `record_version` values; note lookup scope/failures. An empty list requires an explanation of the successful lookup performed.
 - `file_path` for a proposed create/update, plus related existing paths where relevant.
+- `source_time`: a quote supporting the current source's explicit observation timestamp, or the reason `observed_at` is omitted. Event dates and prior source dates do not fill an unknown observation time.
+- `impact_check` for create/update: scope/limitations and related-page decisions with evidence and read versions.
 
 This is a workflow handoff, not a new manifest field or CLI response. Do not claim the decision was mechanically validated or stored in the manifest. For create/update, show this summary with the proposed content at the normal review stage; existing authorization still applies. Skip/conflict ends extraction without a sealed draft.
 
 For update, seal with the version of the target actually read. New source belongs in the draft's `source.md`; the CLI preserves earlier source events in the timeline. Do not copy old timeline entries into the current body. A stale target requires rereading and redoing the comparison/merge, not simply changing `--base-version`.
 
-When ingesting a ready draft directly, verify a resolution handoff exists and matches its sealed target/content. If absent (including older drafts), run this lookup/comparison using its source and proposed document before saving. If the decision requires a different target or capture intent, return to extraction, prepare a new draft and review it. A same-target merge uses the existing reread/edit/reseal/review flow; never ingest edited artifacts without resealing or bypass the target/version checks. A duplicate draft may be left ready after `skip`; report its status, and discard only with existing authorization.
+When ingesting a ready draft directly, verify a resolution handoff, source-time attribution and impact check exist and match its sealed target/content. If absent (including older drafts), run this lookup/comparison using its source and proposed document before saving. If the decision requires a different target or capture intent, return to extraction, prepare a new draft and review it. A same-target merge uses the existing reread/edit/reseal/review flow; never ingest edited artifacts without resealing or bypass the target/version checks. A duplicate draft may be left ready after `skip`; report its status, and discard only with existing authorization.
 
 These checks reduce duplicate capture through agent behavior. They are not an atomic whole-library uniqueness guarantee: another writer can create a related page after lookup. The CLI guards the selected target and sealed artifacts; on discovering new competing knowledge, repeat the resolution before writing.
 

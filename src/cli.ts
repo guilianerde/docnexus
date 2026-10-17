@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { buildConceptIndex, renderConceptIndex, writeConceptIndex } from "./concepts.js";
 import { runDoctor } from "./doctor.js";
-import { createDraft, discardDraft, listDrafts, sealDraft, type DraftStatus } from "./drafts.js";
+import { createDraft, discardDraft, listDrafts, previewDraft, sealDraft, type DraftStatus } from "./drafts.js";
 import {
   deleteManagedDocument,
   classifyManagedDocument,
@@ -172,6 +172,12 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
     return json(await sealDraft(projectRoot, { draftId: options.id, filePath: options.file,
       baseRecordHash: options["base-version"] === "new" ? null : options["base-version"],
       category: options.category, categoryReason: options["category-reason"] }));
+  }
+
+  if (command === "draft" && subcommand === "preview") {
+    const options = parseOptions(rest);
+    if (!options.id) throw new DocNexusError("invalid_params", "draft preview requires --id");
+    return json(await previewDraft(projectRoot, options.id));
   }
 
   if (command === "draft" && subcommand === "list") {
@@ -348,6 +354,7 @@ Capture (extract -> seal -> ingest)
   docnexus draft new [--slug auth]
   docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
   docnexus draft seal --id <draft_id> --file <library_path.md> [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
+  docnexus draft preview --id <draft_id>
   docnexus document add --draft <draft_id> [--replace]
   docnexus draft list [--status open|ready|ingested|invalid]
   docnexus draft discard --id <draft_id> --force

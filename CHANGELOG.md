@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0 — 2026-10-17
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces can upgrade without reset or data migration. Skills refresh on the next workspace command after the package version changes; `skills sync` can refresh them explicitly.
+
+- Add read-only `draft preview --id` with validated sealed Markdown, content hash and manifest fingerprint; seal and ingestion return the same `sealed_version`. Preserve workspace/draft/projection formats and existing authorization rules without adding a mandatory read receipt.
+- Ground replacement-source observation times in explicit source evidence and require related-page impact handoffs with read versions, evidence and unresolved candidates. Keep semantic judgments in skills and use separate drafts for authorized related edits.
+- Extend isolated agent evaluation with source-time, preview delivery/review declarations and cross-page maintenance scenarios; distinguish mechanical checks from semantic review.
+
 ## 0.19.0 — 2026-10-17
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required. Git remains optional; configured knowledge repositories require Git for their local branch guard.

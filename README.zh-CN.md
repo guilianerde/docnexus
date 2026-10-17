@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.19.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.20.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -124,7 +124,9 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 | `docnexus-library` | 浏览、查看历史、采纳人工编辑、删除和草稿管理 |
 | `docnexus-maintain` | 诊断文本完整性、刷新目录和 skills、重置 |
 
-捕获流程：`draft new` → 智能体写入三份产物 → `draft seal` → 用户审阅 → `document add --draft <id>`。有事实引用时 seal 会生成 `preview.md`；审阅该预览，引用事实变化后需重新封存与审阅。已有路径需要显式授权并使用 `--replace`。封存后的产物发生变化时，必须重新封存并确认授权仍覆盖新内容。
+捕获流程：`draft new` → 智能体写入三份产物 → `draft seal` → `draft preview --id <id>` → 用户审阅 → `document add --draft <id>`。预览返回封存正文、`document_hash` 和 `sealed_version`，普通正文和事实展开正文使用同一入口；seal 与入库结果也返回该封存版本。引用事实、目标或产物变化后需重新合并、封存与读取预览。预览交付、智能体声明审阅和用户授权分别记录，CLI 不新增必须读取才能入库的门禁。已有路径需要显式授权并使用 `--replace`。
+
+提炼时，`observed_at` 只取当前来源明确提供且带时区的观察/陈述时间；新来源未知时移除旧值，不用事件日期或保存时间补齐，历史事实的生效时间与出处独立保留。创建/更新还需交接跨页影响清单：列出实际全文读取的版本、更新/无需修改/冲突/未核对的判断及依据。事实引用继续自动联动，智能体检查周围解释和操作步骤；相关页各自走草稿、版本与授权流程，不承诺多页原子提交。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
 
 其他 skill 可为本次写入显式指定分类，跳过 DocNexus 的智能体分类。例如 code-review skill 准备好三份草稿产物后：
 

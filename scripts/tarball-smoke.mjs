@@ -136,9 +136,13 @@ try {
   assert(protocol.protocol_version === 1 && protocol.errors.target_changed.retryable === false, "installed CLI did not expose the shared operator contract");
   assert(sealed.preview_file, "fact-backed draft did not produce a reviewable preview");
   assert((await readFile(join(projectDirectory, sealed.preview_file), "utf8")).includes("local project memory"), "draft preview did not render the canonical fact");
+  const preview = await runJson(cliPath, ["draft", "preview", "--id", draft.draft_id], projectDirectory, cliEnvironment);
+  assert(preview.result === "draft_preview" && preview.sealed_version === sealed.sealed_version, "installed preview lost its sealed version");
+  assert(preview.document.includes("local project memory") && preview.document_hash === createHash("sha256").update(preview.document).digest("hex"), "installed preview lost its complete fact-backed content or hash");
 
   const added = await runJson(cliPath, ["document", "add", "--draft", draft.draft_id], projectDirectory, cliEnvironment);
   assert(added.operation === "created", "document add did not create the managed document");
+  assert(added.sealed_version === preview.sealed_version, "installed ingestion did not identify the previewed version");
 
   const listed = await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment);
   assert(listed.records?.[0]?.id === added.id, "project-local document list did not find the document");

@@ -21,7 +21,7 @@ Use the sealed metadata category exactly, including categories selected explicit
 
    If several drafts are ready and the user did not name one, ask which to ingest. If none is ready, run `docnexus-extract` first.
 2. Verify the capture-resolution handoff matches the sealed content and target. For a direct ready-draft request or older draft without that handoff, run [capture resolution](../docnexus-extract/references/capture-resolution.md) against its source and proposed document first. `skip`/`conflict` ends without ingestion; a changed target or capture intent goes back to extraction as a new draft for review. Same-target content changes require rereading, editing, resealing and review before saving. Never infer an update merely from similarity or silently retarget a sealed draft.
-3. Ingest:
+3. Read `./docnexus/node_modules/.bin/docnexus draft preview --id <draft_id>` before ingestion. Match its `sealed_version` to the preview reviewed in the extraction handoff; if absent or different, review the returned document and sealed metadata under the existing authorization. Retain the returned version/hash for observation. This is evidence of content delivery, not proof of understanding or user approval. Include the source-time attribution and related-page impact check; related drafts need their own version/read/review and authorization, and are not ingested by saving this draft. Ingest:
 
 ```bash
 ./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
@@ -34,7 +34,7 @@ Use the sealed metadata category exactly, including categories selected explicit
 ```
 
 5. If the target changed since sealing, reread its current document/template, metadata and timeline. Merge those changes with the draft, preserving still-valid knowledge and user classification corrections, then seal and review again. Resealing old content alone would discard the newer knowledge. A newly occupied path or a deleted/recreated target also requires a fresh review; `--replace` does not bypass the version check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain format 6.
-   If the draft or its referenced facts changed after sealing, read the changes and seal again. For a fact-backed document, review the generated `preview.md` before ingestion; show materially changed conclusions when existing authorization does not cover them. The CLI checks the sealed preview hash against current effective facts.
+   If the draft or its referenced facts changed after sealing, read the changes and seal again, then use `draft preview` to read the new sealed version. Show materially changed conclusions when existing authorization does not cover them. The CLI checks the sealed preview hash against current effective facts. Preview reads do not create a new ingestion permission gate or authorize any replacement by themselves.
 6. Memory files and the draft's ingested receipt are covered by one recoverable text transaction. The next CLI access completes an interrupted transaction before reading memory. Derived vectors and graph projections are synchronized by the next recall or `docnexus index sync`; this does not add another timeline event. If a command was interrupted, inspect the draft status before retrying ingestion.
 7. Report `id`, `library_path`, `operation`, and `timeline_path`. The draft is now marked `ingested` and cannot be ingested again.
 

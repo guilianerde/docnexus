@@ -10,10 +10,10 @@ export const metadataSchema = {
     syntax: "{{fact:fact_id}} on a standalone Markdown line; code fences remain literal.",
     source: "Define each fact only once in its owner's metadata.facts. References follow effective replacements.",
     generated: "The CLI renders read-only <!-- docnexus:fact fact_id --> blocks with provenance and validity.",
-    preview: "draft seal emits preview.md for fact references. Review that preview before ingestion."
+    preview: "draft seal emits preview.md for fact references. draft preview returns the validated sealed document, hash and version for review; reading is not approval."
   },
   optionalFields: {
-    observed_at: "Optional ISO 8601 timestamp with timezone for when the source content was observed or said; never infer it from a save timestamp.",
+    observed_at: "Optional explicit ISO 8601 observation/statement timestamp with timezone from the current source. Omit when unknown on source replacement; never inherit a prior source date or infer from save time/event dates.",
     category: "One project-defined primary category; 1–80 characters, trimmed, no control characters. Omitted legacy values display as uncategorized.",
     category_reason: "Optional concise classification basis, grounded in project context and related documents; requires category.",
     "entities[].aliases": "Unique alternative names for this canonical entity; string[].",

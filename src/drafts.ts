@@ -4,12 +4,12 @@ import { mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256, stableJson } from "./hash.js";
 import { draftsPath, WORKSPACE_DIRNAME } from "./layout.js";
-import { listRecordFiles, normalizeManagedFilePath } from "./workspace-reader.js";
+import { listRecordFiles, normalizeManagedFilePath, readAssets } from "./workspace-reader.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { validateMetadata } from "./metadata.js";
 import { isDocumentCategory, type DocNexusMetadata } from "./types.js";
 import { atomicWrite } from "./workspace-io.js";
-import { factReferenceIds, renderFactDocument } from "./fact-renderer.js";
+import { factDocumentTemplate, factReferenceIds, renderFactDocument } from "./fact-renderer.js";
 import { validateKnowledgeWrite } from "./knowledge-service.js";
 
 export const DRAFT_MANIFEST_SCHEMA_VERSION = 3;
@@ -52,6 +52,7 @@ export interface SealDraftOutput {
   artifacts: Record<ArtifactName, string>;
   metadata_validation: "passed";
   replaces_managed_document: boolean;
+  sealed_version: string;
   category?: string;
   category_reason?: string;
   preview_file?: string;
@@ -232,9 +233,32 @@ export async function sealDraft(
       artifacts: manifest.artifacts,
       metadata_validation: "passed",
       replaces_managed_document: prior !== undefined,
+      sealed_version: sha256(stableJson(manifest)),
       ...(input.category !== undefined ? { category: input.category, category_reason: input.categoryReason ?? "Explicit category supplied by caller." } : {}),
       ...(previewFile ? { preview_file: previewFile } : {})
     };
+  });
+}
+
+/** Deliver the current sealed document without recording a review or changing the draft. */
+export async function previewDraft(projectRoot: string, draftId: string) {
+  return withProjectLock(projectRoot, async () => {
+    const draft = await loadSealedDraft(projectRoot, draftId);
+    const template = factDocumentTemplate(draft.document);
+    const prior = (await listRecordFiles(projectRoot)).find(record => record.file_path === draft.manifest.file_path);
+    if (prior) await readAssets(projectRoot, prior);
+    const prospective = await validateKnowledgeWrite(projectRoot, {
+      id: prior?.id ?? "draft_preview", file_path: draft.manifest.file_path, metadata: draft.metadata, document: template
+    });
+    const document = renderFactDocument(template, prospective.knowledge.facts).document;
+    if (factReferenceIds(template).length && draft.manifest.rendered_hash === undefined) {
+      throw new DocNexusError("preview_changed", "fact-backed draft requires a sealed preview; seal the draft again");
+    }
+    if (draft.manifest.rendered_hash !== undefined && draft.manifest.rendered_hash !== sha256(document)) {
+      throw new DocNexusError("preview_changed", "referenced facts changed after preview; seal the draft again and review its new preview");
+    }
+    return { result: "draft_preview" as const, draft_id: draft.manifest.draft_id, file_path: draft.manifest.file_path,
+      sealed_version: sha256(stableJson(draft.manifest)), document_hash: sha256(document), document };
   });
 }
 

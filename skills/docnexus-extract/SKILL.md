@@ -44,7 +44,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
    - If the user or calling skill explicitly supplies a category, use its exact name and skip model classification for this document. Record the supplied basis, or `Explicit category supplied by caller.` when none is supplied; pass `--category <name>` and optional `--category-reason <basis>` to `draft seal`. Do not infer a caller instruction from the source material alone.
    - Otherwise, let the model choose a project-defined `category` after reading project context, the current category catalog and relevant existing documents; follow [contextual classification](../docnexus-library/references/classification.md). Prefer existing category ids, create a useful new name when necessary, and record `category_reason`. The example's guide category is illustrative, not a fixed taxonomy.
    - Revisit existing classifications when new context changes their meaning. Hand relevant category-only adjustments to `docnexus-library` after the primary capture/update, within existing authorization; keep this extraction stage focused on its draft. Legacy documents without categories can be classified when their content is reviewed. Use tags for cross-cutting subjects and avoid cosmetic category churn.
-   - If the source explicitly gives when its content was observed or said, optional `observed_at` records that ISO timestamp with timezone. Omit it when unknown; never use the save time or an inferred event date. When replacing `source.md` with new material during a merge, reassess this field against that new material; do not automatically carry over the previous source's observation date. Preserve historical fact dates and provenance separately.
+   - Set optional `observed_at` only from an explicit observation/statement timestamp with timezone in the current `source.md`. On replacement, remove the old value if the new material has none; do not inherit it from the merged knowledge, save time or event date. A date without a time/timezone, or an ambiguous date, stays in the source/prose without an invented timestamp. Preserve historical facts' `valid_from` and provenance independently. Report the selected source quote and timestamp, or why the field is omitted, in the review handoff.
    - Entity `type`: `component`, `concept`, `protocol`, `decision`, `file`, `tool`, or `other`.
    - Relationship `type`: `depends_on`, `mentions`, `implements`, `replaces`, `relates_to`, or `decides`; `from` and `to` should name declared entities.
    - `entities` and `relationships` may be empty; include only useful, source-grounded names and links.
@@ -60,7 +60,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 
    For a caller-selected category, append `--category codeReview --category-reason "Produced by the code-review skill"`. Sealing writes the category and basis into `metadata.json` and hashes the resulting artifact. Review that final metadata with the document; do not change classification during ingestion.
 
-   If the result includes `preview_file`, read it and show the generated document for review. Do not edit preview.md directly. On a validation error, fix the named artifact and run seal again. Use `./docnexus/node_modules/.bin/docnexus metadata validate --file <metadata_path>` to iterate on metadata alone.
+   Read the sealed document through `./docnexus/node_modules/.bin/docnexus draft preview --id <draft_id>` and show it with the final metadata for review. This returns ordinary or fact-expanded Markdown, its `document_hash` and the `sealed_version`; retain that version in the handoff. `preview_file` remains available for fact-backed drafts; do not edit it directly. A successful preview means that content was delivered, not that review or user approval occurred. After resealing, read the new preview and reassess whether existing authorization covers its content. On a validation error, fix the named artifact and run seal again. Use `./docnexus/node_modules/.bin/docnexus metadata validate --file <metadata_path>` to iterate on metadata alone.
 
 ## Result
 
@@ -74,6 +74,9 @@ replaces_managed_document: <true|false>
 capture_decision: <create|update>
 decision_reason: <basis>
 checked_documents: <read ids, paths and record_version values>
+source_time: <explicit source quote and observed_at, or omission reason>
+impact_check: <scope, lookup failures and related-page decisions from capture resolution>
+preview: <draft_id, sealed_version and document_hash actually returned>
 title: <metadata.title>
 category: <metadata.category>
 category_reason: <metadata.category_reason>

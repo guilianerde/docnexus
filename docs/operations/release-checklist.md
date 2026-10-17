@@ -22,6 +22,8 @@ node scripts/tarball-smoke.mjs
 - [ ] Full/page document queries agree, return current fact-backed Markdown and dynamic category counts, and refuse stale revisions after writes or effective-time changes.
 - [ ] Project-defined categories and reasons work; category-only edits preserve content/facts, append audit history, reject stale context and recover from write failures.
 - [ ] Sealed drafts reject changed, deleted/recreated and newly occupied targets; unrelated writes remain valid. Reread/merge/reseal preserves newer knowledge. Old draft manifests require resealing.
+- [ ] `draft preview` returns validated ordinary/fact-expanded Markdown with the sealed version and content hash; seal/ingestion agree on the version. Resealing, fact-time drift, tampering and unadopted target edits invalidate old evidence. Content delivery, declared review and user authorization are distinct, without a mandatory production read receipt.
+- [ ] Replacement-source observation times, preserved historical facts and versioned related-page impact handoffs are covered by isolated agent scenarios; raw observations and semantic review are retained separately from deterministic checker fixtures.
 - [ ] Real-source knowledge replay passes with source anchors intact. Recorded model decisions and simulated changes are labeled, and live model judgment is evaluated separately.
 - [ ] The installed orchestration query script works from an explicit project root; a text clone can query without retrieval stores.
 - [ ] The smoke test installs the release tarball using the repository's locked runtime dependencies in an isolated project. Offline installation requires a populated npm cache; normal CI prepares it with `npm ci`.
