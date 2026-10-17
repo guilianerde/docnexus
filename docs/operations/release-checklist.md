@@ -76,6 +76,9 @@ The production audit passes the high/critical gate after upgrading the sharp ove
 
 ## Workspace-local installation
 
+- [ ] Default init works without Git. Optional `init --git-remote` configures only the knowledge origin, excludes it from an existing host repository and refuses host-tracked files without changing its index.
+- [ ] New knowledge repositories pin `main`; existing repositories retain their single current branch. Branch mismatch, detached HEAD and extra local branches block operations before recovery. Reset retains the pin, history, remote and npm installation; clones explicitly configure a new local pin.
+- [ ] The installed tarball includes `workspace-git.js` and exercises opt-in setup, branch refusal and Git-preserving reset. Documentation distinguishes the local guard from Git command interception or remote branch protection.
 - [ ] Install the tarball under docnexus/ in a host project without npm files. Init, capture, category search/recall, viewer and the query adapter work without adding root package.json, package-lock.json or node_modules.
 - [ ] Init preserves the installation and host manifests, rejects unrelated nonempty directories, and does not create docnexus/docnexus when invoked from the project root or with an explicit project root.
 - [ ] Reset clears knowledge and agent integration while preserving the nested manifest, lockfile and executable; reinitialization works. Legacy root installations and query adapters still work.

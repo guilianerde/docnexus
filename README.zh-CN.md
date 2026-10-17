@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.18.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.19.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -143,7 +143,25 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 ## Git、手动编辑与完整性
 
-除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取或切换分支后，关键词查找和全文读取直接使用当前文本；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
+默认不创建独立 Git 仓库、不配置远程，也不要求安装 Git；文本仍可选择随宿主项目提交。可在首次初始化或已有工作区中显式启用独立知识仓库：
+
+```bash
+./docnexus/node_modules/.bin/docnexus init --agent codex --git-remote git@example.com:team/project-memory.git
+# 后续可用同一参数更新知识仓库的 origin 地址
+git -C docnexus status
+```
+
+该选项在 `docnexus/.git/` 初始化独立仓库并配置 `origin`，不修改宿主仓库的远程或暂存区。检测到宿主 Git 仓库时，在业务项目的 `.gitignore` 追加 `/docnexus/`；若宿主已跟踪该目录的文件，则在变更前拒绝，需先评审并从宿主索引移除这些文件、保留本地副本。成功输出增加可选 `git: { repository, remote, branch }`，地址保存在本地 `.git/config`，工作区格式不变。不传该选项时保留已有仓库配置。
+
+独立知识仓库采用单分支使用策略：新仓库固定 `main`，已有仓库固定配置时的当前分支，不自动重命名或删除其他分支；已有多个本地分支或 detached HEAD 会拒绝配置。分支约束保存在 `docnexus/.git/docnexus-branch.json`，每次顶层 CLI/服务操作在事务恢复之前检查；当前分支不符、处于 detached HEAD 或存在其他本地分支时返回 `git_branch_mismatch`，停止读取、写入和 reset。约束在重置及外部切换分支后保留；启用后日常操作需要 Git。克隆不会复制 `.git` 内的本地约束，每位成员应重新运行 `init --git-remote <url>` 安装检查；早先配置过的独立仓库也通过此命令启用。
+
+这是 DocNexus 的操作前检查，不能阻止终端中的 `git switch/checkout/branch`，不安装 Git hooks，也不能防止外部 Git 在操作过程中切换分支或人为删除本地约束。需要远程也只允许一个分支时，应另外配置托管平台规则或服务端检查；本命令不检查或修改远程分支。业务项目仍可正常切换自己的分支。团队在固定分支提交前完成内容审阅；单分支不消除多人修改同一文档的冲突。
+
+配置只进行本地操作，不验证远程连通性，也不自动提交、拉取或推送；这些操作使用标准 `git -C docnexus ...` 命令，并在 CLI 写入和事务恢复结束后执行。已有远程知识应先克隆到尚不存在的 `docnexus/` 目录，再恢复 npm 依赖并运行 `init --git-remote <url>`；指定地址不会自动导入远程内容。独立仓库内仍忽略 `node_modules/`、`store/` 与 `.runtime/`。子模块或 linked worktree 的 `.git` 文件需直接通过 Git 配置，`--git-remote` 只管理独立 `.git/` 目录。
+
+`reset --force` 继续清空当前知识和集成，但保留 `.git`、远程配置、Git 历史及 npm 安装；存在 `.git` 时返回 `preserved_git: true`。历史中已提交的知识仍可恢复，reset 不会提交或推送删除。重置后可再次 `init`。Git 配置与初始化不是跨文件事务，操作中途失败时应检查实际状态后重试。
+
+除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
 
 ## 数据库引擎
 
@@ -169,7 +187,7 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 ```bash
 # 设置与诊断
-./docnexus/node_modules/.bin/docnexus init [--agent claude|codex|all]
+./docnexus/node_modules/.bin/docnexus init [--agent claude|codex|all] [--git-remote <url>]
 ./docnexus/node_modules/.bin/docnexus doctor
 ./docnexus/node_modules/.bin/docnexus status
 ./docnexus/node_modules/.bin/docnexus skills sync

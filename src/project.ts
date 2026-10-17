@@ -7,6 +7,7 @@ import { draftsPath, libraryPath, projectMarkerPath, WORKSPACE_DIRNAME, WORKSPAC
 import { ensureIgnoredEntries } from "./workspace-io.js";
 import { assertNoSymbolicLinks, ensureManagedWorkspace } from "./managed-documents.js";
 import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
+import { assertWorkspaceRepository, configureWorkspaceGit, prepareWorkspaceGit } from "./workspace-git.js";
 
 export { projectMarkerPath };
 
@@ -20,6 +21,7 @@ interface ProjectMarker {
 export interface InitializeProjectInput {
   agents?: SkillsTarget[];
   packagedSkillsRoot?: string;
+  gitRemote?: string;
 }
 
 export interface InitializeProjectOutput {
@@ -29,6 +31,7 @@ export interface InitializeProjectOutput {
   created: boolean;
   skills: readonly string[];
   links: LinkSkillsOutput[];
+  git?: { repository: string; remote: string; branch: string };
 }
 
 async function assertProjectDirectory(projectRoot: string): Promise<string> {
@@ -75,7 +78,7 @@ export async function requireInitializedProject(projectRoot: string): Promise<st
 
 /**
  * Creates the `docnexus/` workspace (skills, drafts, library, records) and optionally links the skills
- * into agent directories. Re-running on an initialized project refreshes skills and links only.
+ * into agent directories. Git setup runs only when an explicit remote is supplied.
  */
 export async function initializeProject(
   projectRoot: string,
@@ -85,9 +88,13 @@ export async function initializeProject(
     const root = await assertProjectDirectory(projectRoot);
     await assertNoSymbolicLinks(root, WORKSPACE_DIRNAME);
     const marker = await readMarker(root);
+    const gitPlan = input.gitRemote === undefined ? undefined : await prepareWorkspaceGit(root, input.gitRemote);
     if (!marker) {
-      const entries = await readdir(workspacePath(root)).catch(() => []);
-      if (entries.length > 0 && !(await isInstallationOnly(root, entries))) {
+      const entries: string[] = await readdir(workspacePath(root)).catch(() => []);
+      if (entries.includes(".git")) await assertWorkspaceRepository(root);
+      const nonGitEntries = entries.filter(entry => entry !== ".git");
+      const gitOnly = entries.includes(".git") && nonGitEntries.every(entry => entry === ".gitignore");
+      if (entries.length > 0 && !gitOnly && !(await isInstallationOnly(root, nonGitEntries))) {
         throw new DocNexusError("unsupported_format",
           `${workspacePath(root)} already exists and is not a DocNexus workspace; move it before running "docnexus init"`
         );
@@ -118,7 +125,9 @@ export async function initializeProject(
         { flag: "wx" }
       );
     }
-    return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links };
+    const git = gitPlan ? await configureWorkspaceGit(gitPlan) : undefined;
+    return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links,
+      ...(git ? { git } : {}) };
   });
 }
 
@@ -158,5 +167,5 @@ Entity aliases and optional facts track identity, provenance and effective valid
 Define a fact only in its owner's metadata; reference it on a standalone \`{{fact:fact_id}}\` line. The CLI renders attributed current values and updates dependent pages. Use \`document get --include template,metadata\` for the editable structure and \`document render\` to refresh all views; there is no background timer.
 The model running skills chooses project-defined \`metadata.category\` names and \`category_reason\` from project context and existing documents. Use \`document classify --id <id> --category <name> --reason <basis>\` for category-only adjustments. \`document query\` derives current Markdown, used-category counts and revision from text without another stored document source.
 
-Run \`./docnexus/node_modules/.bin/docnexus status\` from the project root for an overview. Legacy root installations may use \`./node_modules/.bin/docnexus\`. Reset removes knowledge and integration but preserves the npm installation.
+Run \`./docnexus/node_modules/.bin/docnexus status\` from the project root for an overview. Legacy root installations may use \`./node_modules/.bin/docnexus\`. Optional \`init --git-remote <url>\` configures a separate workspace repository pinned to one local branch (new repositories use \`main\`); branch mismatch, detached HEAD or extra local branches block DocNexus operations. Default workspaces do not require Git; configured workspaces require it to check the pin. No command automatically synchronizes a remote. Reset removes knowledge and integration but preserves the npm installation and any \`.git\` metadata/history and branch pin.
 `;

@@ -13,6 +13,8 @@ DocNexus helps coding agents retain project decisions, conventions and explanati
 
 ## Implemented scope
 
+Git remains optional. `init --git-remote <url>` configures a separate knowledge repository, refuses host-tracked knowledge, and pins one local branch with a guard before DocNexus operations. Reset preserves Git configuration and history. Users manage remote commits/synchronization and server-side branch rules; this does not provide real-time editing or multi-machine write coordination. Calls from outer directories use an explicit `--project-root`; users configure agent routing instructions.
+
 Project workspaces, six skills, sealed drafts, document storage and deletion, keyword/name lookup, keyword/vector hybrid recall and one-hop graph context, full document and timeline reads, document/concept directories, skill links and version refresh, content hashes, path boundaries and read-only diagnostics.
 
 The agent compiles current knowledge; the CLI saves complete documents without inferring contradictions or supersession. Timeline entries contain save dates, summaries and sources, not every prior compiled document version.

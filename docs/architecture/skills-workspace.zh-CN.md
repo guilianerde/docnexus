@@ -64,11 +64,15 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 消费项目在根目录执行 `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus`，将 package.json、package-lock.json、node_modules 一并放入 docnexus/；默认调用 `./docnexus/node_modules/.bin/docnexus`，工作目录仍为项目根目录，其他目录使用 `--project-root`。不要在 docnexus/ 内执行不带项目根参数的 init，避免产生嵌套工作区。源码仓库自身的构建清单与宿主应用原有 npm 清单保持各自职责，不迁移宿主清单。
 
-首次 init 允许 docnexus/ 仅包含上述 npm 安装条目与可选的 .gitignore，且 manifest 必须声明 @rowansenne/docnexus 依赖；其他非空无标记目录仍拒绝接管。node_modules/ 与 store/、.runtime/ 一同忽略，manifest/lockfile 可随知识文本提交；克隆后通过 `npm ci --prefix ./docnexus` 恢复依赖。
+首次 init 允许 docnexus/ 仅包含上述 npm 安装条目与可选的 .gitignore，且 manifest 必须声明 @rowansenne/docnexus 依赖；也允许有效的独立 Git 仓库元数据与这些安装条目组合，其他非空无标记目录仍拒绝接管。node_modules/ 与 store/、.runtime/ 一同忽略，manifest/lockfile 可随知识文本提交；克隆后通过 `npm ci --prefix ./docnexus` 恢复依赖。
 
 原来的根目录安装仍兼容；skills 在新路径不存在时使用根目录 CLI，文档查询脚本先从 docnexus/package.json 位置解析，再按 Node 父目录查找兼容根目录安装。升级现有根安装可以先在 docnexus/ 新装后执行 init/skills sync，确认后再自行移除旧 DocNexus 依赖，不能删除宿主应用其他依赖或清单。
 
 ## 分发与 Git
+
+默认不创建 Git 仓库或配置远程。`init --git-remote <url>` 可为新旧工作区配置独立 `origin`，固定新仓库的 `main` 或已有仓库的当前分支；拒绝额外本地分支和 detached HEAD，检查在文本事务恢复之前执行，不自动切换或删除分支。配置和约束保存在 `.git`，reset 保留它们，每位成员克隆后需重新运行带远程参数的初始化。该选项不提交或访问远程，不限制终端 Git 命令或远程分支。
+
+从外层目录工作时显式使用本项目可执行文件与 `--project-root <工作区根目录>`。工作区根目录是 `docnexus/` 的直接父目录，不自动递归发现子项目或生成外层项目路由；外层 agent 指引由用户配置。
 
 skills 源文件随包发布，初始化复制到 `docnexus/skills/`，再链接到 `.agents/skills/` 或 `.claude/skills/`。包版本变化后，工作区命令自动刷新副本；`doctor` 只报告偏差。
 

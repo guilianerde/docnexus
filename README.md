@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.18.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.19.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -140,7 +140,25 @@ Sealing records the target document version. Ingestion rejects newer prose, sour
 
 ## Git and hand edits
 
-Everything except `node_modules/`, `store/` and `.runtime/` is text and can be committed. After cloning, pulling or switching branches, keyword search and document reads use the current text immediately; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
+By default, DocNexus creates no separate Git repository, configures no remote and does not require Git. Text can still be committed with the host project. Opt into a separate knowledge repository during initialization or for an existing workspace:
+
+```bash
+./docnexus/node_modules/.bin/docnexus init --agent codex --git-remote git@example.com:team/project-memory.git
+# Repeat with another address to update the knowledge repository's origin.
+git -C docnexus status
+```
+
+This initializes `docnexus/.git/` and configures `origin`, leaving the host remote and index unchanged. When a host Git repository exists, it appends `/docnexus/` to the business project's `.gitignore`. If the host already tracks workspace files, setup refuses before making changes; review and remove them from the host index while retaining local files first. Success adds optional `git: { repository, remote, branch }`; the address stays in local `.git/config`, with no workspace format change. Ordinary initialization preserves existing Git configuration.
+
+Separate knowledge repositories use one pinned branch: `main` for new repositories, or the current branch for existing repositories. Setup refuses detached HEAD or multiple local branches without renaming or deleting anything. The pin is stored in `docnexus/.git/docnexus-branch.json`. Each top-level CLI/service operation checks it before transaction recovery; the wrong branch, detached HEAD or extra local branches cause `git_branch_mismatch` and block reads, writes and reset. The pin survives reset and checkout changes, and Git is required for ordinary operations once enabled. Cloning does not copy this local `.git` policy: each member must run `init --git-remote <url>` to install the guard, including when adopting a previously configured repository.
+
+This is a DocNexus preflight guard. It cannot block direct `git switch/checkout/branch` commands, external Git changes during operations or manual policy removal. It installs no Git hooks and does not inspect or restrict remote branches; configure hosting rules or server-side checks separately for that. The business repository can still change branches normally. Review knowledge before committing to its pinned branch; a single branch does not eliminate concurrent editing conflicts.
+
+Setup is local only: it does not validate remote connectivity, commit, fetch, pull or push. Use standard `git -C docnexus ...` commands after CLI writes and pending recovery finish. To use existing remote knowledge, clone it into a nonexistent `docnexus/` directory, restore npm dependencies and run `init --git-remote <url>`; supplying a remote does not import its contents. The separate repository still ignores `node_modules/`, `store/` and `.runtime/`. Configure submodules and linked worktrees with Git directly; `--git-remote` manages standalone `.git/` directories only.
+
+`reset --force` clears current knowledge and integration while preserving `.git`, remote configuration, Git history and the npm installation. It returns `preserved_git: true` when Git metadata remains; committed knowledge can still be recovered from history. Reset neither commits nor pushes deletions, and initialization can run again afterward. Git setup and initialization are not a cross-file transaction; inspect actual state before retrying an interrupted operation.
+
+Everything except `node_modules/`, `store/` and `.runtime/` is text and can be committed. After cloning or pulling, keyword search and document reads use the current text immediately; host-managed knowledge can also follow business branches, while separate knowledge repositories must satisfy the pinned-branch guard; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
 
 ## Database engines
 
@@ -165,7 +183,7 @@ Deletion removes the current document, source, metadata, timeline and derived en
 Use `./docnexus/node_modules/.bin/docnexus` from the project root, or prefix a command with `--project-root <path>`.
 
 ```text
-init [--agent claude|codex|all]
+init [--agent claude|codex|all] [--git-remote <url>]
 doctor
 status
 skills sync

@@ -86,7 +86,7 @@ async function runCliUnlocked(argv: string[], cwd: string, dependencies: RunCliD
   if (command === "init") {
     const options = parseOptions(invocation.argv.slice(1));
     const agents = options.agent === undefined || options.agent === "none" ? [] : parseSkillsTargets(options.agent);
-    return json(await initializeProject(projectRoot, { agents }));
+    return json(await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"] }));
   }
 
   if (command === "reset") {
@@ -336,8 +336,8 @@ ${USAGE}`);
 }
 
 const USAGE = `Setup
-  docnexus init [--agent claude|codex|all]
-  docnexus --project-root path/to/project init
+  docnexus init [--agent claude|codex|all] [--git-remote <url>]
+  docnexus --project-root path/to/project init [--git-remote <url>]
   docnexus skills sync
   docnexus skills link --target claude|codex|all
   docnexus doctor [--json]

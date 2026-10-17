@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0 — 2026-10-17
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required. Git remains optional; configured knowledge repositories require Git for their local branch guard.
+
+- Add opt-in `init --git-remote <url>` for a separate knowledge repository. Keep Git optional by default, refuse host-tracked workspace files without changing the host index, configure only the workspace origin, and preserve Git history/configuration across knowledge reset and reinitialization. Setup does not commit or contact a remote; workspace, draft and projection formats are unchanged.
+- Pin configured knowledge repositories to one local branch (`main` when new, the current branch when adopting). Reject DocNexus operations before recovery on branch mismatch, detached HEAD or extra local branches; retain the pin outside the checkout across reset. This is a local preflight guard, not a Git-command interceptor or server-side branch restriction; clones must configure their own pin.
+
 ## 0.18.0 — 2026-10-16
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. No reset or migration is required. Usage recording is off by default and enabled per project.

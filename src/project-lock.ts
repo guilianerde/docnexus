@@ -8,6 +8,7 @@ import { setTimeout } from "node:timers/promises";
 import { sha256 } from "./hash.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { addUsageMetric } from "./usage-metrics.js";
+import { assertWorkspaceBranch } from "./workspace-git.js";
 
 const leases = new AsyncLocalStorage<ReadonlySet<string>>();
 
@@ -44,6 +45,7 @@ export async function withProjectLock<T>(projectRoot: string, operation: () => P
     addUsageMetric("project_lock_wait_ms", performance.now() - waitStart);
     return await leases.run(new Set([...(leases.getStore() ?? []), root]), async () => {
       const { recoverTextTransaction } = await import("./text-transaction.js");
+      await assertWorkspaceBranch(root);
       await recoverTextTransaction(root);
       return operation();
     });

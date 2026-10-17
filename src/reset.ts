@@ -12,6 +12,7 @@ export interface ResetOutput {
   removed_links: string[];
   cleaned_context_files: string[];
   preserved_installation?: boolean;
+  preserved_git?: boolean;
 }
 
 /** Removes project memory and agent integration, retaining a workspace-local npm installation. */
@@ -38,14 +39,15 @@ export async function resetProjectData(projectRoot: string, options: { force: bo
     const cleaned = await removeAgentContext(projectRoot);
     const entries = await readdir(workspace);
     const preserveInstallation = entries.some(entry => WORKSPACE_INSTALLATION_ENTRIES.includes(entry));
-    if (preserveInstallation) {
+    const preserveGit = entries.includes(".git");
+    if (preserveInstallation || preserveGit) {
       for (const entry of entries) {
-        if (!WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore") await rm(join(workspace, entry), { recursive: true, force: true });
+        if (!WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore" && entry !== ".git") await rm(join(workspace, entry), { recursive: true, force: true });
       }
       await ensureIgnoredEntries(projectRoot, ["node_modules/"]);
     } else await rm(workspace, { recursive: true, force: true });
     return { removed_workspace: workspace, removed_links: removedLinks, cleaned_context_files: cleaned,
-      ...(preserveInstallation ? { preserved_installation: true } : {}) };
+      ...(preserveInstallation ? { preserved_installation: true } : {}), ...(preserveGit ? { preserved_git: true } : {}) };
   });
 }
 

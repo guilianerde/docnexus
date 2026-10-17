@@ -48,6 +48,12 @@ doctor 保留原有 `checks` 和 `recommendations`，新增 `protocol_version`�
 
 CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表示绕过恢复机制。
 
+## 可选知识 Git 仓库
+
+`init --git-remote <url>` 对应 Node `initializeProject` 的可选 `gitRemote`，可用于新工作区或更新已有工作区的独立 `origin`。成功输出增加可选 `git: { repository, remote, branch }`，默认成功输出不变；未启用 Git 的工作区无需 Git，已有配置保持不变。Git 缺失返回 `git_unavailable`；宿主已跟踪工作区、仓库边界不符或 Git 操作失败返回 `git_operation_failed`。均不自动重试；初始化和 Git 配置可能部分完成，检查实际状态后再处理。该选项不执行提交或网络同步。`reset --force` 在保留 `.git` 时增加 `preserved_git: true`，历史及远程配置保留，当前知识被清空。
+
+新独立仓库固定 `main`，已有仓库固定配置时的当前分支；多本地分支或 detached HEAD 会拒绝配置。约束保存在 `.git/docnexus-branch.json`，每次顶层项目锁内先检查再恢复文本事务。分支不符、detached HEAD 或额外本地分支返回 `git_branch_mismatch`，`details` 包含 `allowed_branch`、`actual_branch`（detached 为 null）、`local_branches`；不自动切换、删除或重新固定分支。约束保留于 reset，克隆后需在本机重新执行 `init --git-remote`。这不是 Git 命令拦截或远程分支保护，不能替代服务端规则，也不协调外部 Git 的并发操作。
+
 ## 调用方显式分类
 
 用户或调用方 skill 已确定文档类型时，可在封存阶段指定分类，跳过本次写入的模型分类。例如 code-review skill 已准备好三份草稿产物：

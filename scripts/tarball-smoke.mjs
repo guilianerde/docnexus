@@ -307,6 +307,22 @@ try {
   assert((await runJson(cliPath, ["document", "list"], projectDirectory, cliEnvironment)).records.length === 0, "reset retained project knowledge");
   assert((await runJson(cliPath, ["usage", "status"], projectDirectory, cliEnvironment)).events === 0, "reset retained usage records");
 
+  const configured = await runJson(cliPath, ["init", "--git-remote", "https://example.com/team/knowledge.git"], projectDirectory, cliEnvironment);
+  assert(configured.git?.branch === "main", "installed Git setup did not pin main");
+  const git = args => run("git", ["-C", installationDirectory, ...args], { cwd: projectDirectory, env: cliEnvironment });
+  assert((await git(["remote", "get-url", "origin"])).stdout.trim() === configured.git.remote, "installed setup lost its knowledge origin");
+  await git(["symbolic-ref", "HEAD", "refs/heads/other"]);
+  let branchRefused = false;
+  try { await runJson(cliPath, ["status", "--json"], projectDirectory, cliEnvironment); }
+  catch (error) { branchRefused = error.message.includes("git_branch_mismatch"); }
+  assert(branchRefused, "installed CLI did not reject a changed knowledge branch");
+  await git(["symbolic-ref", "HEAD", "refs/heads/main"]);
+  const gitReset = await runJson(cliPath, ["reset", "--force"], projectDirectory, cliEnvironment);
+  assert(gitReset.preserved_git && gitReset.preserved_installation, "installed reset did not preserve Git and the npm runtime");
+  await stat(join(installationDirectory, ".git", "docnexus-branch.json"));
+  await runJson(cliPath, ["init"], projectDirectory, cliEnvironment);
+  assert((await git(["symbolic-ref", "HEAD"])).stdout.trim() === "refs/heads/main", "reinitialization lost the pinned branch");
+
   process.stdout.write(`Tarball smoke test passed: ${filename}\nIntegrity: ${integrity}\n`);
 } finally {
   await rm(smokeRoot, { recursive: true, force: true });
@@ -355,7 +371,7 @@ async function verifyPackageContents(packageDirectory) {
   await stat(join(packageDirectory, "dist/src/postgres-engine.js"));
   await stat(join(packageDirectory, "dist/src/postgres-store.js"));
   await stat(join(packageDirectory, "dist/src/viewer.js"));
-  for (const file of ["project-lock", "text-transaction", "workspace-io", "knowledge", "hybrid-recall", "fact-renderer", "document-query", "usage", "usage-metrics"]) await stat(join(packageDirectory, `dist/src/${file}.js`));
+  for (const file of ["project-lock", "text-transaction", "workspace-io", "workspace-git", "knowledge", "hybrid-recall", "fact-renderer", "document-query", "usage", "usage-metrics"]) await stat(join(packageDirectory, `dist/src/${file}.js`));
 
   const packagedManifest = JSON.parse(await readFile(join(packageDirectory, "package.json"), "utf8"));
   assert(["@electric-sql/pglite", "@electric-sql/pglite-pgvector", "postgres", "@huggingface/transformers"].every(name => packagedManifest.dependencies?.[name]), "retrieval runtime dependencies are missing");

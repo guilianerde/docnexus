@@ -54,6 +54,10 @@ With recording enabled, record only explicit feedback: `docnexus usage feedback 
 
 ## Reset
 
+Optional `init --git-remote <url>` configures a standalone repository inside `docnexus/`; default initialization does not require Git. It does not commit or synchronize remotely. Host-tracked knowledge must be reviewed and removed from the host index while retaining local files before setup; never untrack files automatically to bypass this refusal. Reset preserves `.git`, origin and committed history, reporting `preserved_git: true`, while clearing current knowledge. Do not delete Git metadata to perform a knowledge reset.
+
+Configured knowledge repositories use one pinned branch (`main` when new, the current branch when adopting an existing repository). A wrong branch, detached HEAD or extra local branches causes `git_branch_mismatch` before recovery or other DocNexus work. Review and restore the intended branch state; do not bypass the guard, delete `.git/docnexus-branch.json`, discard extra branches or repin a new branch automatically. Reset preserves the pin. Clone recipients must rerun `init --git-remote` to install the local guard. This does not intercept terminal Git commands or restrict remote branches; external Git must not run during CLI operations.
+
 Existing format-6 text needs only an index sync for this engine change. There is no migration from formats before 6. Reset removes project knowledge, sources and timelines, derived stores and custom models, skill links and marked agent instructions. It retains workspace-local `package.json`, `package-lock.json` and `node_modules/` so the CLI can initialize again; the result includes `preserved_installation: true` when these entries remain. With a configured Postgres URL, it first drops only this project's remote schema; a failed remote cleanup blocks reset. Only run it when the user has explicitly authorized clearing that workspace:
 
 ```bash
