@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeProject } from "../src/project.js";
 import { deleteManagedDocument, getManagedRecord, upsertManagedDocument } from "../src/managed-documents.js";
-import { resolveKnowledge, type KnowledgeDocument } from "../src/knowledge.js";
+import { resolveKnowledge, validateKnowledgeUpdate, type FactIssue, type KnowledgeDocument } from "../src/knowledge.js";
+import { DocNexusError } from "../src/errors.js";
 import { listFacts } from "../src/knowledge-service.js";
 import { validateMetadata } from "../src/metadata.js";
 import { searchDocuments } from "../src/search.js";
@@ -73,6 +74,59 @@ describe("entity identity and fact lifecycle", () => {
     expect(() => resolveKnowledge([document([old, next, { ...next, id: "fact_fork" }])], at)).toThrow("already has a replacement");
     expect(() => resolveKnowledge([document([old, { ...next, entity: undefined }])], at)).toThrow("entity mismatch");
     expect(() => resolveKnowledge([document([old, { ...next, valid_from: "2025-01-01T00:00:00Z" }])], at)).toThrow("predates");
+  });
+
+  it("reports every fact issue of an update at once, each with a field-specific fix", () => {
+    const extra: MetadataFact = { id: "fact_extra", text: "extra", provenance: "Meeting", entity: "Auth service", valid_from: "2026-02-01T00:00:00Z" };
+    // Fresh entity lists: other tests mutate the shared fixture's entities.
+    const auth = { name: "Auth service", type: "component" as const, description: "Authentication", aliases: ["认证服务", "AuthSvc"] };
+    const stored = { ...document([old, extra]), metadata: { ...metadata, entities: [auth], facts: [old, extra] } };
+    const draft = document([
+      { ...old, text: "rewritten", entity: "Gateway" },
+      { id: "fact_dangling", text: "x", provenance: "Chat", entity: "Auth service", valid_from: at, replaces: "fact_missing" },
+      { id: "fact_early", text: "y", provenance: "Chat", entity: "Auth service", valid_from: "2025-01-01T00:00:00Z", replaces: old.id }
+    ]);
+    draft.metadata = { ...draft.metadata, entities: [auth, { name: "Gateway", type: "component", description: "Edge" }] };
+    let failure: unknown;
+    try { validateKnowledgeUpdate([stored], draft, at); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(DocNexusError);
+    const error = failure as DocNexusError;
+    expect(error.code).toBe("knowledge_conflict");
+    const issues = error.details!.issues as FactIssue[];
+    expect(issues.map((value) => [value.fact_id, value.field, value.problem])).toEqual([
+      [old.id, "text", "immutable_field"],
+      [old.id, "entity", "immutable_field"],
+      ["fact_extra", "id", "historical_fact_removed"],
+      ["fact_dangling", "replaces", "replaces_unknown"],
+      ["fact_early", "valid_from", "replacement_predates"]
+    ]);
+    expect(error.message).toMatch(/^5 fact issue\(s\):\n1\. fact fact_rotation_old text is immutable/);
+    expect(issues.every((value) => value.fix.length > 0 && value.source_path === "auth.md")).toBe(true);
+    // The entity change is reported once, as the stored-field issue, not again as a replacement mismatch.
+    expect(issues.filter((value) => value.fact_id === "fact_early" && value.field === "entity")).toEqual([]);
+    expect(issues[0].fix).toContain('"replaces": "fact_rotation_old"');
+    expect(issues[4].fix).toContain("2026-01-01T00:00:00Z or later");
+  });
+
+  it("guides an entity change straight to a valid repair instead of a second failure", () => {
+    const entities = [{ name: "Auth service", type: "component" as const, description: "Authentication", aliases: ["认证服务", "AuthSvc"] }, { name: "Gateway", type: "component" as const, description: "Edge" }];
+    const stored = { ...document([old]), metadata: { ...metadata, entities: entities.slice(0, 1), facts: [old] } };
+    const withEntities = (facts: MetadataFact[]) => ({ ...document(facts), metadata: { ...metadata, entities, facts } });
+    const issuesOf = (draft: KnowledgeDocument) => {
+      try { validateKnowledgeUpdate([stored], draft, at); return []; } catch (error) { return (error as DocNexusError).details!.issues as FactIssue[]; }
+    };
+    const moved = issuesOf(withEntities([{ ...old, entity: "Gateway" }]));
+    expect(moved).toHaveLength(1);
+    expect(moved[0]).toMatchObject({ field: "entity", problem: "immutable_field" });
+    expect(moved[0].fix).toContain("aliases");
+    expect(moved[0].fix).toContain('without "replaces"');
+    // Following the old generic advice (replace with a different entity) is explained as a mismatch with its own repair.
+    const replaced = issuesOf(withEntities([old, { ...next, entity: "Gateway" }]));
+    expect(replaced).toEqual([expect.objectContaining({ fact_id: next.id, field: "entity", problem: "replacement_entity_mismatch" })]);
+    expect(replaced[0].fix).toContain(`remove replaces from ${next.id}`);
+    // The suggested repair passes in one step.
+    const repaired = withEntities([{ ...old, withdrawn_at: at, withdrawal_reason: "Belongs to Gateway" }, { ...next, entity: "Gateway", replaces: undefined }]);
+    expect(issuesOf(repaired)).toEqual([]);
   });
 
   it("resolves aliases across documents, search, concept listings and graph endpoints", async () => {

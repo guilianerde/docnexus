@@ -36,7 +36,17 @@ Example metadata fields (inside a complete metadata object):
 ```
 
 - Choose a stable, project-unique `fact_` id with letters, digits, hyphens or underscores. Preserve it in future edits. A metadata update must retain earlier fact entries.
-- `text`, `provenance`, `entity`, `valid_from` and `replaces` are immutable for an existing id. Correct a claim by adding a new fact that explicitly replaces it. Do not infer replacement merely because two claims differ.
+- `text`, `provenance`, `entity`, `valid_from` and `replaces` are immutable for an existing id. Do not infer replacement merely because two claims differ. Choose the change by what is wrong:
+
+| Change | Do this |
+| --- | --- |
+| Claim wording or value changed | Keep the old fact; add a new fact with the **same entity** and `replaces` pointing to it. |
+| New source for the same claim | Keep the old fact; add a replacing fact with the new `provenance`. |
+| Entity was renamed | Keep the fact's entity; add the new name to that entity's `aliases`. |
+| Claim belongs to a different entity | Withdraw the old fact (`withdrawn_at`, `withdrawal_reason`); add a new fact for the other entity **without** `replaces`. A replacement can never change entity. |
+| Later effective time | Add a replacing fact whose `valid_from` is not earlier than the old one. |
+| Old fact recorded with the wrong effective time | Withdraw it; add a corrected fact without `replaces`. |
+| Claim was simply wrong | Withdraw it; add nothing, or a new fact without `replaces`. |
 - `provenance` identifies the actual source. `valid_from` is when the claim becomes true, with an explicit timezone. Distinguish this from when the document is saved. If the effective date is unknown and matters, ask; if a user makes a decision effective now, use the current timestamp and state that basis.
 - `entity` is optional; when present it must resolve to a declared entity or alias. Replacements must share the same canonical entity, including across documents. Prefer keeping a chain on the same canonical topic page.
 - Set optional `valid_until` for an exclusive expiry. To retract an incorrect claim without replacing it, add `withdrawn_at` and `withdrawal_reason`. An existing expiry or withdrawal cannot be undone; add a new fact instead.
@@ -47,7 +57,8 @@ Example metadata fields (inside a complete metadata object):
 - Expired, withdrawn and not-yet-effective claims produce a status notice, not the inactive assertion. Fact writes refresh dependent pages within the same recoverable transaction. Document reads, search and index sync refresh elapsed-time changes; `docnexus document render` refreshes all views explicitly. There is no background refresh timer.
 - Read author-owned text and reference placeholders with `docnexus document get --id <id> --include template,metadata`. No separate template file is stored. Code fences keep reference syntax literal; inline references are not supported.
 - Avoid repeating changing fact values in hand-written explanations, summaries or entity descriptions. Free prose is not automatically understood or rewritten. Existing duplicated assertions need one reviewed conversion to references; do not infer or mechanically replace ambiguous paraphrases.
-- For fact-backed drafts, sealing validates references and emits `preview.md` plus a hash. Review the preview and metadata. Ingestion refuses preview tampering or effective fact changes since sealing; reseal and review the new preview. On an ambiguous alias or invalid reference, inspect existing knowledge and correct the draft before resealing.
+- Sealing checks the whole fact chain of the prospective project — changes to stored facts, entities, replacements, effective times, withdrawals and cycles — and reports **every** problem in one `knowledge_conflict` error. With `--json`, `details.issues[]` lists each problem as `fact_id`, `field`, `problem`, `message`, `fix` and `source_path`. Apply every `fix` before resealing instead of fixing one issue per attempt.
+- For fact-backed drafts, sealing also validates references and emits `preview.md` plus a hash. Review the preview and metadata. Ingestion refuses preview tampering or effective fact changes since sealing; reseal and review the new preview. On an ambiguous alias or invalid reference, inspect existing knowledge and correct the draft before resealing.
 
 Example `document.md`:
 

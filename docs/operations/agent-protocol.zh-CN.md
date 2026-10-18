@@ -41,7 +41,7 @@ docnexus protocol
 | `index_schema_incompatible` | 使用与该投影版本兼容的 DocNexus；仍可直接查找和读取文本 |
 | `index_unavailable` / `embedding_failed` | 检查数据库/离线模型；可使用独立文本 search |
 | `embedding_input_too_long` | 缩短查询或拆分输入 |
-| `knowledge_conflict` / `invalid_metadata` | 按实体、事实与格式规则审阅修正 |
+| `knowledge_conflict` / `invalid_metadata` | 按实体、事实与格式规则审阅修正；事实链问题一次性列在 `details.issues[]`（`fact_id`、`field`、`problem`、`message`、`fix`、`source_path`），按每条 `fix` 全部修正后再封存 |
 | `internal_error` | 检查实际持久状态并报告；错误不证明写入未提交 |
 
 doctor 保留原有 `checks` 和 `recommendations`，新增 `protocol_version`、结构化 `issues[]`。发现真源损坏时，机器清单优先要求审阅真源，不建议先用索引重建掩盖问题。完整错误枚举以 `docnexus protocol` 为准。

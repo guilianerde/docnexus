@@ -21,7 +21,7 @@ export const errorDefinitions = {
   draft_changed: { retryable: false, kind: "review", message: "Review the changed draft and current target before resealing." },
   preview_changed: { retryable: false, kind: "review", message: "Read the current referenced facts, reseal, and review the new preview." },
   text_integrity_error: { retryable: false, kind: "review", message: "Inspect canonical text with doctor; review edits before adopting them or restore damaged files from backup.", command: ["doctor"] },
-  knowledge_conflict: { retryable: false, kind: "review", message: "Inspect entity and fact history; resolve the conflict without discarding valid facts." },
+  knowledge_conflict: { retryable: false, kind: "review", message: "Apply the fix of every issue in details.issues (fact history is append-only), then seal again; do not discard valid facts." },
   invalid_metadata: { retryable: false, kind: "review", message: "Correct the reported metadata fields before sealing or writing." },
   index_outdated: { retryable: false, kind: "repair", message: "Synchronize verified text into the derived index.", command: ["index", "sync"] },
   index_schema_incompatible: { retryable: false, kind: "configure", message: "Use a DocNexus release compatible with this projection version; canonical text remains readable." },

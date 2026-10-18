@@ -215,8 +215,9 @@ export async function sealDraft(
       base_record_hash: baseRecordHash
     };
     let previewFile: string | undefined;
+    // Check the whole fact chain at seal time, so every issue is reported before review and ingestion.
+    const prospective = await validateKnowledgeWrite(projectRoot, { id: prior?.id ?? "draft_preview", file_path: filePath, metadata: metadata as DocNexusMetadata, document });
     if (factReferenceIds(document).length) {
-      const prospective = await validateKnowledgeWrite(projectRoot, { id: prior?.id ?? "draft_preview", file_path: filePath, metadata: metadata as DocNexusMetadata, document });
       const rendered = renderFactDocument(document, prospective.knowledge.facts).document;
       manifest.rendered_hash = sha256(rendered);
       previewFile = relativeDraftPath(draftId, "preview.md");

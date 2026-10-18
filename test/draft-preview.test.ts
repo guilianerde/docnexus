@@ -92,3 +92,23 @@ it("refuses a preview whose effective fact expires after sealing", async () => {
   const current = JSON.parse(await runCli(["draft", "preview", "--id", staged.draft_id], root));
   expect(current.document).toContain("已到期");
 });
+
+it("reports every fact-chain issue when sealing, even without fact references in the document", async () => {
+  const root = await setup();
+  const entities = [{ name: "Release", type: "component" as const, description: "Release process" }];
+  const facts = [
+    { id: "fact_a", text: "a", provenance: "Chat", entity: "Release", valid_from: "2026-01-01T00:00:00Z", replaces: "fact_missing" },
+    { id: "fact_b", text: "b", provenance: "Chat", entity: "Unknown thing", valid_from: "2026-01-01T00:00:00Z" }
+  ];
+  const created = JSON.parse(await runCli(["draft", "new"], root));
+  for (const [name, content] of Object.entries({ source: "New policy", document: "# Policy", metadata: JSON.stringify({ ...metadata, entities, facts }) })) {
+    await writeFile(join(root, created.artifacts[name]), content);
+  }
+  const failure = await runCli(["draft", "seal", "--id", created.draft_id, "--file", "policy.md", "--base-version", "new"], root).catch((error) => error);
+  expect(failure).toMatchObject({ code: "knowledge_conflict" });
+  expect(failure.details.issues.map((issue: { fact_id: string; problem: string }) => [issue.fact_id, issue.problem])).toEqual([
+    ["fact_b", "undeclared_entity"],
+    ["fact_a", "replaces_unknown"]
+  ]);
+  expect(failure.message).toContain("2 fact issue(s)");
+});
