@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. The embedding runtime change re-embeds existing projections on the next `recall` or `index sync`; text and timelines are untouched.
+
+- Upgrade `@huggingface/transformers` to 4.3.1 (`onnxruntime-node` 1.30.0), clearing the five moderate `sprintf-js` audit findings. Tokenization is unchanged; q8 vectors shift slightly and the development retrieval set showed no keyword/hybrid change.
+- Ship a smaller package: exclude source maps, type declarations and raw evaluation baselines (200 → 97 files).
+- Split CLI dispatch into a command table (`cli-commands.ts`) and shared argument helpers (`cli-options.ts`) without changing command behavior.
+- Run tests and the tarball smoke test on macOS and Windows in CI; Windows is advisory until its first green run.
+- Move per-round validation figures from the roadmap to a separate validation history page.
+
 ## 0.21.0 — 2026-10-17
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no data migration; package-version synchronization refreshes installed skills.

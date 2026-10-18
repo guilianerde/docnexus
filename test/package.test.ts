@@ -32,6 +32,9 @@ describe("npm package contract", () => {
       ])
     );
     expect(packageJson.files).toContain("models");
+    expect(packageJson.files).toEqual(
+      expect.arrayContaining(["!dist/src/**/*.map", "!dist/src/**/*.d.ts", "!docs/operations/baselines"])
+    );
     expect(packageJson.scripts.build).toContain("rmSync('dist'");
     expect(packageJson.scripts.prepack).toBe("npm run build");
     expect(packageJson.scripts["audit:prod"]).toBe("npm audit --omit=dev --audit-level=high");

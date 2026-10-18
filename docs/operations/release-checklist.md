@@ -89,9 +89,11 @@ For each release:
 
 Only the publish job receives `id-token: write`. Release builds disable npm dependency caching. Keep the workflow filename aligned with the npm Trusted Publisher configuration.
 
-## Audit snapshot — 2026-10-14
+## Audit snapshot — 2026-10-18
 
-The production audit passes the high/critical gate after upgrading the sharp override to `^0.35.5`. Five moderate findings remain in the `sprintf-js → roarr → global-agent → onnxruntime-node → transformers` dependency chain. The underlying [sprintf-js advisory](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) has no patched release; npm proposes a breaking Transformers upgrade. Evaluate that upgrade separately rather than treating this gate as a zero-vulnerability result.
+`npm audit --omit=dev` reports 0 vulnerabilities after upgrading `@huggingface/transformers` from 3.8.1 to 4.3.1, which moves `onnxruntime-node` to 1.30.0 and drops the `sprintf-js → roarr → global-agent 3` chain behind the five earlier moderate findings ([GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)). The sharp override stays at `^0.35.5`.
+
+The new runtime keeps the same tokenizer output; q8 vectors differ slightly (cosine about 0.996 on probe texts), so the embedding signature changes and the next `recall` or `index sync` re-embeds existing projections without touching text. The development retrieval-quality set matched the 3.8.1 run on keyword and hybrid metrics with zero citation, fact, budget or network violations; one vector top-1 changed on 21 questions, which is not evidence of a quality change.
 
 ## Workspace-local installation
 

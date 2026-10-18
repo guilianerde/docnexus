@@ -17,6 +17,7 @@
 | 智能体协议 | [结构化错误与诊断契约](./operations/agent-protocol.zh-CN.md) |
 | 证据交付 | [范围、预算、事实与时间](./architecture/evidence-delivery.zh-CN.md) |
 | 智能体验收 | [独立上下文、调用观测与结果审阅](./operations/agent-evaluation.zh-CN.md) |
+| 验收记录 | [各轮回归、实测数字与结论边界](./operations/validation-history.zh-CN.md) |
 | 影响清单 | [持久化、待办续办与复核状态](../skills/docnexus-library/references/impacts.md) |
 | 使用观察 | [本地记录、匿名指标、显式反馈与单文件导出](./operations/usage-observation.zh-CN.md) |
 | 展示接口 | [全量/分页文档查询、分类与本地浏览页](./architecture/document-query.zh-CN.md) |

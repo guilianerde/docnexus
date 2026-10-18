@@ -239,6 +239,11 @@ describe("runCli", () => {
     const projectRoot = await makeRoot();
 
     await expect(runCli(["unknown"], projectRoot)).rejects.toThrow("Unknown command");
+    // Inherited object keys must not resolve as commands or subcommands.
+    await expect(runCli(["constructor"], projectRoot)).rejects.toThrow("Unknown command");
+    await runCli(["init"], projectRoot);
+    await expect(runCli(["draft", "toString"], projectRoot)).rejects.toThrow("Unknown command");
+    await expect(runCli(["document"], projectRoot)).rejects.toThrow("Unknown command");
   });
 
   it("removes standalone index mutations and guards destructive document commands", async () => {
