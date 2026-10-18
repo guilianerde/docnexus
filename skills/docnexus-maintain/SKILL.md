@@ -34,6 +34,8 @@ The default engine is PGLite at `docnexus/store/brain.pglite`. An explicit `DOCN
 
 `index sync` refreshes generated fact blocks, indexes new/changed current documents, removes obsolete projections, restores missing graph documents and refreshes `CONCEPTS.md`. Recall also runs it automatically. It reuses unchanged chunks and vectors; ordinary writes maintain HNSW incrementally. Entity aliases, fact validity and referenced fact changes invalidate affected projections. `document render` refreshes only generated Markdown blocks. These operations never adopt authored edits or append source history. A changed local embedding probe causes all current documents to be re-embedded. Skill linking also supports `codex` and `all`.
 
+The six official `docnexus/skills/` copies, their version stamp and generated `docnexus/schemas/metadata.schema.json` are Git-ignored local package assets. Keep knowledge, sources, metadata, timelines, impacts and npm manifests/lockfiles in Git. Keep custom workflows under other skill names; never customize official copies that upgrades replace. After cloning, run `npm ci --prefix ./docnexus` and then `init --agent <target>` (also `--git-remote <url>` for separate knowledge repositories) to restore local assets and links. Existing tracked copies need an explicit reviewed `git rm --cached` migration; initialization and sync never modify the Git index.
+
 ## Repair
 
 - A busy project: wait for the active operation and retry. The OS releases the lock when its process exits; do not delete lock files to force access.

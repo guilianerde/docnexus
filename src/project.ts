@@ -152,16 +152,16 @@ DocNexus project workspace. Everything DocNexus owns for this project lives here
 | --- | --- |
 | \`package.json\`, \`package-lock.json\` | Isolated DocNexus npm manifest and lockfile. |
 | \`node_modules/\` | Reinstallable npm runtime, ignored by Git. |
-| \`skills/\` | Project skills. Start from \`skills/docnexus/SKILL.md\`. |
+| \`skills/\` | Local packaged skill copies and version stamp, ignored by Git. Start from \`skills/docnexus/SKILL.md\`. |
 | \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
 | \`library/\` | Author-owned Markdown and fact references with generated read-only fact blocks. Adopt authored edits with \`docnexus document sync\`. |
 | \`records/\` | Per-document source, metadata, timeline, and \`record.json\`; the text source of truth. |
 | \`CONCEPTS.md\` | Generated concept index that agents load while working. |
-| \`schemas/\` | Metadata JSON schema used by the skills. |
+| \`schemas/\` | Generated metadata JSON schema, ignored by Git. |
 | \`store/\` | Rebuildable PostgreSQL/PGLite retrieval projections and optional local model overrides. |
 | \`.runtime/\` | Pending text transaction recovery journal and optional local usage records; do not delete during recovery. |
 
-Everything except \`node_modules/\`, \`store/\` and \`.runtime/\` is plain text and can be committed. Restore the runtime with \`npm ci --prefix ./docnexus\` from the project root. CLI access takes the local project lock and recovers pending text transactions first.
+Commit knowledge, sources, metadata, timelines, impact records, workspace configuration and npm manifests/lockfiles. Git ignores \`node_modules/\`, \`store/\`, \`.runtime/\`, the six official skill copies, their version stamp and \`schemas/metadata.schema.json\`. Custom skills with other names remain trackable; keep project customizations outside official copies, which upgrades replace. From the project root, restore the locked runtime with \`npm ci --prefix ./docnexus\`, then run \`./docnexus/node_modules/.bin/docnexus init --agent codex\` (or \`claude\` / \`all\`) to recreate skills, schema and agent links. Separate knowledge repositories also need \`--git-remote <url>\` to restore the local branch guard. Existing tracked copies require explicit \`git rm --cached\`; initialization and skills sync never change the Git index. CLI access takes the local project lock and recovers pending text transactions first.
 Run \`./docnexus/node_modules/.bin/docnexus index sync\` after a Git pull; default hybrid recall also syncs automatically. Avoid Git changes and external edits during writes or pending recovery.
 Entity aliases and optional facts track identity, provenance and effective validity. Run \`docnexus facts list --include-inactive\` to inspect fact history.
 Define a fact only in its owner's metadata; reference it on a standalone \`{{fact:fact_id}}\` line. The CLI renders attributed current values and updates dependent pages. Use \`document get --include template,metadata\` for the editable structure and \`document render\` to refresh all views; there is no background timer.

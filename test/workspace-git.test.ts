@@ -8,6 +8,7 @@ import { runCli } from "../src/cli.js";
 import { getManagedRecord, upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
 import { resetProjectData } from "../src/reset.js";
+import { SKILL_NAMES } from "../src/skills.js";
 
 const execute = promisify(execFile);
 const roots: string[] = [];
@@ -63,6 +64,56 @@ it("configures an existing workspace, updates its remote explicitly and leaves i
   await expect(initializeProject(root)).resolves.toMatchObject({ created: false });
   expect(await readFile(file, "utf8")).toBe("knowledge sentinel");
   expect(await git(workspace, "remote", "get-url", "origin")).toBe("https://example.com/second.git");
+});
+
+it("keeps bundled assets local in a host repository while tracking knowledge, versions and custom skills", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await initializeProject(root);
+  const workspace = join(root, "docnexus");
+  // Simulate an existing workspace whose skills already match the installed version.
+  await writeFile(join(workspace, ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
+  await mkdir(join(workspace, "skills", "docnexus-custom"));
+  await writeFile(join(workspace, "skills", "docnexus-custom", "SKILL.md"), "Project-owned workflow");
+  await writeFile(join(workspace, "schemas", "custom.json"), "{}");
+  await writeFile(join(workspace, "package.json"), JSON.stringify({ dependencies: { "@rowansenne/docnexus": "0.22.0" } }));
+  await writeFile(join(workspace, "package-lock.json"), "version lock sentinel");
+  await mkdir(join(workspace, "impacts"));
+  await writeFile(join(workspace, "impacts", "keep.json"), "{}");
+  const saved = await upsertManagedDocument(root, { file_path: "keep.md", source: "Original source", document: "# Keep knowledge",
+    metadata: { title: "Keep", summary: "Knowledge sentinel", tags: [], entities: [], relationships: [] } });
+
+  await runCli(["document", "list"], root);
+  const ignore = await readFile(join(workspace, ".gitignore"), "utf8");
+  await runCli(["skills", "sync"], root);
+  expect(await readFile(join(workspace, ".gitignore"), "utf8")).toBe(ignore);
+  for (const path of [...SKILL_NAMES.map(name => `skills/${name}/SKILL.md`), "skills/.docnexus-skills.json", "schemas/metadata.schema.json"]) {
+    expect(await git(root, "check-ignore", `docnexus/${path}`)).toBe(`docnexus/${path}`);
+  }
+  await git(root, "add", ".");
+  const tracked = (await git(root, "ls-files")).split("\n");
+  for (const path of ["project.json", "package.json", "package-lock.json", "library/keep.md", "impacts/keep.json", "skills/docnexus-custom/SKILL.md", "schemas/custom.json",
+    ...["source.md", "metadata.json", "timeline.md", "record.json"].map(name => `records/${saved.id}/${name}`)]) {
+    expect(tracked).toContain(`docnexus/${path}`);
+  }
+  expect(tracked.some(path => SKILL_NAMES.some(name => path.startsWith(`docnexus/skills/${name}/`)))).toBe(false);
+  expect(tracked).not.toContain("docnexus/schemas/metadata.schema.json");
+});
+
+it("adds ignore rules without untracking previously committed package assets", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await initializeProject(root);
+  await writeFile(join(root, "docnexus", ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
+  await git(root, "add", ".");
+  await git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "core.hooksPath=/dev/null", "commit", "-m", "Existing workspace");
+  const index = await git(root, "ls-files", "--stage");
+  expect(index).toContain("docnexus/skills/docnexus/SKILL.md");
+  expect(index).toContain("docnexus/schemas/metadata.schema.json");
+  await initializeProject(root);
+  await runCli(["skills", "sync"], root);
+  expect(await git(root, "ls-files", "--stage")).toBe(index);
+  expect(await git(root, "diff", "--cached")).toBe("");
 });
 
 it("pins a newly configured knowledge repository to main independently of Git defaults", async () => {
@@ -201,7 +252,14 @@ it("reads committed knowledge after a manual push and clone into a second projec
   await git(workspace, "push", "origin", "HEAD:main");
   const second = await makeRoot();
   await git(second, "clone", "--branch", "main", remote, "docnexus");
-  await expect(initializeProject(second, { gitRemote: remote })).resolves.toMatchObject({ created: false });
+  await expect(access(join(second, "docnexus", "skills"))).rejects.toThrow();
+  await expect(access(join(second, "docnexus", "schemas"))).rejects.toThrow();
+  await expect(runCli(["document", "list"], second)).resolves.toContain(saved.id);
+  await expect(readFile(join(second, "docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
+  await expect(readFile(join(second, "docnexus", "schemas", "metadata.schema.json"), "utf8")).resolves.toContain("facts");
+  await expect(initializeProject(second, { gitRemote: remote, agents: ["codex"] })).resolves.toMatchObject({ created: false });
+  await expect(readFile(join(second, ".agents", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
+  expect(await git(join(second, "docnexus"), "status", "--porcelain")).toBe("");
   const record = await getManagedRecord(second, saved.id);
   expect(record.document).toContain("Use the team convention.");
   expect(record.source).toBe("Team decision");

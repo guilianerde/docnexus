@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.22.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 0.22.1 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
@@ -32,7 +32,7 @@ DocNexus 0.22.0 采用分层项目记忆：Markdown 当前知识与来源时间�
 | `records/<id>/record.json` | 稳定身份、时间戳、source/正文模板/metadata/时间线哈希 | 文本真源；正文哈希不包含生成块内容 |
 | `CONCEPTS.md` | 文档和概念目录 | 由 metadata 再生成 |
 | `drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
-| `skills/`、`schemas/` | 工作流与格式说明 | 包内资源副本 |
+| `skills/`、`schemas/` | 工作流与格式说明 | 官方副本与生成 schema 仅本地，Git 忽略 |
 | `store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |
 | `store/models/` | 可选本地模型覆盖 | 非派生资产，需要另行备份 |
 | `.runtime/transaction.json` | 未完成文本事务的前后镜像、恢复方向及入库收据 | 临时恢复状态，Git 忽略，不能随意删除 |
@@ -151,7 +151,7 @@ Git 默认不参与初始化或同步。显式 `init --git-remote <url>` 预检 
 
 可选 Git 配置同时固定单一本地分支：新建时为 `main`，已有时为当前分支。`.git/docnexus-branch.json` 在工作树之外保存约束，避免旧提交或 reset 移除检查。顶层项目锁内先校验分支及本地分支集合，再恢复文本事务；分支不符、detached HEAD 或额外本地分支时拒绝 DocNexus 操作。默认无 Git 模式不启动 Git 子进程。克隆需重新配置以安装本地约束；检查不能阻止外部 Git 命令、并发切换或人工移除约束，不限制远程分支。
 
-除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都可提交。克隆、拉取后，关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
+Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及版本标记、`schemas/metadata.schema.json`；其他名称的自定义 skill 仍可提交。克隆后安装锁定依赖并运行 `init --agent <target>`，恢复 skills、schema 和链接；独立知识仓库同时传入 `--git-remote <url>`。已跟踪副本需显式取消跟踪，详见[恢复与迁移](./skills-workspace.zh-CN.md#已有仓库迁移)。之后关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
 
 `doctor` 在恢复未完成事务后检查文本、索引、数据库、本地模型和 skills，不修复缺失投影。新建空工作区尚无检索库是正常状态。`graph audit` 检查已存在的文档/关系投影、孤立概念与 HNSW；缺失存储先运行同步。
 

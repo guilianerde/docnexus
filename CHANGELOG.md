@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22.1 — 2026-10-18
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no reset. Previously tracked package copies require an explicit index-only migration to stop tracking them; knowledge and npm manifests/lockfiles remain versioned.
+
+- Keep consumer workspaces' six official skill copies, version stamp and generated metadata schema local with precise Git ignore rules. Preserve custom skill names, knowledge and dependency manifests/lockfiles; initialization restores local assets and agent links after a clone. Existing tracked copies require an explicit index-only migration; workspace format remains unchanged.
+
 ## 0.22.0 — 2026-10-18
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. The embedding runtime change re-embeds existing projections on the next `recall` or `index sync`; text and timelines are untouched.

@@ -4,7 +4,7 @@
 
 ## 当前定位
 
-0.22.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。不迁移格式 5 及更早的工作区。
+0.22.1 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。不迁移格式 5 及更早的工作区。
 
 ## 已实现
 
@@ -26,7 +26,7 @@
 
 **可靠性与工程**
 
-- 工作区格式 6，文本随 Git 保存；可选独立知识仓库，固定单一本地分支。
+- 工作区格式 6，完整知识与安装版本随 Git 保存；官方 skills、生成 schema 与运行依赖仅本地，克隆后安装并初始化恢复。自定义 skills 可独立提交，已跟踪官方副本需显式取消跟踪。可选独立知识仓库，固定单一本地分支。
 - 本机项目锁、持久化文本事务、中断后的保存/删除/回滚恢复；模型与 embedding 在锁外准备、锁内校验提交。
 - 机器错误协议、`--json` 失败输出、`protocol` 发现与 doctor 结构化 issues。
 - 本地只读文档浏览页与全量/分页文档查询接口。

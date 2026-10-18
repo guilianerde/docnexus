@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.22.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.22.1 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
 
 ## Quick start
 
@@ -32,7 +32,7 @@ docnexus/
   node_modules/         # Reinstallable runtime, Git-ignored
   project.json          # workspace format marker
   CONCEPTS.md           # generated document and concept directory
-  skills/               # entry skill and five workflow skills
+  skills/               # local packaged skill copies, Git-ignored
   drafts/<draft_id>/    # source.md, document.md, metadata.json, manifest.json
   impacts/              # related-page impact checks, status and review history
   library/              # compiled current knowledge
@@ -41,7 +41,7 @@ docnexus/
     metadata.json       # title, summary, tags, named entities and textual links
     timeline.md         # dated confirmed updates, summaries and source material
     record.json         # stable identity, timestamps and content hashes
-  schemas/              # metadata format description
+  schemas/              # generated metadata schema, Git-ignored
   .runtime/             # pending text transaction recovery journal, ignored by Git
   store/                # rebuildable state, ignored by Git
     brain.pglite/       # documents, chunks, pgvector HNSW, entities, edges and sync state
@@ -161,11 +161,13 @@ Separate knowledge repositories use one pinned branch: `main` for new repositori
 
 This is a DocNexus preflight guard. It cannot block direct `git switch/checkout/branch` commands, external Git changes during operations or manual policy removal. It installs no Git hooks and does not inspect or restrict remote branches; configure hosting rules or server-side checks separately for that. The business repository can still change branches normally. Review knowledge before committing to its pinned branch; a single branch does not eliminate concurrent editing conflicts.
 
-Setup is local only: it does not validate remote connectivity, commit, fetch, pull or push. Use standard `git -C docnexus ...` commands after CLI writes and pending recovery finish. To use existing remote knowledge, clone it into a nonexistent `docnexus/` directory, restore npm dependencies and run `init --git-remote <url>`; supplying a remote does not import its contents. The separate repository still ignores `node_modules/`, `store/` and `.runtime/`. Configure submodules and linked worktrees with Git directly; `--git-remote` manages standalone `.git/` directories only.
+Setup is local only: it does not validate remote connectivity, commit, fetch, pull or push. Use standard `git -C docnexus ...` commands after CLI writes and pending recovery finish. To use existing remote knowledge, clone it into a nonexistent `docnexus/` directory, restore npm dependencies and run `init --agent codex --git-remote <url>` (or `claude` / `all`); supplying a remote does not import its contents. This recreates local skills, schema and agent links. Configure submodules and linked worktrees with Git directly; `--git-remote` manages standalone `.git/` directories only.
 
 `reset --force` clears current knowledge and integration while preserving `.git`, remote configuration, Git history and the npm installation. It returns `preserved_git: true` when Git metadata remains; committed knowledge can still be recovered from history. Reset neither commits nor pushes deletions, and initialization can run again afterward. Git setup and initialization are not a cross-file transaction; inspect actual state before retrying an interrupted operation.
 
-Everything except `node_modules/`, `store/` and `.runtime/` is text and can be committed. After cloning or pulling, keyword search and document reads use the current text immediately; host-managed knowledge can also follow business branches, while separate knowledge repositories must satisfy the pinned-branch guard; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
+Commit knowledge, sources, metadata, timelines, impact records, workspace configuration, `package.json` and `package-lock.json`. Git ignores `node_modules/`, `store/`, `.runtime/`, the six official `skills/` copies and their version stamp, and `schemas/metadata.schema.json`. Other custom skill names remain trackable; keep project customizations outside official copies because upgrades replace them. Initialization, skills sync and ordinary workspace commands add missing ignore rules without changing the Git index; existing tracked copies need an explicit migration (see [steps](docs/architecture/skills-workspace.zh-CN.md#已有仓库迁移)). After cloning, run `npm ci --prefix ./docnexus`, then `./docnexus/node_modules/.bin/docnexus init --agent codex` (or `claude` / `all`; add `--git-remote <url>` for separate knowledge repositories). This restores the locked runtime and generated files without changing knowledge.
+
+After setup or a pull, keyword search and document reads use the current text immediately; host-managed knowledge can also follow business branches, while separate knowledge repositories must satisfy the pinned-branch guard; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
 
 ## Database engines
 

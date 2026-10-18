@@ -4,6 +4,7 @@ import { installAgentContext } from "./agent-context.js";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillsPath, WORKSPACE_DIRNAME } from "./layout.js";
+import { ensureIgnoredEntries } from "./workspace-io.js";
 
 export type SkillsTarget = "codex" | "claude";
 
@@ -20,6 +21,11 @@ export const SKILL_NAMES = [
 ] as const;
 
 const VERSION_FILE = ".docnexus-skills.json";
+const BUNDLED_ASSET_IGNORE_ENTRIES = [
+  ...SKILL_NAMES.map(name => `/skills/${name}/`),
+  `/skills/${VERSION_FILE}`,
+  "/schemas/metadata.schema.json"
+];
 
 export interface SyncSkillsOutput {
   destination: string;
@@ -89,12 +95,14 @@ async function readSkillsVersion(projectRoot: string): Promise<string | undefine
 
 /** Re-syncs workspace skills when they are missing or were synced from another package version. */
 export async function ensureSkillsCurrent(projectRoot: string): Promise<SyncSkillsOutput | undefined> {
+  await ensureIgnoredEntries(projectRoot, BUNDLED_ASSET_IGNORE_ENTRIES);
   const state = await inspectSkills(projectRoot);
   return state.outdated || state.missing.length > 0 ? syncSkills(projectRoot) : undefined;
 }
 
 /** Copies the packaged skills into `docnexus/skills/`, replacing previous copies of the same skills. */
 export async function syncSkills(projectRoot: string, packagedSkillsRoot = bundledSkillsRoot()): Promise<SyncSkillsOutput> {
+  await ensureIgnoredEntries(projectRoot, BUNDLED_ASSET_IGNORE_ENTRIES);
   const destination = skillsPath(projectRoot);
   await mkdir(destination, { recursive: true });
   for (const skill of SKILL_NAMES) {

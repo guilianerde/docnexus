@@ -82,6 +82,28 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 从外层目录工作时显式使用本项目可执行文件与 `--project-root <工作区根目录>`。工作区根目录是 `docnexus/` 的直接父目录，不自动递归发现子项目或生成外层项目路由；外层 agent 指引由用户配置。
 
-skills 源文件随包发布，初始化复制到 `docnexus/skills/`，再链接到 `.agents/skills/` 或 `.claude/skills/`。包版本变化后，工作区命令自动刷新副本；`doctor` 只报告偏差。
+skills 源文件随包发布，初始化复制到 `docnexus/skills/`，再链接到 `.agents/skills/` 或 `.claude/skills/`。六个官方副本、`skills/.docnexus-skills.json` 和自动生成的 `schemas/metadata.schema.json` 仅保留本地，初始化、skills 同步及普通工作区命令补齐精确的 Git 忽略规则；其他名称的自定义 skill 和其他 schema 文件仍可提交。不要在官方副本中保存项目定制，升级会覆盖它们。源码仓库和 npm 包仍包含官方 skills；这里只忽略消费项目中的副本。包版本变化或 skills 缺失后，工作区命令自动刷新副本；`doctor` 只报告偏差。
+
+Git 保存完整知识真源（`library/`、`records/`、`impacts/` 等）、工作区配置和安装 manifest/lockfile。克隆后从项目根目录执行 `npm ci --prefix ./docnexus`，再执行 `./docnexus/node_modules/.bin/docnexus init --agent codex`（或 `claude` / `all`），重建 skills、schema 和 agent 链接；独立知识仓库同时传入 `--git-remote <url>` 恢复本地分支约束。安装遵循锁文件，不自动升级到 latest；恢复不改变已保存的知识。
 
 知识真源为文本，`node_modules/` 是可重装运行依赖；`store/` 为 Git 忽略的派生状态，`.runtime/` 为 Git 忽略的本机恢复日志。未完成写入或恢复时不要手动编辑、拉取或切换分支。克隆后关键词查找和全文阅读可直接运行；`index sync` 或 `recall` 补建 PGLite/Postgres＋pgvector 投影，普通变更复用未变片段并增量维护 HNSW，模型签名变化时重新嵌入。默认模型随包发布，自定义覆盖需单独备份。切换分支只同步当前工作目录。
+
+### 已有仓库迁移
+
+新增忽略规则不会取消已跟踪的文件。先确认官方副本内没有需要保留的定制（如有，先转存为不同名称的自定义 skill），再运行 `init` 或 `skills sync` 更新规则。命令不会自动修改 Git 索引。
+
+随宿主项目管理知识时，从项目根目录执行下面的命令，仅取消官方副本的跟踪，保留本地文件：
+
+```bash
+git rm -r --cached --ignore-unmatch -- \
+  docnexus/skills/docnexus \
+  docnexus/skills/docnexus-extract \
+  docnexus/skills/docnexus-ingest \
+  docnexus/skills/docnexus-recall \
+  docnexus/skills/docnexus-library \
+  docnexus/skills/docnexus-maintain \
+  docnexus/skills/.docnexus-skills.json \
+  docnexus/schemas/metadata.schema.json
+```
+
+独立知识仓库使用 `git -C docnexus rm`，并去掉上述路径前的 `docnexus/`。核对 `git diff --cached`，将这些删除记录与更新后的 `docnexus/.gitignore` 一起提交（独立仓库中为 `.gitignore`）。后续克隆按上文安装并初始化即可恢复，无需重置知识。拉取这次取消跟踪的提交后，也需重新初始化本地副本。

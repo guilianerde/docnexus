@@ -6,7 +6,7 @@ DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具�
 
 智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
 
-> 0.22.0 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
+> 0.22.1 保持工作区格式 6、草稿格式 3 和投影 schema 2。已有格式 6 工作区无需 reset，根目录 npm 安装继续兼容；更早格式不支持迁移，需要清空时先保存所需文本再明确 reset。
 
 ## 快速开始
 
@@ -32,7 +32,7 @@ docnexus/
   node_modules/         # 可重装运行依赖，Git 忽略
   project.json          # 工作区格式标记
   CONCEPTS.md           # 自动生成的文档与概念目录
-  skills/               # 入口 skill 与五个工作流 skill
+  skills/               # 官方 skills 的本地副本，Git 忽略
   drafts/<draft_id>/    # source.md、document.md、metadata.json、manifest.json
   impacts/              # 跨页影响清单、处理状态与复核历史
   library/              # 整理后的当前知识，可人工阅读
@@ -41,7 +41,7 @@ docnexus/
     metadata.json       # 标题、摘要、标签、实体和文字关系
     timeline.md         # 按时间追加的已确认更新、摘要及来源
     record.json         # 稳定 ID、时间戳与内容哈希
-  schemas/              # metadata 格式说明
+  schemas/              # 自动生成的 metadata schema，Git 忽略
   .runtime/             # Git 忽略的未完成文本事务恢复日志
   store/                # Git 忽略的派生数据
     brain.pglite/       # 文档、chunks、pgvector HNSW、实体、关系与同步状态
@@ -173,11 +173,13 @@ git -C docnexus status
 
 这是 DocNexus 的操作前检查，不能阻止终端中的 `git switch/checkout/branch`，不安装 Git hooks，也不能防止外部 Git 在操作过程中切换分支或人为删除本地约束。需要远程也只允许一个分支时，应另外配置托管平台规则或服务端检查；本命令不检查或修改远程分支。业务项目仍可正常切换自己的分支。团队在固定分支提交前完成内容审阅；单分支不消除多人修改同一文档的冲突。
 
-配置只进行本地操作，不验证远程连通性，也不自动提交、拉取或推送；这些操作使用标准 `git -C docnexus ...` 命令，并在 CLI 写入和事务恢复结束后执行。已有远程知识应先克隆到尚不存在的 `docnexus/` 目录，再恢复 npm 依赖并运行 `init --git-remote <url>`；指定地址不会自动导入远程内容。独立仓库内仍忽略 `node_modules/`、`store/` 与 `.runtime/`。子模块或 linked worktree 的 `.git` 文件需直接通过 Git 配置，`--git-remote` 只管理独立 `.git/` 目录。
+配置只进行本地操作，不验证远程连通性，也不自动提交、拉取或推送；这些操作使用标准 `git -C docnexus ...` 命令，并在 CLI 写入和事务恢复结束后执行。已有远程知识应先克隆到尚不存在的 `docnexus/` 目录，再恢复 npm 依赖并运行 `init --agent codex --git-remote <url>`（或 `claude` / `all`），重建本地 skills、schema 和 agent 链接；指定地址不会自动导入远程内容。子模块或 linked worktree 的 `.git` 文件需直接通过 Git 配置，`--git-remote` 只管理独立 `.git/` 目录。
 
 `reset --force` 继续清空当前知识和集成，但保留 `.git`、远程配置、Git 历史及 npm 安装；存在 `.git` 时返回 `preserved_git: true`。历史中已提交的知识仍可恢复，reset 不会提交或推送删除。重置后可再次 `init`。Git 配置与初始化不是跨文件事务，操作中途失败时应检查实际状态后重试。
 
-除 `node_modules/`、`store/` 和 `.runtime/` 外，工作区都是文本，可随 Git 提交。克隆、拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
+Git 保存文档、来源、元数据、时间线、影响清单、工作区配置，以及 `package.json`、`package-lock.json`。自动忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及其版本标记、`schemas/metadata.schema.json`。其他名称的自定义 skill 仍可提交；项目定制应独立保存，官方副本会被升级覆盖。初始化、skills 同步及普通工作区命令会补齐忽略规则，不修改 Git 暂存区；已跟踪的官方副本需[显式迁移](docs/architecture/skills-workspace.zh-CN.md#已有仓库迁移)。克隆后运行 `npm ci --prefix ./docnexus`，再运行 `./docnexus/node_modules/.bin/docnexus init --agent codex`（或 `claude` / `all`；独立知识仓库追加 `--git-remote <url>`），按锁定版本恢复运行环境及生成文件，知识保持不变。
+
+完成恢复或拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
 
 ## 数据库引擎
 
