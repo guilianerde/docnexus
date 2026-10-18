@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.23.0 — 2026-10-18
+
+Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no reset. Skills refresh on the next workspace command. Re-run `docnexus init --agent claude|codex|all` to refresh the agent rules block in `AGENTS.md`/`CLAUDE.md` and generate `docnexus/concepts/`; the next memory write also regenerates the concept files.
+
+- Split `docnexus/CONCEPTS.md` into a short category map (at most 3 KB) and generated per-category files under `docnexus/concepts/`. Every file stays within 32 KB; oversized categories become a hub plus paged per-type files. `concepts --category <name>` lists one domain. Stale generated files are removed; hand-placed files are kept.
+- Agents decide from the task whether to recall, not from the map: a topic missing from the map is never a reason to skip. Capture searches and recalls first and browses category files only to disambiguate. Prefer domain categories over document genres.
+- `draft seal` validates fact chains on every seal and reports all issues at once in `knowledge_conflict` `details.issues[]`, each with the field, problem and a field-specific fix. `facts.md` adds a change-to-repair table.
+- `impact save` returns a summary (per-page decision, status and `needs_review`); read full evidence and history with `impact get`.
+- `target_changed` errors point `next_action.argv` at the full reread of the changed page.
+- Related-page impact candidates must come from search and recall for the changed claim; catalog- or title-only scopes are limited and marked unverified.
+- `eval:agent` checks task order and final state, adds `archive`/`check-archive` for byte-exact run archives, forbids rework after review, and adds a retrieval-trigger scenario (`prepare --scenario retrieval`) with one fresh context per task.
+
 ## 0.22.1 — 2026-10-18
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no reset. Previously tracked package copies require an explicit index-only migration to stop tracking them; knowledge and npm manifests/lockfiles remain versioned.
