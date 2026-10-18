@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { evaluateAgentRun, type AgentEvalRun, type AgentEvalEvent, type AgentEvalAnswers } from "../src/agent-evaluation.js";
+import { readFileSync } from "node:fs";
+import { buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun, timelineSources, type AgentEvalRun, type AgentEvalEvent, type AgentEvalAnswers } from "../src/agent-evaluation.js";
 import { sha256 } from "../src/hash.js";
 
 // Checker unit fixtures. They are not captured model runs or model-quality evidence.
@@ -12,7 +13,7 @@ function receipt(task: AgentEvalEvent["task"], argv: string[], output: object, e
     started_at: run.created_at, finished_at: run.created_at };
 }
 function complete() {
-  const state = { documents: [{ id: run.document_id, category: "发布与运维", document: "GUARD-test REVIEW-test 故障日志 回滚后", facts: [{ id: "fact_eval_local_embedding", status: "active" }] }] };
+  const state = { documents: [{ id: run.document_id, category: "发布与运维", document: "GUARD-test REVIEW-test 故障日志 回滚后 校验摘要 2026-08-12", facts: [{ id: "fact_eval_local_embedding", status: "active" }] }] };
   return [
     receipt("recall", ["document", "get", "--id", run.document_id], { id: run.document_id, document: "GUARD-test" }),
     { ...receipt("update", ["document", "add", "--draft", "update"], { id: run.document_id }), after: state },
@@ -53,6 +54,10 @@ it("rejects receipts from another run and missing final answers", () => {
   expect(report.rows.find(row => row.name === "all task answers are available for review")?.passed).toBe(false);
 });
 
+function timeline(...sources: string[]) {
+  return "# Timeline\n" + sources.map((source, index) => `\n## 2026-10-18T00:00:0${index}.000Z — updated\n\nPolicy\n\nPolicy\n\n### Source\n\n${source}\n`).join("");
+}
+
 function maintenanceFixture() {
   const fact = { id: "fact_eval_local_embedding", text: "Offline", provenance: "Original source", valid_from: "2026-01-01T00:00:00Z" };
   const meta = { title: "Policy", summary: "Policy", tags: [], entities: [], relationships: [], facts: [fact] };
@@ -68,8 +73,10 @@ function maintenanceFixture() {
     result.answers[task] = { text: "Updated", citations: ["release/policy.md"], status: "supported" };
   }
   for (const record of protectedRecords) events.push(receipt("impact", ["document", "get", "--id", record.id], { ...record, document: record.template }));
-  events.push({ ...receipt("impact", ["document", "add", "--draft", "impact"], { id: "owner" }), after_records: protectedRecords,
-    after: { documents: [{ id: "owner", document: "Updated", category: "auth", facts: [{ id: "fact_eval_token_ttl", status: "superseded" }, { id: "fact_new", status: "active" }] }] } });
+  const policyRecord = { id: run.document_id, file_path: "release/policy.md", record_version: sha256("policy"), source: "Current source",
+    timeline: timeline("Initial source", "Current source"), template: "# Policy", metadata: meta };
+  events.push({ ...receipt("impact", ["document", "add", "--draft", "impact"], { id: "owner" }), after_records: [...protectedRecords, policyRecord],
+    after: { documents: [...events[1].after!.documents, { id: "owner", document: "Updated", category: "auth", facts: [{ id: "fact_eval_token_ttl", status: "superseded" }, { id: "fact_new", status: "active" }] }] } });
   result.answers.impact = { text: "Impact", citations: [], status: "supported", impact_check: { scope: "Auth pages", limitations: "Subject-scoped lookup",
     pages: protectedRecords.map((record, index) => ({ id: record.id, file_path: record.file_path, record_version: record.record_version,
       decision: (["update", "conflict", "no_change"] as const)[index], evidence: "Read the current source", proposed_action: "Keep within scope" })) } };
@@ -127,4 +134,37 @@ it.each(["missing_read", "wrong_version", "rewritten_history"])("rejects ungroun
   if (kind === "rewritten_history") fixture.events.at(-1)!.after_records = fixture.events.at(-1)!.after_records!.map(record => ({ ...record, timeline: "Overwritten" }));
   const report = evaluateAgentRun(fixture.run, fixture.events, fixture.answers);
   expect(report.rows.some(row => row.name.startsWith("impact ") && !row.passed)).toBe(true);
+});
+
+it.each(["rework", "lost_knowledge", "duplicate_source"])("checks the final state across all tasks: %s", kind => {
+  const fixture = maintenanceFixture();
+  const final = fixture.events.at(-1)!;
+  if (kind === "rework") fixture.events.push(receipt("stale", ["document", "get", "--id", run.document_id], { id: run.document_id }));
+  if (kind === "lost_knowledge") final.after!.documents[0] = { ...final.after!.documents[0], document: "GUARD-test REVIEW-test 故障日志 回滚后 2026-08-12" };
+  if (kind === "duplicate_source") final.after_records!.at(-1)!.timeline = timeline("Initial source", "Rollback", "Dated", "Rollback");
+  const name = { rework: "tasks ran once in order without later rework", lost_knowledge: "final state keeps every write task's knowledge", duplicate_source: "final timelines record each source once" }[kind];
+  expect(evaluateAgentRun(fixture.run, fixture.events, fixture.answers).rows.find(row => row.name === name)?.passed).toBe(false);
+});
+
+it("reads one source per timeline entry, including multi-line sources", () => {
+  expect(timelineSources(timeline("Initial source", "Line one\n\n### Heading inside\nLine two"))).toEqual(["Initial source", "Line one\n\n### Heading inside\nLine two"]);
+  expect(timelineSources("# Timeline\n")).toEqual([]);
+});
+
+it("archives run files byte for byte and reports every manifest mismatch", () => {
+  const contents = { "run.json": "{\n  \"run_id\": \"x\"\n}\n", "prompt.txt": "提示", "events.jsonl": "{\"a\":1}\n", "answers.json": "{}", "report.json": "{}\n" };
+  const { gzip, manifest } = buildAgentEvalArchive(contents, "run.raw.json.gz");
+  expect(checkAgentEvalArchive(gzip, manifest)).toEqual([]);
+  expect(buildAgentEvalArchive(contents, "run.raw.json.gz").manifest.sha256).toBe(manifest.sha256);
+  const reparsed = buildAgentEvalArchive({ ...contents, "run.json": JSON.stringify(JSON.parse(contents["run.json"])) }, "run.raw.json.gz").gzip;
+  const problems = checkAgentEvalArchive(reparsed, manifest);
+  expect(problems.some(problem => problem.startsWith("archive sha256"))).toBe(true);
+  expect(problems).toContain("run.json sha256 differs from the manifest");
+  expect(() => buildAgentEvalArchive({ "run.json": "{}" }, "x.raw.json.gz")).toThrow(/missing prompt.txt/);
+});
+
+it("verifies the committed 2026-10-17 maintenance baseline archive", () => {
+  const directory = new URL("../docs/operations/baselines/", import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL("maintenance-agent-2026-10-17.json", directory), "utf8")).artifact_archive;
+  expect(checkAgentEvalArchive(readFileSync(new URL(manifest.path, directory)), manifest)).toEqual([]);
 });

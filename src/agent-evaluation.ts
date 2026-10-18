@@ -1,4 +1,6 @@
 /** Checks observed tool use and durable outcomes, not the agent's self-reported success. */
+import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { sha256, stableJson } from "./hash.js";
 import type { DocNexusMetadata, MetadataFact } from "./types.js";
 
@@ -127,6 +129,22 @@ export function evaluateAgentRun(run: AgentEvalRun, events: AgentEvalEvent[], an
       return Boolean(after && stableJson([after.source, after.template, after.metadata, after.timeline]) ===
         stableJson([before.source, before.template, before.metadata, before.timeline]));
     }));
+    // A finished task stays finished: rework after a later task (for example after review) is a new run, not a correction.
+    const order = run.tasks.map(task => task.id);
+    check("tasks ran once in order without later rework", events.every((event, index) => index === 0 || order.indexOf(event.task) >= order.indexOf(events[index - 1].task)));
+    const final = events.findLast(event => event.after && event.after_records);
+    const policy = final?.after?.documents.find(document => document.id === run.document_id);
+    const policyRecord = final?.after_records?.find(record => record.id === run.document_id);
+    const owner = final?.after?.documents.find(document => document.id === maintenance.impact.owner_id);
+    check("final state keeps every write task's knowledge", Boolean(policy && policyRecord && owner &&
+      [run.guard, run.correction, "故障日志", "回滚后", "校验摘要", "2026-08-12"].every(text => policy.document.includes(text)) && policy.category === "发布与运维" &&
+      maintenance.preserved_facts.every(fact => stableJson(policyRecord.metadata.facts?.find(current => current.id === fact.id)) === stableJson(fact)) &&
+      owner.facts.some(fact => fact.id === "fact_eval_token_ttl" && fact.status === "superseded") &&
+      owner.facts.some(fact => fact.id === maintenance.impact.replacement_id && fact.status === "active")));
+    check("final timelines record each source once", Boolean(final?.after_records?.length && final.after_records.every(record => {
+      const sources = timelineSources(record.timeline);
+      return new Set(sources).size === sources.length;
+    })));
   }
   const failed = rows.filter(row => !row.passed);
   return { schema_version: 1, run_id: run.run_id, result: failed.length ? "failed" : "needs_review",
@@ -134,4 +152,45 @@ export function evaluateAgentRun(run: AgentEvalRun, events: AgentEvalEvent[], an
     model_quality: { verdict: "unreviewed", review_required: ["Check every final claim against its cited document.", "Check the unsupported answer contains no invented provider, price or adoption date.", "Check proposals were not turned into decisions.",
       ...(run.maintenance ? ["Check observation timestamps against the actual replacement source, independently of fact effective dates.", "Preview delivery and review declarations do not prove understanding or user approval.", "Check impact evidence, historical-page treatment and unresolved rationale conflicts; candidate coverage is bounded by the reported lookup."] : [])] },
     limits: "Observed CLI receipts and state assertions establish these narrow outcomes. Self-reported success, a fixture replay and one run do not establish general model quality or native harness activation." };
+}
+
+/** Source texts of a record timeline, one per entry, split on the entry headings written by managed-documents. */
+export function timelineSources(timeline: string): string[] {
+  return timeline.split(/\n## \d{4}-\d{2}-\d{2}T[^\n]* — [^\n]*\n/).slice(1).flatMap(entry => {
+    const index = entry.indexOf("### Source\n\n");
+    return index < 0 ? [] : [entry.slice(index + "### Source\n\n".length).trim()];
+  });
+}
+
+export const AGENT_EVAL_ARCHIVE_FILES = ["run.json", "prompt.txt", "events.jsonl", "answers.json", "report.json"] as const;
+const ARCHIVE_ENCODING = "gzip of JSON mapping original filenames to their exact UTF-8 contents";
+export interface AgentEvalArchiveManifest { path: string; sha256: string; encoding: string; files: Array<{ path: string; bytes: number; sha256: string }> }
+
+/** Packs the run files byte for byte so a baseline can be checked against the original observations. */
+export function buildAgentEvalArchive(contents: Record<string, string>, path: string): { gzip: Buffer; manifest: AgentEvalArchiveManifest } {
+  const missing = AGENT_EVAL_ARCHIVE_FILES.filter(name => typeof contents[name] !== "string");
+  if (missing.length) throw new Error(`archive is missing ${missing.join(", ")}`);
+  const mapping = Object.fromEntries(AGENT_EVAL_ARCHIVE_FILES.map(name => [name, contents[name]]));
+  const gzip = gzipSync(Buffer.from(JSON.stringify(mapping), "utf8"));
+  return { gzip, manifest: { path, sha256: createHash("sha256").update(gzip).digest("hex"), encoding: ARCHIVE_ENCODING,
+    files: AGENT_EVAL_ARCHIVE_FILES.map(name => ({ path: name, bytes: Buffer.byteLength(contents[name], "utf8"), sha256: sha256(contents[name]) })) } };
+}
+
+/** Returns every mismatch between an archive and its recorded manifest; an empty list means it verifies. */
+export function checkAgentEvalArchive(gzip: Buffer, manifest: AgentEvalArchiveManifest): string[] {
+  const problems: string[] = [];
+  const actual = createHash("sha256").update(gzip).digest("hex");
+  if (actual !== manifest.sha256) problems.push(`archive sha256 is ${actual}, manifest records ${manifest.sha256}`);
+  if (manifest.encoding !== ARCHIVE_ENCODING) problems.push(`unexpected encoding: ${manifest.encoding}`);
+  let mapping: Record<string, unknown>;
+  try { mapping = JSON.parse(gunzipSync(gzip).toString("utf8")); } catch (error) { return [...problems, `archive is not gzip JSON: ${(error as Error).message}`]; }
+  for (const file of manifest.files) {
+    const content = mapping[file.path];
+    if (typeof content !== "string") { problems.push(`${file.path} is not stored as its original text`); continue; }
+    if (Buffer.byteLength(content, "utf8") !== file.bytes) problems.push(`${file.path} has ${Buffer.byteLength(content, "utf8")} bytes, manifest records ${file.bytes}`);
+    if (sha256(content) !== file.sha256) problems.push(`${file.path} sha256 differs from the manifest`);
+  }
+  const listed = new Set(manifest.files.map(file => file.path));
+  for (const name of AGENT_EVAL_ARCHIVE_FILES) if (!listed.has(name)) problems.push(`manifest does not list ${name}`);
+  return problems;
 }

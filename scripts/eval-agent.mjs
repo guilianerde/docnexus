@@ -3,14 +3,14 @@ import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { appendFile, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { initializeProject } from "../dist/src/project.js";
 import { upsertManagedDocument, getManagedRecord } from "../dist/src/managed-documents.js";
 import { createDraft, sealDraft } from "../dist/src/drafts.js";
 import { queryDocuments } from "../dist/src/document-query.js";
-import { evaluateAgentRun } from "../dist/src/agent-evaluation.js";
+import { AGENT_EVAL_ARCHIVE_FILES, buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun } from "../dist/src/agent-evaluation.js";
 
 const cli = fileURLToPath(new URL("../dist/src/cli.js", import.meta.url));
 const execute = promisify(execFile);
@@ -76,7 +76,7 @@ async function prepare() {
         protected_records: await Promise.all(relatedIds.map(id => getManagedRecord(project, id, ["source", "template", "metadata", "timeline"]))) } } };
   await writeFile(join(runRoot, "run.json"), json(run));
   await writeFile(join(runRoot, "events.jsonl"), "");
-  const prompt = `这是一次隔离的真实智能体验收。项目目录：${project}。先按项目 AGENTS.md 和 skills 正常工作，不要读取项目之外的 run.json、期望值或评估实现。\n此一次性项目内的草稿审阅与写入均已授权，不操作原仓库或外部服务。所有记忆 CLI 调用通过以下观测器执行，以记录实际结果：\nnode ${fileURLToPath(import.meta.url)} call --run ${runRoot} --task <task_id> -- <子命令及参数，不含 docnexus 或可执行文件路径>\n例如：node ${fileURLToPath(import.meta.url)} call --run ${runRoot} --task recall -- search "Kestrel 发布" --limit 5\n观测器已经选择 CLI 可执行文件，-- 后直接写 status、search、document get 等子命令。\n按顺序完成以下任务：\n${tasks.map(task => `[${task.id}] ${task.prompt}`).join("\n")}\n最终仅将实际回答写到 ${join(runRoot, "answers.json")}，格式为 {"answers":{"recall":{"text":"...","citations":["实际读过的项目相对路径"],"status":"supported"},...}}。每项任务均需 text、citations、status（supported 或 insufficient_evidence）。不要自行声称评估通过。`;
+  const prompt = `这是一次隔离的真实智能体验收。项目目录：${project}。先按项目 AGENTS.md 和 skills 正常工作，不要读取项目之外的 run.json、期望值或评估实现。\n此一次性项目内的草稿审阅与写入均已授权，不操作原仓库或外部服务。所有记忆 CLI 调用通过以下观测器执行，以记录实际结果：\nnode ${fileURLToPath(import.meta.url)} call --run ${runRoot} --task <task_id> -- <子命令及参数，不含 docnexus 或可执行文件路径>\n例如：node ${fileURLToPath(import.meta.url)} call --run ${runRoot} --task recall -- search "Kestrel 发布" --limit 5\n观测器已经选择 CLI 可执行文件，-- 后直接写 status、search、document get 等子命令。\n按顺序完成以下任务，每项只做一次：开始下一项后不再回到已完成的任务补做或重做；写完 answers.json 即结束，不接受审阅后的补做。\n${tasks.map(task => `[${task.id}] ${task.prompt}`).join("\n")}\n最终仅将实际回答写到 ${join(runRoot, "answers.json")}，格式为 {"answers":{"recall":{"text":"...","citations":["实际读过的项目相对路径"],"status":"supported"},...}}。每项任务均需 text、citations、status（supported 或 insufficient_evidence）。不要自行声称评估通过。`;
   const maintenanceOutput = "\n每个写入任务的回答还需 reviewed_previews: [{draft_id, sealed_version}]，只列出实际读取并审阅的版本。impact 回答另需 impact_check: {scope, limitations, pages: [{id, file_path, record_version, decision, evidence, proposed_action}]}，decision 使用 skill 定义的 update/no_change/conflict/unverified；未完整读取不得声明已核对。按 skill 正常判断，不读取评估期望或自行宣布通过。\n";
   await writeFile(join(runRoot, "prompt.txt"), prompt + maintenanceOutput);
   return { run_root: runRoot, project_root: project, prompt_file: join(runRoot, "prompt.txt"), answers_file: join(runRoot, "answers.json"),
@@ -104,12 +104,36 @@ async function observedCall(runRoot) {
   process.stdout.write(stdout); process.stderr.write(stderr); process.exitCode = exit_code;
 }
 
+async function archive(runRoot) {
+  const out = value("--out");
+  if (!out?.endsWith(".raw.json.gz")) throw new Error("archive requires --out <name>.raw.json.gz");
+  const contents = Object.fromEntries(await Promise.all(AGENT_EVAL_ARCHIVE_FILES.map(async name => [name, await readFile(join(runRoot, name), "utf8")])));
+  const { gzip, manifest } = buildAgentEvalArchive(contents, basename(out));
+  await writeFile(out, gzip);
+  const problems = checkAgentEvalArchive(await readFile(out), manifest);
+  if (problems.length) throw new Error(`written archive does not verify: ${problems.join("; ")}`);
+  return manifest;
+}
+
+async function checkArchive() {
+  const baseline = value("--baseline");
+  if (!baseline) throw new Error("check-archive requires --baseline <baseline.json>");
+  const manifest = JSON.parse(await readFile(baseline, "utf8")).artifact_archive;
+  const problems = checkAgentEvalArchive(await readFile(join(resolve(baseline, ".."), manifest.path)), manifest);
+  return { baseline, archive: manifest.path, verified: problems.length === 0, problems };
+}
+
 try {
   if (command === "prepare") process.stdout.write(json(await prepare()));
-  else {
+  else if (command === "check-archive") {
+    const result = await checkArchive();
+    process.stdout.write(json(result));
+    if (!result.verified) process.exitCode = 1;
+  } else {
     const runRoot = value("--run");
     if (!runRoot) throw new Error("--run is required");
     if (command === "call") await observedCall(resolve(runRoot));
+    else if (command === "archive") process.stdout.write(json(await archive(resolve(runRoot))));
     else if (command === "verify") {
       const run = JSON.parse(await readFile(join(runRoot, "run.json"), "utf8"));
       const events = (await readFile(join(runRoot, "events.jsonl"), "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
@@ -118,6 +142,6 @@ try {
       await writeFile(join(runRoot, "report.json"), json(report));
       process.stdout.write(json(report));
       if (report.checks.failed) process.exitCode = 1;
-    } else throw new Error("Usage: eval-agent.mjs prepare | call --run <dir> --task <id> -- <command> | verify --run <dir>");
+    } else throw new Error("Usage: eval-agent.mjs prepare | call --run <dir> --task <id> -- <command> | verify --run <dir> | archive --run <dir> --out <name>.raw.json.gz | check-archive --baseline <baseline.json>");
   }
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }
