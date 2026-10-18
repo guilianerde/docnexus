@@ -44,6 +44,11 @@ export interface AgentEvalAnswers { answers: Record<string, {
   }> };
 }> }
 
+const lookup = (event: { argv: string[]; exit_code: number }) => event.exit_code === 0 && ["search", "recall", "concepts"].includes(event.argv[0]);
+const memoryWrite = (event: { argv: string[]; exit_code: number }) => event.exit_code === 0 && (["reset", "init"].includes(event.argv[0]) ||
+  (event.argv[0] === "document" && ["add", "classify", "delete", "sync"].includes(event.argv[1])) ||
+  (event.argv[0] === "index" && event.argv[1] === "sync") || (event.argv[0] === "impact" && ["save", "set"].includes(event.argv[1])));
+
 export function evaluateAgentRun(run: AgentEvalRun, events: AgentEvalEvent[], answer: AgentEvalAnswers) {
   const rows: Array<{ name: string; passed: boolean }> = [];
   const check = (name: string, passed: boolean) => rows.push({ name, passed });
@@ -114,6 +119,8 @@ export function evaluateAgentRun(run: AgentEvalRun, events: AgentEvalEvent[], an
           return event.task === "impact" && event.exit_code === 0 && event.argv[0] === "document" && event.argv[1] === "get" && read?.id === id &&
             typeof read.document === "string" && read.metadata && read.file_path === page.file_path && read.record_version === page.record_version;
         })))));
+    const impactLookups = events.filter(event => event.task === "impact" && lookup(event)).map(event => event.argv[0]);
+    check("impact related-page lookup ran search and recall", impactLookups.includes("search") && impactLookups.includes("recall"));
     const impactWrites = writes.filter(event => event.task === "impact");
     check("impact scenario only saves the authorized primary page", impactWrites.length > 0 && impactWrites.every(event => parsed(event)?.id === maintenance.impact.owner_id) &&
       !events.some(event => event.task === "impact" && event.exit_code === 0 &&
@@ -154,6 +161,53 @@ export function evaluateAgentRun(run: AgentEvalRun, events: AgentEvalEvent[], an
     limits: "Observed CLI receipts and state assertions establish these narrow outcomes. Self-reported success, a fixture replay and one run do not establish general model quality or native harness activation." };
 }
 
+export interface RetrievalEvalTarget { id: string; prompt: string; category: string; file_path: string; document_id: string; token: string; map_lists_category: boolean }
+export interface RetrievalEvalRun {
+  schema_version: 1;
+  scenario: "retrieval";
+  run_id: string;
+  project_root: string;
+  created_at: string;
+  tasks: Array<{ id: string; prompt: string }>;
+  targets: RetrievalEvalTarget[];
+  trivial: { id: string; prompt: string; file: string; expected: string };
+}
+export type RetrievalEvalEvent = Omit<AgentEvalEvent, "task" | "after" | "after_records"> & { task: string };
+
+/**
+ * Checks whether each fresh-context task looked memory up on its own. The prompts never mention memory, and the
+ * targets carry values that cannot be guessed, so a correct answer needs an actual lookup.
+ */
+export function evaluateRetrievalRun(run: RetrievalEvalRun, events: RetrievalEvalEvent[], answer: AgentEvalAnswers, trivialContent: string | null) {
+  const rows: Array<{ name: string; passed: boolean }> = [];
+  const check = (name: string, passed: boolean) => rows.push({ name, passed });
+  const of = (task: string) => events.filter(event => event.task === task);
+  check("receipts belong to this run", events.length > 0 && events.every(event => event.run_id === run.run_id && run.tasks.some(task => task.id === event.task)));
+  for (const target of run.targets) {
+    const result = answer.answers?.[target.id];
+    const lookups = of(target.id).filter(lookup);
+    check(`${target.id}: looked memory up before answering`, lookups.length > 0);
+    check(`${target.id}: a lookup surfaced the stored page`, lookups.some(event => event.stdout.includes(target.document_id) || event.stdout.includes(target.file_path)));
+    check(`${target.id}: answer carries the unseen value and cites the page`, Boolean(result && typeof result.text === "string" && result.text.includes(target.token) &&
+      Array.isArray(result.citations) && result.citations.some(path => [target.file_path, `docnexus/library/${target.file_path}`].includes(path))));
+    check(`${target.id}: memory left unchanged`, !of(target.id).some(memoryWrite));
+  }
+  check(`${run.trivial.id}: file corrected`, trivialContent === run.trivial.expected);
+  check(`${run.trivial.id}: memory left unchanged`, !of(run.trivial.id).some(memoryWrite));
+  const failed = rows.filter(row => !row.passed);
+  return { schema_version: 1, scenario: "retrieval", run_id: run.run_id, result: failed.length ? "failed" : "needs_review",
+    checks: { total: rows.length, passed: rows.length - failed.length, failed: failed.length }, rows,
+    observations: run.tasks.map(task => {
+      const calls = of(task.id);
+      const target = run.targets.find(item => item.id === task.id);
+      return { task: task.id, memory_calls: calls.length, lookups: calls.filter(lookup).length,
+        catalog_reads: calls.filter(event => event.argv[0] === "document" && ["list", "query"].includes(event.argv[1])).length,
+        ...(target ? { map_lists_category: target.map_lists_category } : {}) };
+    }),
+    model_quality: { verdict: "unreviewed", review_required: ["Check each answer applies the stored decision rather than only quoting it.", "Check every task ran in its own fresh context; receipts cannot prove this.", "Reading CONCEPTS.md or category files is not observed; judge map use from the transcript when available."] },
+    limits: "Observed CLI receipts establish whether memory was looked up per task. One run is a sample, not a trigger rate; file reads of the concept map are not observed." };
+}
+
 /** Source texts of a record timeline, one per entry, split on the entry headings written by managed-documents. */
 export function timelineSources(timeline: string): string[] {
   return timeline.split(/\n## \d{4}-\d{2}-\d{2}T[^\n]* — [^\n]*\n/).slice(1).flatMap(entry => {
@@ -163,17 +217,18 @@ export function timelineSources(timeline: string): string[] {
 }
 
 export const AGENT_EVAL_ARCHIVE_FILES = ["run.json", "prompt.txt", "events.jsonl", "answers.json", "report.json"] as const;
+const ARCHIVE_REQUIRED = ["run.json", "events.jsonl", "report.json"];
 const ARCHIVE_ENCODING = "gzip of JSON mapping original filenames to their exact UTF-8 contents";
 export interface AgentEvalArchiveManifest { path: string; sha256: string; encoding: string; files: Array<{ path: string; bytes: number; sha256: string }> }
 
 /** Packs the run files byte for byte so a baseline can be checked against the original observations. */
-export function buildAgentEvalArchive(contents: Record<string, string>, path: string): { gzip: Buffer; manifest: AgentEvalArchiveManifest } {
-  const missing = AGENT_EVAL_ARCHIVE_FILES.filter(name => typeof contents[name] !== "string");
+export function buildAgentEvalArchive(contents: Record<string, string>, path: string, names: readonly string[] = AGENT_EVAL_ARCHIVE_FILES): { gzip: Buffer; manifest: AgentEvalArchiveManifest } {
+  const missing = [...new Set([...ARCHIVE_REQUIRED, ...names])].filter(name => typeof contents[name] !== "string");
   if (missing.length) throw new Error(`archive is missing ${missing.join(", ")}`);
-  const mapping = Object.fromEntries(AGENT_EVAL_ARCHIVE_FILES.map(name => [name, contents[name]]));
+  const mapping = Object.fromEntries(names.map(name => [name, contents[name]]));
   const gzip = gzipSync(Buffer.from(JSON.stringify(mapping), "utf8"));
   return { gzip, manifest: { path, sha256: createHash("sha256").update(gzip).digest("hex"), encoding: ARCHIVE_ENCODING,
-    files: AGENT_EVAL_ARCHIVE_FILES.map(name => ({ path: name, bytes: Buffer.byteLength(contents[name], "utf8"), sha256: sha256(contents[name]) })) } };
+    files: names.map(name => ({ path: name, bytes: Buffer.byteLength(contents[name], "utf8"), sha256: sha256(contents[name]) })) } };
 }
 
 /** Returns every mismatch between an archive and its recorded manifest; an empty list means it verifies. */
@@ -191,6 +246,6 @@ export function checkAgentEvalArchive(gzip: Buffer, manifest: AgentEvalArchiveMa
     if (sha256(content) !== file.sha256) problems.push(`${file.path} sha256 differs from the manifest`);
   }
   const listed = new Set(manifest.files.map(file => file.path));
-  for (const name of AGENT_EVAL_ARCHIVE_FILES) if (!listed.has(name)) problems.push(`manifest does not list ${name}`);
+  for (const name of ARCHIVE_REQUIRED) if (!listed.has(name)) problems.push(`manifest does not list ${name}`);
   return problems;
 }

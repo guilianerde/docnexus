@@ -239,7 +239,7 @@ npm run build
 npm run eval:retrieval
 npm run eval:retrieval:quality   # Development only; see retrieval evaluation for explicit holdout runs.
 npm run eval:knowledge
-npm run eval:agent -- prepare
+npm run eval:agent -- prepare   # Maintenance tasks; add --scenario retrieval for per-task lookup
 node scripts/tarball-smoke.mjs
 ```
 

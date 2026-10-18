@@ -1,6 +1,6 @@
 import { readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { DocNexusError } from "./errors.js";
+import { DocNexusError, rereadCommand } from "./errors.js";
 import { sha256, stableJson } from "./hash.js";
 import { isTimestamp } from "./metadata.js";
 import { withProjectLock } from "./project-lock.js";
@@ -124,14 +124,16 @@ export async function saveImpact(root: string, value: unknown) {
     }
     const source = snapshot.records.find(record => record.id === input.source.id);
     if (!source || snapshot.recordVersion(source.id) !== input.source.record_version) {
-      throw new DocNexusError("target_changed", "impact source changed; reread the source and reconsider related-page decisions before saving");
+      throw new DocNexusError("target_changed", "impact source changed; reread the source and reconsider related-page decisions before saving",
+        undefined, source ? { command: rereadCommand(source.id) } : undefined);
     }
     for (const page of input.pages) {
       if (await normalizeManagedFilePath(root, page.file_path) !== page.file_path) throw new DocNexusError("invalid_params", "impact page requires a canonical library-relative Markdown path");
       const target = snapshot.records.find(record => record.id === page.id);
       if (target && target.file_path !== page.file_path) throw new DocNexusError("invalid_params", "impact path does not match the related document identity");
       if (page.record_version !== null && (!target || snapshot.recordVersion(page.id) !== page.record_version)) {
-        throw new DocNexusError("target_changed", `related page changed: ${page.file_path}; reread and reconsider its impact`);
+        throw new DocNexusError("target_changed", `related page changed: ${page.file_path}; reread and reconsider its impact`,
+          undefined, target ? { command: rereadCommand(target.id) } : undefined);
       }
     }
     const at = new Date().toISOString();

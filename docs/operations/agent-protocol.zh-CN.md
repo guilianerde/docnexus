@@ -33,7 +33,7 @@ docnexus protocol
 | 错误 | 处理 |
 | --- | --- |
 | `project_busy` / `concurrent_update` | 等待后重试相同请求；重复冲突先检查其他写入 |
-| `target_changed` | 复读正文、模板、metadata 与时间线，合并后再使用该次读取的版本封存；禁止只刷新版本 |
+| `target_changed` | 复读正文、模板、metadata 与时间线，合并后再使用该次读取的版本封存；禁止只刷新版本。`next_action.argv` 直接给出该目标页的完整读取命令（`document get --id <目标> --include document,template,metadata,timeline`）；目标已不存在时退回 `document query --all` |
 | `document_revision_changed` | 丢弃旧分页，从第一页重新读取 |
 | `draft_changed` / `preview_changed` | 重新检查实际产物或引用事实，封存并审阅新内容 |
 | `text_integrity_error` | doctor 检查；审阅后采纳人工正文或从备份恢复损坏文件 |

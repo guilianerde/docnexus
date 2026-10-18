@@ -165,7 +165,8 @@
     ],
     "passed_note": "最终状态仍含全部写入任务的成果、维护者分类与历史事实，鉴权页替代关系有效。",
     "control": "同一检查器对 2026-10-17 基线归档重跑为 32/32。",
-    "original_report": "归档中的 report.json 为审阅时旧检查器的原始结果（29/29），未覆盖。"
+    "original_report": "归档中的 report.json 为审阅时旧检查器的原始结果（29/29），未覆盖。",
+    "later": "之后又加入 impact 相关页必须 search 与 recall 的检查，本次运行为 30/33（新增一项未过：impact 只按已知 id 读页）；10-17 为 33/33。"
   },
   "semantic_review": {
     "reviewer": "parent agent",

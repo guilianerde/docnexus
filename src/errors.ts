@@ -37,10 +37,19 @@ export const errorDefinitions = {
 export type ErrorCode = keyof typeof errorDefinitions;
 
 export class DocNexusError extends Error {
-  constructor(readonly code: ErrorCode, message: string, readonly details?: Record<string, unknown>, options?: ErrorOptions) {
+  /** Overrides the registry's next-action command when the failing call knows the exact target. */
+  readonly command?: readonly string[];
+
+  constructor(readonly code: ErrorCode, message: string, readonly details?: Record<string, unknown>, options?: ErrorOptions & { command?: readonly string[] }) {
     super(message, options);
     this.name = "DocNexusError";
+    if (options?.command) this.command = options.command;
   }
+}
+
+/** The full read a merge needs after a target changed. */
+export function rereadCommand(id: string): readonly string[] {
+  return ["document", "get", "--id", id, "--include", "document,template,metadata,timeline"];
 }
 
 export function asDocNexusError(error: unknown, fallback: ErrorCode = "internal_error"): DocNexusError {
@@ -51,6 +60,7 @@ export function errorEnvelope(error: unknown, projectRoot: string) {
   const failure = asDocNexusError(error);
   const definition = errorDefinitions[failure.code];
   const argv = (command: readonly string[]) => ["docnexus", "--project-root", projectRoot, ...command];
+  const command = failure.command ?? ("command" in definition ? definition.command : undefined);
   return {
     protocol_version: PROTOCOL_VERSION,
     status: "error" as const,
@@ -59,7 +69,7 @@ export function errorEnvelope(error: unknown, projectRoot: string) {
     retryable: definition.retryable,
     ...(definition.retryable ? { retry_after_ms: 1000 } : {}),
     next_action: { kind: definition.kind, message: definition.message,
-      ...("command" in definition ? { argv: argv(definition.command) } : {}) },
+      ...(command ? { argv: argv(command) } : {}) },
     verify: { argv: argv(["doctor"]) },
     ...(failure.details ? { details: failure.details } : {})
   };

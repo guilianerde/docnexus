@@ -1,4 +1,4 @@
-import { DocNexusError } from "./errors.js";
+import { DocNexusError, rereadCommand } from "./errors.js";
 import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -202,7 +202,8 @@ export async function sealDraft(
     }
     const baseRecordHash = input.baseRecordHash ?? null;
     if (baseRecordHash !== (prior ? sha256(stableJson(prior)) : null)) {
-      throw new DocNexusError("target_changed", "draft target changed since reading; reread the current document, merge changes, then seal and review again");
+      throw new DocNexusError("target_changed", "draft target changed since reading; reread the current document, merge changes, then seal and review again",
+        undefined, prior ? { command: rereadCommand(prior.id) } : undefined);
     }
     const manifest: DraftManifest = {
       schema_version: DRAFT_MANIFEST_SCHEMA_VERSION,
@@ -283,7 +284,8 @@ export async function loadSealedDraft(projectRoot: string, draftIdInput: string)
     }
     const prior = (await listRecordFiles(projectRoot)).find((value) => value.file_path === manifest.file_path);
     if (manifest.base_record_hash !== (prior ? sha256(stableJson(prior)) : null)) {
-      throw new DocNexusError("target_changed", `draft ${draftId} target changed since sealing; reread the current document, merge changes, then seal and review again`);
+      throw new DocNexusError("target_changed", `draft ${draftId} target changed since sealing; reread the current document, merge changes, then seal and review again`,
+        undefined, prior ? { command: rereadCommand(prior.id) } : undefined);
     }
     const source = await readArtifact(directory, "source");
     const document = await readArtifact(directory, "document");

@@ -255,7 +255,7 @@ npm run build
 npm run eval:retrieval
 npm run eval:retrieval:quality   # 默认仅开发集；保留集对照命令见检索评估文档
 npm run eval:knowledge
-npm run eval:agent -- prepare
+npm run eval:agent -- prepare   # 维护任务；加 --scenario retrieval 检查逐题主动检索
 node scripts/tarball-smoke.mjs
 ```
 

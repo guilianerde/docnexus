@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun, timelineSources, type AgentEvalRun, type AgentEvalEvent, type AgentEvalAnswers } from "../src/agent-evaluation.js";
+import { buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun, evaluateRetrievalRun, timelineSources, type AgentEvalRun, type RetrievalEvalEvent, type RetrievalEvalRun, type AgentEvalEvent, type AgentEvalAnswers } from "../src/agent-evaluation.js";
 import { sha256 } from "../src/hash.js";
 
 // Checker unit fixtures. They are not captured model runs or model-quality evidence.
@@ -72,6 +72,7 @@ function maintenanceFixture() {
     events.push({ ...receipt(task, ["document", "add", "--draft", task], { id: run.document_id }), after: events[1].after });
     result.answers[task] = { text: "Updated", citations: ["release/policy.md"], status: "supported" };
   }
+  events.push(receipt("impact", ["search", "刷新令牌"], { results: [] }), receipt("impact", ["recall", "刷新令牌 24 小时"], { results: [] }));
   for (const record of protectedRecords) events.push(receipt("impact", ["document", "get", "--id", record.id], { ...record, document: record.template }));
   const policyRecord = { id: run.document_id, file_path: "release/policy.md", record_version: sha256("policy"), source: "Current source",
     timeline: timeline("Initial source", "Current source"), template: "# Policy", metadata: meta };
@@ -127,11 +128,12 @@ it.each(["inherited_date", "missing_explicit_date", "changed_provenance", "lost_
   expect(report.rows.some(row => row.name.startsWith(`${task}:`) && !row.passed)).toBe(true);
 });
 
-it.each(["missing_read", "wrong_version", "rewritten_history"])("rejects ungrounded impact evidence: %s", kind => {
+it.each(["missing_read", "wrong_version", "rewritten_history", "catalog_only_lookup"])("rejects ungrounded impact evidence: %s", kind => {
   const fixture = maintenanceFixture();
   if (kind === "missing_read") fixture.events = fixture.events.filter(event => !(event.task === "impact" && event.argv[1] === "get"));
   if (kind === "wrong_version") fixture.answers.answers.impact.impact_check!.pages[0].record_version = sha256("unread");
   if (kind === "rewritten_history") fixture.events.at(-1)!.after_records = fixture.events.at(-1)!.after_records!.map(record => ({ ...record, timeline: "Overwritten" }));
+  if (kind === "catalog_only_lookup") fixture.events = fixture.events.filter(event => !(event.task === "impact" && ["search", "recall"].includes(event.argv[0])));
   const report = evaluateAgentRun(fixture.run, fixture.events, fixture.answers);
   expect(report.rows.some(row => row.name.startsWith("impact ") && !row.passed)).toBe(true);
 });
@@ -160,11 +162,37 @@ it("archives run files byte for byte and reports every manifest mismatch", () =>
   const problems = checkAgentEvalArchive(reparsed, manifest);
   expect(problems.some(problem => problem.startsWith("archive sha256"))).toBe(true);
   expect(problems).toContain("run.json sha256 differs from the manifest");
-  expect(() => buildAgentEvalArchive({ "run.json": "{}" }, "x.raw.json.gz")).toThrow(/missing prompt.txt/);
+  expect(() => buildAgentEvalArchive({ "run.json": "{}" }, "x.raw.json.gz")).toThrow(/missing events.jsonl, report.json, prompt.txt, answers.json/);
 });
 
 it("verifies the committed 2026-10-17 maintenance baseline archive", () => {
   const directory = new URL("../docs/operations/baselines/", import.meta.url);
   const manifest = JSON.parse(readFileSync(new URL("maintenance-agent-2026-10-17.json", directory), "utf8")).artifact_archive;
   expect(checkAgentEvalArchive(readFileSync(new URL(manifest.path, directory)), manifest)).toEqual([]);
+});
+
+const retrievalRun: RetrievalEvalRun = { schema_version: 1, scenario: "retrieval", run_id: "retrieval-fixture", project_root: "/tmp/retrieval/project", created_at: "2026-10-18T00:00:00Z",
+  tasks: [{ id: "timeout", prompt: "Fixture" }, { id: "trivial", prompt: "Fixture" }],
+  targets: [{ id: "timeout", prompt: "Fixture", category: "支付", file_path: "payments/gateway-timeout.md", document_id: "doc_pay", token: "PAY-unseen", map_lists_category: false }],
+  trivial: { id: "trivial", prompt: "Fixture", file: "scratch/hello.txt", expected: "Hello, the team.\n" } };
+const retrievalReceipt = (task: string, argv: string[], stdout: string): RetrievalEvalEvent =>
+  ({ run_id: retrievalRun.run_id, task, argv, exit_code: 0, stdout, stderr: "", started_at: retrievalRun.created_at, finished_at: retrievalRun.created_at });
+const retrievalAnswers: AgentEvalAnswers = { answers: { timeout: { text: "固定 8 秒，需评审 PAY-unseen", citations: ["payments/gateway-timeout.md"], status: "supported" } } };
+
+it("checks that each fresh-context task looked memory up on its own", () => {
+  const events = [retrievalReceipt("timeout", ["search", "支付网关 超时"], '{"results":[{"file_path":"payments/gateway-timeout.md"}]}')];
+  const report = evaluateRetrievalRun(retrievalRun, events, retrievalAnswers, "Hello, the team.\n");
+  expect(report.rows.filter(row => !row.passed)).toEqual([]);
+  expect(report.observations).toEqual([{ task: "timeout", memory_calls: 1, lookups: 1, catalog_reads: 0, map_lists_category: false }, { task: "trivial", memory_calls: 0, lookups: 0, catalog_reads: 0 }]);
+});
+
+it.each(["catalog_only", "missed_page", "memory_write", "file_unchanged"])("rejects retrieval failure: %s", kind => {
+  const events = [retrievalReceipt("timeout", ["search", "支付网关 超时"], '{"results":[{"file_path":"payments/gateway-timeout.md"}]}')];
+  if (kind === "catalog_only") events[0] = retrievalReceipt("timeout", ["document", "list"], '{"documents":[{"file_path":"payments/gateway-timeout.md"}]}');
+  if (kind === "missed_page") events[0].stdout = '{"results":[{"file_path":"areas/06-note.md"}]}';
+  if (kind === "memory_write") events.push(retrievalReceipt("trivial", ["document", "add", "--draft", "d"], "{}"));
+  const report = evaluateRetrievalRun(retrievalRun, events, retrievalAnswers, kind === "file_unchanged" ? "Hello, teh team.\n" : "Hello, the team.\n");
+  const name = { catalog_only: "timeout: looked memory up before answering", missed_page: "timeout: a lookup surfaced the stored page",
+    memory_write: "trivial: memory left unchanged", file_unchanged: "trivial: file corrected" }[kind];
+  expect(report.rows.find(row => row.name === name)?.passed).toBe(false);
 });

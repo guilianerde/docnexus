@@ -10,7 +10,8 @@ import { initializeProject } from "../dist/src/project.js";
 import { upsertManagedDocument, getManagedRecord } from "../dist/src/managed-documents.js";
 import { createDraft, sealDraft } from "../dist/src/drafts.js";
 import { queryDocuments } from "../dist/src/document-query.js";
-import { AGENT_EVAL_ARCHIVE_FILES, buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun } from "../dist/src/agent-evaluation.js";
+import { AGENT_EVAL_ARCHIVE_FILES, buildAgentEvalArchive, checkAgentEvalArchive, evaluateAgentRun, evaluateRetrievalRun } from "../dist/src/agent-evaluation.js";
+import { prepareRetrieval } from "./eval-agent-retrieval.mjs";
 
 const cli = fileURLToPath(new URL("../dist/src/cli.js", import.meta.url));
 const execute = promisify(execFile);
@@ -83,6 +84,31 @@ async function prepare() {
     next: "Give prompt.txt to a separately authorized agent in a fresh context, then run verify. Preparing fixtures does not run a model." };
 }
 
+function observerLines(runRoot, task) {
+  const self = fileURLToPath(import.meta.url);
+  return `如需调用记忆 CLI，必须通过以下观测器执行，以记录实际结果：\nnode ${self} call --run ${runRoot} --task ${task} -- <子命令及参数，不含 docnexus 或可执行文件路径>\n例如：node ${self} call --run ${runRoot} --task ${task} -- status\n观测器已经选择 CLI 可执行文件，-- 后直接写 status、search、document get 等子命令。`;
+}
+
+async function prepareRetrievalRun() {
+  const runRoot = await mkdtemp(join(tmpdir(), "docnexus-agent-eval-"));
+  const project = join(runRoot, "project");
+  await mkdir(project);
+  await initializeProject(project, { agents: ["codex"] });
+  const { targets, trivial } = await prepareRetrieval(project);
+  const tasks = [...targets, trivial].map(({ id, prompt }) => ({ id, prompt }));
+  const run = { schema_version: 1, scenario: "retrieval", run_id: randomUUID(), project_root: project, created_at: new Date().toISOString(), tasks, targets, trivial };
+  await writeFile(join(runRoot, "run.json"), json(run));
+  await writeFile(join(runRoot, "events.jsonl"), "");
+  await mkdir(join(runRoot, "prompts"));
+  await mkdir(join(runRoot, "answers"));
+  for (const task of tasks) {
+    const answerFile = join(runRoot, "answers", `${task.id}.json`);
+    await writeFile(join(runRoot, "prompts", `${task.id}.txt`), `你在项目 ${project} 中工作。先按项目 AGENTS.md 和 skills 正常工作，不要读取项目之外的 run.json、其他任务、期望值或评估实现。此一次性项目内的读写均已授权，不操作其他仓库或外部服务。\n${observerLines(runRoot, task.id)}\n任务：${task.prompt}\n完成后只把实际回答写到 ${answerFile}，格式为 {"text":"...","citations":["实际读过的项目相对路径"],"status":"supported 或 insufficient_evidence"}。任务只做一次，写完回答即结束；不要自行声称评估通过。\n`);
+  }
+  return { run_root: runRoot, project_root: project, prompt_files: tasks.map(task => join(runRoot, "prompts", `${task.id}.txt`)),
+    next: "Give each prompt file to its own separately authorized agent in a fresh context (one context per task), then run verify. Preparing fixtures does not run a model." };
+}
+
 async function observedCall(runRoot) {
   const run = JSON.parse(await readFile(join(runRoot, "run.json"), "utf8"));
   if (await realpath(run.project_root) !== join(await realpath(runRoot), "project")) throw new Error("evaluation target must be this run's isolated project directory");
@@ -96,7 +122,7 @@ async function observedCall(runRoot) {
   catch (error) { if (typeof error.code !== "number") throw error; ({ stdout, stderr } = error); exit_code = error.code; }
   let after, after_records, after_error;
   try {
-    after = await queryDocuments(run.project_root, { all: true });
+    if (run.scenario !== "retrieval") after = await queryDocuments(run.project_root, { all: true });
     if (run.maintenance) after_records = await Promise.all(after.documents.map(document =>
       getManagedRecord(run.project_root, document.id, ["source", "template", "metadata", "timeline"])));
   } catch (error) { after_error = error.message; }
@@ -107,8 +133,12 @@ async function observedCall(runRoot) {
 async function archive(runRoot) {
   const out = value("--out");
   if (!out?.endsWith(".raw.json.gz")) throw new Error("archive requires --out <name>.raw.json.gz");
-  const contents = Object.fromEntries(await Promise.all(AGENT_EVAL_ARCHIVE_FILES.map(async name => [name, await readFile(join(runRoot, name), "utf8")])));
-  const { gzip, manifest } = buildAgentEvalArchive(contents, basename(out));
+  const run = JSON.parse(await readFile(join(runRoot, "run.json"), "utf8"));
+  const names = run.scenario === "retrieval"
+    ? ["run.json", "events.jsonl", "report.json", ...run.tasks.flatMap(task => [`prompts/${task.id}.txt`, `answers/${task.id}.json`])]
+    : AGENT_EVAL_ARCHIVE_FILES;
+  const contents = Object.fromEntries(await Promise.all(names.map(async name => [name, await readFile(join(runRoot, name), "utf8")])));
+  const { gzip, manifest } = buildAgentEvalArchive(contents, basename(out), names);
   await writeFile(out, gzip);
   const problems = checkAgentEvalArchive(await readFile(out), manifest);
   if (problems.length) throw new Error(`written archive does not verify: ${problems.join("; ")}`);
@@ -124,7 +154,7 @@ async function checkArchive() {
 }
 
 try {
-  if (command === "prepare") process.stdout.write(json(await prepare()));
+  if (command === "prepare") process.stdout.write(json(await (value("--scenario") === "retrieval" ? prepareRetrievalRun() : prepare())));
   else if (command === "check-archive") {
     const result = await checkArchive();
     process.stdout.write(json(result));
@@ -137,11 +167,18 @@ try {
     else if (command === "verify") {
       const run = JSON.parse(await readFile(join(runRoot, "run.json"), "utf8"));
       const events = (await readFile(join(runRoot, "events.jsonl"), "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
-      const answers = JSON.parse(await readFile(join(runRoot, "answers.json"), "utf8"));
-      const report = evaluateAgentRun(run, events, answers);
+      let report;
+      if (run.scenario === "retrieval") {
+        const answers = { answers: {} };
+        for (const task of run.tasks) {
+          try { answers.answers[task.id] = JSON.parse(await readFile(join(runRoot, "answers", `${task.id}.json`), "utf8")); } catch {}
+        }
+        const trivial = await readFile(join(run.project_root, run.trivial.file), "utf8").catch(() => null);
+        report = evaluateRetrievalRun(run, events, answers, trivial);
+      } else report = evaluateAgentRun(run, events, JSON.parse(await readFile(join(runRoot, "answers.json"), "utf8")));
       await writeFile(join(runRoot, "report.json"), json(report));
       process.stdout.write(json(report));
       if (report.checks.failed) process.exitCode = 1;
-    } else throw new Error("Usage: eval-agent.mjs prepare | call --run <dir> --task <id> -- <command> | verify --run <dir> | archive --run <dir> --out <name>.raw.json.gz | check-archive --baseline <baseline.json>");
+    } else throw new Error("Usage: eval-agent.mjs prepare [--scenario retrieval] | call --run <dir> --task <id> -- <command> | verify --run <dir> | archive --run <dir> --out <name>.raw.json.gz | check-archive --baseline <baseline.json>");
   }
 } catch (error) { process.stderr.write(`${error.message}\n`); process.exitCode = 1; }

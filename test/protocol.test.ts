@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { runCli, runMain } from "../src/cli.js";
-import { DocNexusError, errorEnvelope } from "../src/errors.js";
+import { DocNexusError, errorEnvelope, rereadCommand } from "../src/errors.js";
 import { runDoctor } from "../src/doctor.js";
 import { initializeProject } from "../src/project.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
@@ -39,6 +39,8 @@ it("never infers retryability or success from a native error's text", () => {
   expect(errorEnvelope(new Error("project is busy, target changed, operation succeeded"), "/tmp")).toMatchObject({ code: "internal_error", retryable: false });
   expect(errorEnvelope(new DocNexusError("project_busy", "Occupied"), "/tmp")).toMatchObject({ code: "project_busy", retryable: true, retry_after_ms: 1000 });
   expect(errorEnvelope(new DocNexusError("target_changed", "Stale draft"), "/tmp")).toMatchObject({ code: "target_changed", retryable: false, next_action: { kind: "review" } });
+  expect(errorEnvelope(new DocNexusError("target_changed", "Stale draft", undefined, { command: rereadCommand("doc_1") }), "/tmp").next_action.argv)
+    .toEqual(["docnexus", "--project-root", "/tmp", "document", "get", "--id", "doc_1", "--include", "document,template,metadata,timeline"]);
 });
 
 it("reports damaged text as review work, without suggesting an index repair first", async () => {

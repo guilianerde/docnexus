@@ -55,7 +55,8 @@ it("rejects unsealed drafts, changed artifacts and changed targets", async () =>
   await expect(runCli(["draft", "preview", "--id", update.draft_id], root)).rejects.toMatchObject({ code: "text_integrity_error" });
   await writeFile(join(root, "docnexus/library/existing.md"), "# Old");
   await upsertManagedDocument(root, { file_path: "existing.md", source: "New", document: "# New", metadata });
-  await expect(runCli(["draft", "preview", "--id", update.draft_id], root)).rejects.toMatchObject({ code: "target_changed" });
+  await expect(runCli(["draft", "preview", "--id", update.draft_id], root)).rejects.toMatchObject({ code: "target_changed",
+    command: ["document", "get", "--id", saved.id, "--include", "document,template,metadata,timeline"] });
 });
 
 it("checks current fact rendering, preview tampering and resealed versions", async () => {

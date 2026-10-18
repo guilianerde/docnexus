@@ -42,11 +42,30 @@ node scripts/eval-agent.mjs call --run <run_root> --task update -- draft preview
 node scripts/eval-agent.mjs verify --run <run_root>
 ```
 
-生成 `report.json`。机械检查涵盖观测到的读取、未在题目中出现的随机值和引用、写入后的事实/维护者修正是否保留、过期写入的真实拒绝与后续复读、未知问题是否只读。维护场景另查最终状态：调用记录的任务顺序不能回退（发现补做即失败）；最后一次调用后，发布页仍含每个写入任务的成果（校验约定、维护者修正、故障日志、回滚补充、校验摘要、演练安排）、维护者分类与历史事实，鉴权页旧事实已被替代且替代事实有效；所有页面的时间线中同一来源只出现一次。每题写入时的即时状态检查不能代替这一项，后续写入可能覆盖或重复先前成果。缺少记录或失败检查会使进程非零退出；仅有流畅自述不能通过。
+生成 `report.json`。机械检查涵盖观测到的读取、未在题目中出现的随机值和引用、写入后的事实/维护者修正是否保留、过期写入的真实拒绝与后续复读、未知问题是否只读。impact 场景要求相关页查找至少各有一次 search 与 recall，只用目录或记住的 id 选页不算查找。维护场景另查最终状态：调用记录的任务顺序不能回退（发现补做即失败）；最后一次调用后，发布页仍含每个写入任务的成果（校验约定、维护者修正、故障日志、回滚补充、校验摘要、演练安排）、维护者分类与历史事实，鉴权页旧事实已被替代且替代事实有效；所有页面的时间线中同一来源只出现一次。每题写入时的即时状态检查不能代替这一项，后续写入可能覆盖或重复先前成果。缺少记录或失败检查会使进程非零退出；仅有流畅自述不能通过。
 
 所有机械检查通过时结果仍为 `needs_review`、`model_quality.verdict: unreviewed`。审阅者必须逐项检查最终断言与引用、无答案题是否仍编造供应商/价格/采用时间、提议是否被误当决定，并记录实际判断与理由。声明 `insufficient_evidence` 本身不证明模型正确拒答。
 
 维护场景还需人工核对新 source 中日期的语义，不能仅凭 metadata 值相等判断归因正确。跨页清单必须引用真实全文读取版本，区分需要修改的指南、未决的设计理由和历史事件；程序核对这些观测条件，证据是否足够及候选是否遗漏仍需语义审阅。知识状态或候选版本变化后重新判定，不把独立草稿保存宣称为多页事务。
+
+## 检索触发场景
+
+```bash
+npm run eval:agent -- prepare --scenario retrieval
+```
+
+这个场景检查智能体会不会根据任务本身主动查记忆，用来验证"按任务决定、不依赖目录"的规则。项目里放 47 个领域、92 篇文档，其中混有相近的干扰内容（网关超时、数据库超时、日志字段命名等）。三个目标领域各只有一两篇文档：一个仍出现在 3 KB 的 `CONCEPTS.md` 映射里，另外两个被映射挤掉，`prepare` 会核对这一点。每个目标页带一个随机编号，题目里不出现。
+
+任务各写在 `prompts/<task>.txt`，**每题交给一个独立的新上下文**，回答写到 `answers/<task>.json`。题目不提记忆，只说明调用 CLI 时要走观测器：
+
+| 任务 | 题目 | 目标 |
+| --- | --- | --- |
+| `timeout` | 支付网关超时能否直接改成 60 秒 | 映射外领域的决定 |
+| `naming` | 新接口的 JSON 字段命名风格 | 映射内领域的约定 |
+| `alias` | KPL 失败后保留什么、通知谁 | 只能通过别名找到的流水线页 |
+| `trivial` | 修正 `scratch/hello.txt` 的拼写 | 对照组：不需要记忆 |
+
+`verify` 对每个目标题检查：答题前做过 search、recall 或 concepts（`document list/query` 不算）；查询结果里出现目标页；回答带出随机编号并引用该页；记忆未被写入。对照题检查文件已改对、记忆未被写入。报告的 `observations` 记录每题的调用数、查询数、目录读取数，以及目标领域是否在映射里，用来对比映射内外的触发差异。读取 `CONCEPTS.md` 或分类文件是文件读取，观测器看不到；独立上下文也只能由执行方保证。
 
 ## 归档
 
@@ -55,7 +74,7 @@ node scripts/eval-agent.mjs archive --run <run_root> --out docs/operations/basel
 node scripts/eval-agent.mjs check-archive --baseline docs/operations/baselines/<name>.json
 ```
 
-`archive` 读取 run 目录中原样的 run.json、prompt.txt、events.jsonl、answers.json、report.json，以文件名到原文的 JSON 映射压缩，写入后自检并输出 `artifact_archive` 清单（压缩包和各文件的 SHA-256 与字节数），原样填入基线记录。不要解析后重新序列化，也不要手写哈希。`check-archive` 按基线记录逐项核对；提交基线前必须通过。归档使用审阅时的原始 `report.json`，之后用新检查器复查的结果另行记录，不覆盖原报告。
+`archive` 读取 run 目录中原样的 run.json、prompt.txt、events.jsonl、answers.json、report.json（检索场景为 run.json、events.jsonl、report.json 以及每题的 prompts/answers 文件），以文件名到原文的 JSON 映射压缩，写入后自检并输出 `artifact_archive` 清单（压缩包和各文件的 SHA-256 与字节数），原样填入基线记录。不要解析后重新序列化，也不要手写哈希。`check-archive` 按基线记录逐项核对；提交基线前必须通过。归档使用审阅时的原始 `report.json`，之后用新检查器复查的结果另行记录，不覆盖原报告。
 
 一次实际运行只构成验收样例，不是总体准确率。checker 单元测试中的人工事件不能当作模型运行证据；安装 AGENTS/skills 文件也不能证明任何宿主的原生激活。保留 run 目录至审阅完成，再清理这个一次性目录；原仓库不受影响。
 

@@ -11,7 +11,7 @@ After the authorized primary document is ingested, read its full current documen
 ```json
 {
   "source": { "id": "<primary document id>", "record_version": "<version just read>" },
-  "scope": "Subject and lookup scope",
+  "scope": "Subject and the search/recall/concepts lookups actually run",
   "limitations": "Lookup failures, unverified candidates or coverage limits; empty if none",
   "pages": [
     {
@@ -26,7 +26,7 @@ After the authorized primary document is ingested, read its full current documen
 }
 ```
 
-Decisions are `update`, `no_change`, `conflict`, `unverified`. Exclude the primary page from `pages`; an empty array is allowed with an explicit successful lookup scope. `no_change` starts done; the other decisions start pending. Unknown read versions must remain null and unverified, never guessed from a search hit.
+Build `pages` from the related-page lookup in [capture resolution](../../docnexus-extract/references/capture-resolution.md#check-related-page-impact): search and recall for the changed claim, not only the document catalog. Decisions are `update`, `no_change`, `conflict`, `unverified`. Exclude the primary page from `pages`; an empty array is allowed with an explicit successful lookup scope. `no_change` starts done; the other decisions start pending. Unknown read versions must remain null and unverified, never guessed from a search hit.
 
 ```bash
 ./docnexus/node_modules/.bin/docnexus impact save --file docnexus/drafts/<draft_id>/impact.json

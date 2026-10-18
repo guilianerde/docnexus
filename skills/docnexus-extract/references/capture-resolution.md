@@ -33,7 +33,7 @@ Honor an explicit target. If the user asks for a separate file despite overlap, 
 
 ## Check related-page impact
 
-For a proposed create/update, check whether the new claims affect other current pages. Use the existing subject search/recall, entity names, fact ids and links to find candidates; follow concrete dependencies as needed, without claiming an exhaustive whole-library scan. Read each plausible page's full document/template and metadata, and timeline when needed to distinguish historical reports, retaining its `record_version`. A search hit or shared entity alone is not a dependency or permission to edit.
+For a proposed create/update, check whether the new claims affect other current pages. Find candidates with at least one search and one recall for the changed claim itself, plus `concepts --query` for affected entity names and the ids of replaced facts; then follow links and concrete dependencies as needed, without claiming an exhaustive whole-library scan. Run this lookup for every change: page ids remembered from earlier work, `document list` or a category file help choose what to read but are not a lookup. A scope built only from titles or the catalog is a limited scope; state it in `limitations` and mark pages you judged by title alone as `unverified`, not `no_change`. Read each plausible page's full document/template and metadata, and timeline when needed to distinguish historical reports, retaining its `record_version`. A search hit or shared entity alone is not a dependency or permission to edit.
 
 Include an `impact_check` with lookup scope/limitations and related `pages`, each with `id`, `file_path`, the actually read `record_version`, `decision`, evidence and proposed action:
 
