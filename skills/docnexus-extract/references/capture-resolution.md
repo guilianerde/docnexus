@@ -4,8 +4,8 @@ Run this check for every capture, including calls from another skill and an expl
 
 ## Find and read candidates
 
-1. Identify the primary subject, purpose and event/version identity of the new material. Look up its names and aliases with `docnexus concepts --query <term>` and browse the related category file in `docnexus/concepts/`. Use `document list` or paginated `document query` when needed; an absent map or category entry is not proof of a new subject.
-2. Search the subject's names, aliases or identifiers, then recall a short description of the new information:
+1. Identify the primary subject, purpose and event/version identity of the new material.
+2. Search the subject's names, aliases or identifiers, then recall a short description of the new information. Check exact concept names and aliases with `docnexus concepts --query <term>`. Browse the related category file in `docnexus/concepts/` only to disambiguate or when results are weak; use `document list` or paginated `document query` when needed. An absent map or category entry is not proof of a new subject:
 
 ```bash
 ./docnexus/node_modules/.bin/docnexus search "<subject or identifier>" --limit 10

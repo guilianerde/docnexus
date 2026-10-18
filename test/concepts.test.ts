@@ -124,6 +124,33 @@ describe("concept index", () => {
     expect(files.get(`concepts/${slug}/component.md`)).toContain("**Concept 1**");
   });
 
+  it.each([
+    ["600 concepts of one type", 1, 600, 1],
+    ["600 concepts across two types", 2, 600, 1],
+    ["heavily shared concepts and many documents", 2, 200, 1500]
+  ])("keeps every category file within 32 KB: %s", (_label, typeCount, conceptCount, documentCount) => {
+    const category = "鉴权";
+    const documents: ConceptIndex["documents"] = Array.from({ length: documentCount }, (_, i) =>
+      ({ id: `d${i}`, file_path: `area/document-${i}.md`, title: `文档 ${i}`, summary: "摘要".repeat(80), category }));
+    const types = (["decision", "component"] as const).slice(0, typeCount);
+    const concepts: ConceptIndex["concepts"] = Array.from({ length: conceptCount }, (_, i) => ({
+      name: `概念 ${String(i).padStart(4, "0")}`, type: types[i % types.length], description: "描述".repeat(80),
+      documents: documents.slice(0, Math.min(documentCount, 40)).map((document) => document.file_path),
+      categories: [category], relations: Array.from({ length: 20 }, (_, r) => ({ type: "relates_to" as const, to: `概念 ${r}` })), aliases: ["别名"]
+    }));
+    const index: ConceptIndex = { document_count: documentCount, concept_count: conceptCount, categories: [{ name: category, document_count: documentCount, concept_count: conceptCount }], documents, concepts };
+    const files = renderConceptFiles(index);
+    for (const [path, content] of files) expect(Buffer.byteLength(content), path).toBeLessThanOrEqual(32_000);
+    const pages = [...files.entries()].filter(([path]) => path.startsWith("concepts/鉴权/"));
+    expect(pages.length).toBeGreaterThan(typeCount);
+    const listed = pages.flatMap(([, content]) => content.match(/\*\*概念 \d{4}\*\*/g) ?? []);
+    expect(new Set(listed).size).toBe(conceptCount);
+    const hub = files.get("concepts/鉴权.md")!;
+    for (const [path] of pages) expect(hub).toContain(`docnexus/${path}`);
+    if (documentCount > 100) expect(hub).toMatch(/more document\(s\): run `docnexus document query --category "鉴权"`/);
+    expect(pages[0][1]).toMatch(/more: `docnexus concepts --query "概念 \d{4}"`|10 more/);
+  });
+
   it("assigns collision-free, order-independent file names", () => {
     const names = categoryFileNames(["API Contract", "api-contract", "CON", "接口契约"]);
     expect(names.get("接口契约")).toBe("接口契约");

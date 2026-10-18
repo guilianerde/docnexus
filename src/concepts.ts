@@ -34,8 +34,12 @@ const MAX_DESCRIPTION_LENGTH = 160;
 const MAX_LABEL_LENGTH = 40;
 /** The root map is loaded into agent context, so it stays within a small fixed budget. */
 const ROOT_BUDGET_BYTES = 3072;
-/** A category file larger than this is split into one file per entity type. */
+/** Hard size limit for every generated category file; larger content is split by type and paged. */
 const SHARD_BUDGET_BYTES = 32_000;
+/** Per-line caps keep one heavily shared concept from filling a page. */
+const MAX_LINE_DOCUMENTS = 10;
+const MAX_LINE_RELATIONS = 10;
+const MAX_LINE_LENGTH = 1500;
 const SIGNPOST_STEPS = [6, 4, 2, 0];
 
 function conceptKey(type: string, name: string): string {
@@ -104,19 +108,28 @@ function truncate(value: string, length: number): string {
 }
 
 function documentLine(document: ConceptIndex["documents"][number]): string {
-  return `- **${document.title}** — ${truncate(document.summary, MAX_DESCRIPTION_LENGTH)} → \`${libraryRelativePath(document.file_path)}\``;
+  return truncate(`- **${document.title}** — ${truncate(document.summary, MAX_DESCRIPTION_LENGTH)} → \`${libraryRelativePath(document.file_path)}\``, MAX_LINE_LENGTH);
 }
 
-function conceptLine(entry: ConceptEntry): string {
-  const relations = entry.relations.map((relation) => `${relation.type} ${relation.to}`).join("; ");
-  const documents = entry.documents.map((path) => `\`${libraryRelativePath(path)}\``).join(", ");
-  return `- **${entry.name}**${entry.aliases?.length ? ` (${entry.aliases.join(", ")})` : ""} — ${truncate(entry.description, MAX_DESCRIPTION_LENGTH)}${relations ? ` (${relations})` : ""} → ${documents}`;
+function capped(items: string[], limit: number, more: (count: number) => string): string[] {
+  return items.length > limit ? [...items.slice(0, limit), more(items.length - limit)] : items;
 }
 
-function conceptSections(concepts: ConceptEntry[]): string[] {
+function conceptLine(entry: ConceptEntry, limitLists = false): string {
+  let relations = entry.relations.map((relation) => `${relation.type} ${relation.to}`);
+  let documents = entry.documents.map((path) => `\`${libraryRelativePath(path)}\``);
+  if (limitLists) {
+    relations = capped(relations, MAX_LINE_RELATIONS, (count) => `${count} more`);
+    documents = capped(documents, MAX_LINE_DOCUMENTS, (count) => `${count} more: \`docnexus concepts --query "${entry.name}"\``);
+  }
+  const line = `- **${entry.name}**${entry.aliases?.length ? ` (${entry.aliases.join(", ")})` : ""} — ${truncate(entry.description, MAX_DESCRIPTION_LENGTH)}${relations.length ? ` (${relations.join("; ")})` : ""} → ${documents.join(", ")}`;
+  return limitLists ? truncate(line, MAX_LINE_LENGTH) : line;
+}
+
+function conceptSections(concepts: ConceptEntry[], limitLists = false): string[] {
   const lines: string[] = [];
   for (const type of [...new Set(concepts.map((entry) => entry.type))].sort()) {
-    lines.push(`## ${type}`, "", ...concepts.filter((entry) => entry.type === type).map(conceptLine), "");
+    lines.push(`## ${type}`, "", ...concepts.filter((entry) => entry.type === type).map((entry) => conceptLine(entry, limitLists)), "");
   }
   return lines;
 }
@@ -149,10 +162,10 @@ function tableCell(value: string): string {
   return truncate(value, MAX_LABEL_LENGTH).replace(/\|/g, "\\|").replace(/`/g, "'");
 }
 
-function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEntry[]): string[] {
+function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEntry[], page?: string): string[] {
   const documentCount = index.documents.filter((document) => document.category === category).length;
   return [
-    `# DocNexus concepts: ${category}`,
+    `# DocNexus concepts: ${category}${page ? ` — ${page}` : ""}`,
     "",
     GENERATED_NOTICE,
     "",
@@ -162,39 +175,65 @@ function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEnt
   ];
 }
 
+const bytes = (lines: string[]) => Buffer.byteLength(lines.join("\n"));
+
+/** Greedily packs lines into pages whose rendered size, including the fixed lines, stays within budget. */
+function paginate(lines: string[], fixedBytes: number, budget = SHARD_BUDGET_BYTES): string[][] {
+  const pages: string[][] = [];
+  let current: string[] = [];
+  let size = fixedBytes;
+  for (const line of lines) {
+    const added = Buffer.byteLength(line) + 1;
+    if (current.length > 0 && size + added > budget) {
+      pages.push(current);
+      current = [];
+      size = fixedBytes;
+    }
+    current.push(line);
+    size += added;
+  }
+  if (current.length > 0) pages.push(current);
+  return pages;
+}
+
 function renderShards(index: ConceptIndex, category: string, slug: string): Map<string, string> {
   const documents = index.documents.filter((document) => document.category === category);
   const concepts = index.concepts.filter((entry) => entry.categories.includes(category));
   const header = shardHeader(category, index, concepts);
   const documentSection = documents.length > 0 ? ["## Documents", "", ...documents.map(documentLine), ""] : [];
-  const single = [...header, ...documentSection, ...(concepts.length > 0 ? conceptSections(concepts) : ["_No named concepts. Read the documents above._", ""])].join("\n");
-  const types = [...new Set(concepts.map((entry) => entry.type))].sort();
-  if (Buffer.byteLength(single) <= SHARD_BUDGET_BYTES || types.length < 2) return new Map([[`concepts/${slug}.md`, single]]);
+  const single = [...header, ...documentSection, ...(concepts.length > 0 ? conceptSections(concepts, true) : ["_No named concepts. Read the documents above._", ""])].join("\n");
+  if (Buffer.byteLength(single) <= SHARD_BUDGET_BYTES) return new Map([[`concepts/${slug}.md`, single]]);
 
-  // Oversized domains keep a hub with documents and one file per entity type.
+  // Oversized domains keep a hub with documents and links to type pages, each page within the same budget.
   const files = new Map<string, string>();
-  const hub = [...header];
-  const typeLinks = ["## Concepts by type", "", ...types.map((type) =>
-    `- ${type}: ${concepts.filter((entry) => entry.type === type).length} concept(s) → \`${WORKSPACE_DIRNAME}/concepts/${slug}/${type}.md\``), ""];
-  const budget = SHARD_BUDGET_BYTES - Buffer.byteLength([...hub, ...typeLinks].join("\n")) - 200;
-  const shown: string[] = [];
-  for (const document of documents) {
-    const line = documentLine(document);
-    if (Buffer.byteLength([...shown, line].join("\n")) > budget) break;
-    shown.push(line);
+  const links: string[] = [];
+  for (const type of [...new Set(concepts.map((entry) => entry.type))].sort()) {
+    const entries = concepts.filter((entry) => entry.type === type);
+    const lines = entries.map((entry) => conceptLine(entry, true));
+    const fixed = bytes([...shardHeader(category, index, concepts, `${type} page 0000 of 0000`), `## ${type}`, "", ""]);
+    const pages = paginate(lines, fixed);
+    let first = 1;
+    pages.forEach((page, number) => {
+      const name = number === 0 ? `${type}.md` : `${type}-${number + 1}.md`;
+      const label = pages.length > 1 ? `${type} page ${number + 1} of ${pages.length}` : type;
+      files.set(`concepts/${slug}/${name}`, [...shardHeader(category, index, concepts, label), `## ${type}`, "", ...page, ""].join("\n"));
+      links.push(`- ${type} ${first}–${first + page.length - 1} of ${entries.length} → \`${WORKSPACE_DIRNAME}/concepts/${slug}/${name}\``);
+      first += page.length;
+    });
   }
+  const typeSection = links.length > 0 ? ["## Concepts by type", "", ...links, ""] : [];
+  const overflow = (count: number) => `_${count} more document(s): run \`docnexus document query --category "${category}"\`._`;
+  const fixed = bytes([...header, "## Documents", "", overflow(documents.length), "", ...typeSection]) + 1;
+  const lines = documents.map(documentLine);
+  const shown = lines.length > 0 && fixed + Buffer.byteLength(lines[0]) + 1 <= SHARD_BUDGET_BYTES ? paginate(lines, fixed)[0] : [];
+  const hub = [...header];
   if (documents.length > 0) {
     hub.push("## Documents", "", ...shown);
-    if (shown.length < documents.length) {
-      hub.push(`_${documents.length - shown.length} more document(s): run \`docnexus document query --category "${category}"\`._`);
-    }
+    if (shown.length < documents.length) hub.push(overflow(documents.length - shown.length));
     hub.push("");
   }
-  hub.push(...typeLinks);
+  hub.push(...typeSection);
   files.set(`concepts/${slug}.md`, hub.join("\n"));
-  for (const type of types) {
-    files.set(`concepts/${slug}/${type}.md`, [...header, ...conceptSections(concepts.filter((entry) => entry.type === type))].join("\n"));
-  }
   return files;
 }
 
