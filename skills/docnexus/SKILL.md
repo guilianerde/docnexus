@@ -13,7 +13,8 @@ Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`
 
 ```text
 docnexus/
-  CONCEPTS.md   generated concept index — load it to know what memory covers
+  CONCEPTS.md   generated short category map — routes to concepts/; never a reason to skip recall
+  concepts/     generated per-category files: documents, concepts, aliases and relations of one domain
   package.json, package-lock.json  isolated npm installation manifest and lock
   node_modules/ npm runtime (git-ignored)
   skills/       project skills (this file lives in skills/docnexus/)
@@ -30,8 +31,8 @@ Agents write only inside drafts. Users may edit `library/` files by hand; such e
 
 Memory is used proactively, not only on request:
 
-1. At the start of a project task, read `docnexus/CONCEPTS.md` (it may already be loaded through CLAUDE.md or AGENTS.md). It is small: concept names, one-line descriptions, and the documents that define them.
-2. If the task touches a listed concept, a documented decision, or a component you are about to change, run `docnexus-recall` yourself before planning or editing. Do not ask the user for permission; recall is read-only.
+1. Decide from the task itself whether memory matters, not from `docnexus/CONCEPTS.md`. That file is only a short category map (it may already be loaded through CLAUDE.md or AGENTS.md); a topic missing from it may still be stored.
+2. If the task changes existing modules, behavior, interfaces or conventions, or depends on earlier decisions, run `docnexus-recall` yourself before planning or editing. Do not ask the user for permission; recall is read-only. Skip trivial, self-contained work.
 3. When the work produces a decision, convention, or explanation worth keeping, offer to capture it. Capture only after the user agrees.
 4. When project context or related knowledge changes, proactively review affected categories using the project, existing catalog and related documents. Reuse or evolve the project's vocabulary as needed; `docnexus-library` owns category-only adjustments. Apply changes within authorized capture/update/classification work or standing classification authorization already given; a read-only task alone grants no new write permission.
 
@@ -47,7 +48,7 @@ Run once per conversation before the first DocNexus command:
 - Unsupported format → tell the user to run `./docnexus/node_modules/.bin/docnexus reset --force` then `init`. Never run reset yourself without explicit confirmation.
 - `records.edited` is not empty → the user edited library files by hand. Offer `docnexus-library` → *Adopt hand edits*.
 - `records.missing_library` or `records.invalid_records` is not empty → use `docnexus-maintain` to diagnose.
-- `index.in_sync` is false → `index sync` rebuilds derived indexes and refreshes `CONCEPTS.md` from current text. Semantic `recall` also syncs automatically; keyword search and full reads use text directly.
+- `index.in_sync` is false → `index sync` rebuilds derived indexes and refreshes `CONCEPTS.md` and `concepts/` from current text. Semantic `recall` also syncs automatically; keyword search and full reads use text directly.
 - `drafts.ready > 0` → mention that sealed drafts are waiting for ingestion.
 
 ## Routing
@@ -75,7 +76,7 @@ If the user or calling skill explicitly supplies a category (for example, a code
 2. **Review**: read `draft preview --id <draft_id>` and show the sealed document with its metadata, resolution decision, knowledge/provenance delta and related-page impact check. Retain its `sealed_version` and `document_hash`; delivered content does not prove review or user approval. Skip this pause only when the user already asked to save without review.
 3. **Ingest** (`docnexus-ingest`): store the sealed draft, then register its reviewed impact attachment with the saved primary version using `impact save`. The operations are separate; report a pending impact save without repeating an already successful ingestion. If `replaces_managed_document` is true, ensure the user has explicitly authorized replacing that path; ask only if that authorization is missing.
 4. **Maintain categories** (`docnexus-library`): if the confirmed new context changes how related documents belong together, apply the model's relevant category-only adjustments within existing authorization. Preserve facts and source content; skip this step when no adjustment is justified. Do not override a caller-selected category on the just-ingested document during this capture pipeline.
-5. **Report**: the document `id`, `library_path`, `operation`, and `timeline_path`, plus any classification changes and reasons. `CONCEPTS.md` is regenerated automatically. If a document viewer needs refreshing after a write/update/delete/classification change, run `document query` for a fresh first page or full result; subsequent pages use that result's revision.
+5. **Report**: the document `id`, `library_path`, `operation`, and `timeline_path`, plus any classification changes and reasons. `CONCEPTS.md` and `concepts/` are regenerated automatically. If a document viewer needs refreshing after a write/update/delete/classification change, run `document query` for a fresh first page or full result; subsequent pages use that result's revision.
 
 Stop the pipeline at the first failed stage and report which stage failed; never skip ahead.
 

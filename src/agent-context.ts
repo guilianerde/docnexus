@@ -11,17 +11,18 @@ export function agentContextFile(target: SkillsTarget): string {
 }
 
 function block(target: SkillsTarget): string {
-  // Claude Code expands `@path` imports in CLAUDE.md, so the concept index is loaded with the project context.
-  const conceptIndex = target === "claude"
+  // Claude Code expands `@path` imports in CLAUDE.md; the root map is size-capped so loading it stays cheap.
+  const conceptMap = target === "claude"
     ? `@${WORKSPACE_DIRNAME}/CONCEPTS.md`
-    : `\`${WORKSPACE_DIRNAME}/CONCEPTS.md\` (read it at the start of each task)`;
+    : `\`${WORKSPACE_DIRNAME}/CONCEPTS.md\` (a short map; read it when useful)`;
   return [
     START,
     "## DocNexus project memory",
     "",
-    `This project keeps curated memory in \`${WORKSPACE_DIRNAME}/\`. Concept index: ${conceptIndex}`,
+    `This project keeps curated memory in \`${WORKSPACE_DIRNAME}/\`. Category map: ${conceptMap}`,
     "",
-    "- Before planning or changing code, check whether the task touches a concept in the index or a documented decision, component, or convention. If it does, use the `docnexus-recall` skill on your own and ground your work in what it returns.",
+    "- Decide from the task itself, not from the map, whether memory matters. Before changing existing modules, behavior, interfaces or conventions, or when the work depends on earlier decisions, use the `docnexus-recall` skill on your own and ground your work in what it returns. A topic missing from the map is not a reason to skip. Skip trivial, self-contained work.",
+    `- Search and recall first. Open a category file under \`${WORKSPACE_DIRNAME}/concepts/\` to list a domain completely, to find canonical names and aliases for a better query, or when results are weak.`,
     "- When the task produces a decision or knowledge worth keeping, offer to capture it with the `docnexus` skill; never store it without the user's consent.",
     END
   ].join("\n");

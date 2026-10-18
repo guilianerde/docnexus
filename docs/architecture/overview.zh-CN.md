@@ -30,7 +30,8 @@ DocNexus 0.22.1 采用分层项目记忆：Markdown 当前知识与来源时间�
 | `records/<id>/metadata.json` | 标题、摘要、标签、实体别名、关系及可选事实生命周期 | 文本真源 |
 | `records/<id>/timeline.md` | 按时间追加的更新摘要与来源 | 文本真源 |
 | `records/<id>/record.json` | 稳定身份、时间戳、source/正文模板/metadata/时间线哈希 | 文本真源；正文哈希不包含生成块内容 |
-| `CONCEPTS.md` | 文档和概念目录 | 由 metadata 再生成 |
+| `CONCEPTS.md` | 简短分类路由表（≤ 3 KB） | 由 metadata 再生成 |
+| `concepts/<分类>.md` | 按分类的文档、概念、别名与关系；过大时按实体类型拆分 | 由 metadata 再生成 |
 | `drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
 | `skills/`、`schemas/` | 工作流与格式说明 | 官方副本与生成 schema 仅本地，Git 忽略 |
 | `store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |

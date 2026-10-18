@@ -9,7 +9,7 @@ Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`
 
 ## When to recall
 
-Read `docnexus/CONCEPTS.md` at the start of a project task. When a listed concept, earlier decision or project convention matters, consult its documents before planning or changing code. Skip trivial, self-contained work and documents already read in this conversation.
+Decide from the task itself. Recall before planning or changing code when the work touches existing modules, behavior, interfaces or conventions, or depends on earlier decisions. `docnexus/CONCEPTS.md` is only a short category map: a topic missing from it is not a reason to skip. Skip trivial, self-contained work and documents already read in this conversation.
 
 ## Choose how to find evidence
 
@@ -25,7 +25,8 @@ Use the project-local CLI from the project root:
 ./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
 ```
 
-- If the directory identifies the file, read its Markdown directly for ordinary prose. If it contains `<!-- docnexus:fact ... -->` blocks, use `document get` first to refresh effective-time changes and then read/cite the current view.
+- Start with `search` or `recall` built from the user's request, the current code and the task goal. Open a category file `docnexus/concepts/<category>.md` (linked from the map) when you need to list a domain completely, to find canonical names and aliases for a better query, or when results are weak; then narrow with `--category <exact name>`. Large categories link one file per entity type.
+- If a category file identifies the document, read its Markdown directly for ordinary prose. If it contains `<!-- docnexus:fact ... -->` blocks, use `document get` first to refresh effective-time changes and then read/cite the current view.
 - Use `search` for exact names, paths, code identifiers or short topic terms. It performs literal matching and returns file references, matched terms, snippets and optional line numbers. Its lexical score is not confidence.
   Chinese queries add adjacent Han character pairs and suppress isolated Han characters in multiword queries; an intentional single-character query remains supported. Ranking favors complete phrases, then query coverage, then field weights. `matched_terms` may contain character pairs. Metadata/alias/fact-only evidence may omit a body line number; read the returned metadata and full document to interpret it.
 - Use `recall` for general questions or concept relationships. It synchronizes verified text, embeds locally, and fuses keyword and vector ranks using document-level RRF. Results contain one representative chunk per document; context groups include neighbor chunks and one-hop graph evidence. `--mode vector` retains pure vector retrieval for diagnosis.
@@ -36,7 +37,7 @@ Use the project-local CLI from the project root:
 - Graph paths include the relation's source document and description. Cite `graph_context.paths[].source_path` when relying on a relationship declared in a different document. Cross-document supporting chunks are supporting evidence, not an inferred new relationship.
 - Read full current documents with `document get` before interpreting a decision from a short excerpt. For “why did this change?” or historical questions, also request `--include document,metadata,timeline`.
 - Earlier timeline entries may be superseded. Timeline timestamps record when knowledge was saved; fact `valid_from` records when a claim takes effect. `facts list --at <ISO timestamp>` evaluates the stored lifecycle at that time, not an earlier Git snapshot. Sources, timelines and inactive structured fact entries are excluded from vector indexing; current prose is still indexed as written.
-- If evidence is weak, try a focused alternate keyword/concept, or inspect `concepts --query <term>` and the document list. Empty literal results do not prove the topic never existed; nonempty vector results do not guarantee an answer exists.
+- If evidence is weak, try a focused alternate keyword/concept, or inspect `concepts --query <term>`, `concepts --category <name>` and the document list. Empty literal results do not prove the topic never existed; nonempty vector results do not guarantee an answer exists.
 
 ## Answer and diagnose
 

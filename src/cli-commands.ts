@@ -1,5 +1,5 @@
 import { DocNexusError, errorDefinitions, PROTOCOL_VERSION } from "./errors.js";
-import { buildConceptIndex, renderConceptIndex, writeConceptIndex } from "./concepts.js";
+import { buildConceptIndex, renderConceptListing, writeConceptIndex } from "./concepts.js";
 import type { runDoctor } from "./doctor.js";
 import { createDraft, discardDraft, listDrafts, previewDraft, sealDraft, type DraftStatus } from "./drafts.js";
 import {
@@ -26,7 +26,7 @@ import { installEmbeddingModel } from "./embedding-models.js";
 import { searchDocuments } from "./search.js";
 import { resetProjectData } from "./reset.js";
 import { inspectSkills, linkSkills, parseSkillsTargets, syncSkills } from "./skills.js";
-import { entityTypes, type DocNexusMetadata, type DocumentCategory } from "./types.js";
+import { entityTypes, isDocumentCategory, type DocNexusMetadata, type DocumentCategory } from "./types.js";
 import { listFacts } from "./knowledge-service.js";
 import { queryDocuments } from "./document-query.js";
 import { configureUsage, exportUsage, recordUsageFeedback, usageStatus } from "./usage.js";
@@ -230,8 +230,11 @@ const concepts: CommandHandler = async ({ projectRoot, args }) => {
   if (options.format !== undefined && options.format !== "json" && options.format !== "md") {
     throw new DocNexusError("invalid_params", "--format must be json or md");
   }
-  const index = await buildConceptIndex(projectRoot, { type: options.type, query: options.query });
-  return options.format === "md" ? renderConceptIndex(index) : json(index);
+  if (options.category !== undefined && !isDocumentCategory(options.category)) {
+    throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
+  }
+  const index = await buildConceptIndex(projectRoot, { type: options.type, query: options.query, category: options.category });
+  return options.format === "md" ? renderConceptListing(index) : json(index);
 };
 
 const factsList: CommandHandler = async ({ projectRoot, rest }) => {

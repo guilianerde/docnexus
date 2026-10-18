@@ -21,7 +21,7 @@ npm install --prefix ./docnexus --save-exact @rowansenne/docnexus
 
 安装清单、锁文件和依赖均保存在 `docnexus/`，与宿主项目的 npm 文件分开。命令仍从项目根目录执行；从其他目录调用需指定 `--project-root <project>`。升级使用 `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus@latest`，克隆后用 `npm ci --prefix ./docnexus` 恢复依赖。现有根目录安装仍可使用 `./node_modules/.bin/docnexus`；不要移动或删除宿主项目本身的 npm 清单。
 
-然后正常工作。智能体读取 `docnexus/CONCEPTS.md`，任务涉及项目记忆时自行查找并阅读相关文档。也可以说“记住这段设计说明”“鉴权为什么这样设计”“列出 DocNexus 文档”。
+然后正常工作。智能体根据任务本身判断何时查找项目记忆；`docnexus/CONCEPTS.md` 只是一张简短的分类路由表，指向 `docnexus/concepts/` 下按领域划分的概念文件。也可以说“记住这段设计说明”“鉴权为什么这样设计”“列出 DocNexus 文档”。
 
 ## 工作区与知识更新
 
@@ -31,7 +31,8 @@ docnexus/
   package-lock.json     # 锁定安装版本
   node_modules/         # 可重装运行依赖，Git 忽略
   project.json          # 工作区格式标记
-  CONCEPTS.md           # 自动生成的文档与概念目录
+  CONCEPTS.md           # 自动生成的简短分类路由表（≤ 3 KB）
+  concepts/             # 自动生成的按分类概念文件：文档、概念、别名与关系
   skills/               # 官方 skills 的本地副本，Git 忽略
   drafts/<draft_id>/    # source.md、document.md、metadata.json、manifest.json
   impacts/              # 跨页影响清单、处理状态与复核历史
@@ -54,7 +55,7 @@ docnexus/
 
 时间线中的日期是入库时间，不等同于来源所描述事件的发生时间。关键词查找和向量索引都不包含原始材料或历史时间线，历史问题可通过 `document get --include timeline` 查看。
 
-实体用于概念目录并投影为图节点，关系投影为带声明文档和描述的图边；两个数组允许为空，没有实体的文档仍可语义召回。没有实体的文档也会列在 `CONCEPTS.md` 的文档目录中。目录最多展示 300 份文档和 300 个概念；完整信息通过 `document list` 与 `concepts` 查看。
+实体用于概念目录并投影为图节点，关系投影为带声明文档和描述的图边；两个数组允许为空，没有实体的文档仍可语义召回。没有实体的文档也会列在所属分类的概念文件中。根目录路由表不超过 3 KB；单个分类文件超过 32 KB 时按实体类型再拆一层。完整信息通过 `document list` 与 `concepts` 查看。
 
 ## 查找与回答
 
@@ -155,7 +156,7 @@ node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 更新草稿须传入提炼所依据的 `document get` 或 `document query` 返回的 `--base-version <record_version>`。封存冲突后须复读合并，再使用该次读取的版本；新路径可用 `--base-version new`。旧 manifest 格式 1/2 的待入库草稿需复读合并后重新封存。
 
-`init --agent` 将 `.agents/skills/` 或 `.claude/skills/` 链接到项目 skills，并在 `AGENTS.md` 或 `CLAUDE.md` 写入带标记的指引区块。Claude 通过 `@docnexus/CONCEPTS.md` 加载目录，Codex 按指引读取。`reset` 清理这些链接和区块。
+`init --agent` 将 `.agents/skills/` 或 `.claude/skills/` 链接到项目 skills，并在 `AGENTS.md` 或 `CLAUDE.md` 写入带标记的指引区块。Claude 通过 `@docnexus/CONCEPTS.md` 加载简短路由表，Codex 需要时读取。区块要求智能体根据任务判断是否检索，不因路由表未列出某主题而跳过。旧区块需重新运行 `init --agent` 刷新。`reset` 清理这些链接和区块。
 
 ## Git、手动编辑与完整性
 
@@ -179,7 +180,7 @@ git -C docnexus status
 
 Git 保存文档、来源、元数据、时间线、影响清单、工作区配置，以及 `package.json`、`package-lock.json`。自动忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及其版本标记、`schemas/metadata.schema.json`。其他名称的自定义 skill 仍可提交；项目定制应独立保存，官方副本会被升级覆盖。初始化、skills 同步及普通工作区命令会补齐忽略规则，不修改 Git 暂存区；已跟踪的官方副本需[显式迁移](docs/architecture/skills-workspace.zh-CN.md#已有仓库迁移)。克隆后运行 `npm ci --prefix ./docnexus`，再运行 `./docnexus/node_modules/.bin/docnexus init --agent codex`（或 `claude` / `all`；独立知识仓库追加 `--git-remote <url>`），按锁定版本恢复运行环境及生成文件，知识保持不变。
 
-完成恢复或拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念目录，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
+完成恢复或拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念路由表、分类概念文件，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
 
 ## 数据库引擎
 

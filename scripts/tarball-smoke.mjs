@@ -236,7 +236,10 @@ try {
   const concepts = await runJson(cliPath, ["concepts"], projectDirectory, cliEnvironment);
   assert(concepts.concepts?.[0]?.name === "DocNexus tarball", "concepts did not list the ingested entity");
   const conceptIndex = await readFile(join(projectDirectory, "docnexus", "CONCEPTS.md"), "utf8");
-  assert(conceptIndex.includes("**DocNexus tarball**"), "CONCEPTS.md was not regenerated after ingestion");
+  const conceptShard = conceptIndex.match(/`docnexus\/(concepts\/[^`]+\.md)`/)?.[1];
+  assert(conceptShard, "CONCEPTS.md did not route to a category concept file");
+  const conceptShardText = await readFile(join(projectDirectory, "docnexus", conceptShard), "utf8");
+  assert(conceptShardText.includes("**DocNexus tarball**"), "category concept file was not regenerated after ingestion");
 
   const document = await runJson(cliPath, ["document", "get", "--id", added.id, "--include", "document,template,timeline"], projectDirectory, cliEnvironment);
   assert(document.document.includes("local project memory"), "document get did not return full current knowledge");

@@ -156,7 +156,8 @@ DocNexus project workspace. Everything DocNexus owns for this project lives here
 | \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
 | \`library/\` | Author-owned Markdown and fact references with generated read-only fact blocks. Adopt authored edits with \`docnexus document sync\`. |
 | \`records/\` | Per-document source, metadata, timeline, and \`record.json\`; the text source of truth. |
-| \`CONCEPTS.md\` | Generated concept index that agents load while working. |
+| \`CONCEPTS.md\` | Generated short category map that agents load while working; never edit. |
+| \`concepts/\` | Generated per-category concept files (documents, concepts, aliases, relations) that the map routes to. |
 | \`schemas/\` | Generated metadata JSON schema, ignored by Git. |
 | \`store/\` | Rebuildable PostgreSQL/PGLite retrieval projections and optional local model overrides. |
 | \`.runtime/\` | Pending text transaction recovery journal and optional local usage records; do not delete during recovery. |

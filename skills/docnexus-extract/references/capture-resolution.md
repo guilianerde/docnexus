@@ -4,7 +4,7 @@ Run this check for every capture, including calls from another skill and an expl
 
 ## Find and read candidates
 
-1. Read `docnexus/CONCEPTS.md` and identify the primary subject, purpose and event/version identity of the new material. The index is capped; use `document list` or paginated `document query` when needed rather than treating an absent index entry as proof of a new subject.
+1. Identify the primary subject, purpose and event/version identity of the new material. Look up its names and aliases with `docnexus concepts --query <term>` and browse the related category file in `docnexus/concepts/`. Use `document list` or paginated `document query` when needed; an absent map or category entry is not proof of a new subject.
 2. Search the subject's names, aliases or identifiers, then recall a short description of the new information:
 
 ```bash

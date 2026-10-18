@@ -36,6 +36,11 @@ export function conceptIndexPath(projectRoot: string): string {
   return join(workspacePath(projectRoot), "CONCEPTS.md");
 }
 
+/** Generated per-category concept files that the root map routes to. */
+export function conceptShardsPath(projectRoot: string): string {
+  return join(workspacePath(projectRoot), "concepts");
+}
+
 /** Project-relative directory of a document’s source, metadata, timeline and record. */
 export function recordRelativePath(documentId: string): string {
   return `${WORKSPACE_DIRNAME}/records/${documentId}`;

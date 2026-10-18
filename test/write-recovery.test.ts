@@ -125,7 +125,7 @@ describe("serialized writes and durable text recovery", () => {
     expect(saved).toMatchObject({ source: next.source, document: next.document });
     expect(saved.timeline!.split("crash source")).toHaveLength(2);
     expect((await inspectRecords(path)).ok).toBe(true);
-    expect(await readFile(join(path, "docnexus/CONCEPTS.md"), "utf8")).toContain("Memory");
+    expect(await readFile(join(path, "docnexus/concepts/uncategorized.md"), "utf8")).toContain("**Memory**");
   });
 
   it("finishes an interrupted rollback to the previous complete document", async () => {
@@ -142,7 +142,8 @@ describe("serialized writes and durable text recovery", () => {
     const saved = await upsertManagedDocument(path, input);
     await crash({ root: path, deletion: saved.id });
     expect(await listManagedDocuments(path)).toEqual([]);
-    expect(await readFile(join(path, "docnexus/CONCEPTS.md"), "utf8")).not.toContain("**Memory**");
+    expect(await readFile(join(path, "docnexus/CONCEPTS.md"), "utf8")).toContain("No project memory yet");
+    await expect(readFile(join(path, "docnexus/concepts/uncategorized.md"), "utf8")).rejects.toThrow();
   });
 
   it("commits the draft receipt together with memory after an ingestion crash", async () => {

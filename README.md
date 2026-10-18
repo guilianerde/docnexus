@@ -21,7 +21,7 @@ npm install --prefix ./docnexus --save-exact @rowansenne/docnexus
 
 The installation manifest, lockfile and dependencies stay in `docnexus/`, separate from the host project’s npm files. Run commands from the project root; from another directory pass `--project-root <project>`. Update with `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus@latest`; after a clone, restore with `npm ci --prefix ./docnexus`. Existing root installations remain supported with `./node_modules/.bin/docnexus`; do not move or delete the host project’s own manifests.
 
-The agent reads `docnexus/CONCEPTS.md` and consults relevant files when a task touches recorded knowledge. Ask it to remember a decision, explain a project convention or list saved documents.
+The agent decides from the task when to search project memory; `docnexus/CONCEPTS.md` is a short category map that routes to one concept file per domain under `docnexus/concepts/`. Ask it to remember a decision, explain a project convention or list saved documents.
 
 ## Workspace
 
@@ -31,7 +31,8 @@ docnexus/
   package-lock.json     # Locked installation
   node_modules/         # Reinstallable runtime, Git-ignored
   project.json          # workspace format marker
-  CONCEPTS.md           # generated document and concept directory
+  CONCEPTS.md           # generated short category map (≤ 3 KB)
+  concepts/             # generated per-category documents, concepts, aliases and relations
   skills/               # local packaged skill copies, Git-ignored
   drafts/<draft_id>/    # source.md, document.md, metadata.json, manifest.json
   impacts/              # related-page impact checks, status and review history
@@ -52,7 +53,7 @@ docnexus/
 
 Before each capture, the agent must search/recall existing knowledge and read plausible candidates in full. It chooses an existing-page update, a separate new document, a duplicate skip, or an unresolved conflict, and carries the reason and read versions into review. Distinct review reports/events remain separate; related durable pages need their own authorized updates. Direct ingestion of a ready draft also checks this decision. This is a skill workflow, not CLI-enforced semantic deduplication. See [capture resolution](skills/docnexus-extract/references/capture-resolution.md).
 
-Timeline dates are save times, not necessarily the dates of events described in a source. Keyword and vector indexes exclude source material and timelines; request the timeline for historical questions. Entities and relationships project to graph nodes and edges; edges retain the declaring document and description. Both arrays may be empty, and entity-free documents still support semantic recall. The generated directory includes documents even without entities, showing at most 300 documents and 300 concepts. Use `document list` and `concepts` for the full information.
+Timeline dates are save times, not necessarily the dates of events described in a source. Keyword and vector indexes exclude source material and timelines; request the timeline for historical questions. Entities and relationships project to graph nodes and edges; edges retain the declaring document and description. Both arrays may be empty, and entity-free documents still support semantic recall. Generated category files list documents even without entities. The root map stays within 3 KB; a category file larger than 32 KB splits into one file per entity type. Use `document list` and `concepts` for the full information.
 
 ## Find, read and answer
 
@@ -143,7 +144,7 @@ Updates must pass `--base-version <record_version>` from the `document get` or `
 
 Sealing records the target document version. Ingestion rejects newer prose, source or category changes, deleted/recreated targets and newly occupied paths. Reread and merge current knowledge before resealing; `--replace` does not bypass this check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain workspace format 6. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for real-source regression replay and separate model review tasks.
 
-`init --agent` links project skills into `.agents/skills/` or `.claude/skills/` and adds a marked block to `AGENTS.md` or `CLAUDE.md`. Claude loads the directory through `@docnexus/CONCEPTS.md`; Codex reads it as instructed. Reset removes these links and blocks.
+`init --agent` links project skills into `.agents/skills/` or `.claude/skills/` and adds a marked block to `AGENTS.md` or `CLAUDE.md`. Claude loads the short category map through `@docnexus/CONCEPTS.md`; Codex reads it when useful. The block tells agents to decide from the task whether to recall, never to skip because a topic is missing from the map. Re-run `init --agent` to refresh an older block. Reset removes these links and blocks.
 
 ## Git and hand edits
 
@@ -207,7 +208,7 @@ draft discard --id <draft_id> --force
 
 search "Refresh token" [--limit 5] [--category codeReview]
 recall "Refresh token" [--limit 5] [--category codeReview]
-concepts [--type component] [--query auth] [--format json|md]
+concepts [--type component] [--query auth] [--category <name>] [--format json|md]
 document list [--limit 50] [--tag auth]
 document get --id <id> [--include source,document,metadata,timeline,template]
 document render

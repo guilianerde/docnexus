@@ -96,7 +96,7 @@ Find and read
   docnexus search "local memory" --limit 5 [--category <name>]
   docnexus recall "local memory" --limit 5 [--mode hybrid|vector] [--category <name>]
   docnexus recall "local memory" --return-unit window|section|page --context-budget 4000 [--category <name>]
-  docnexus concepts [--type component] [--query auth] [--format json|md]
+  docnexus concepts [--type component] [--query auth] [--category <name>] [--format json|md]
   docnexus facts list [--entity name-or-alias] [--at ISO-timestamp] [--include-inactive]
 
 Library

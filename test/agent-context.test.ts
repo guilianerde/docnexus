@@ -17,7 +17,7 @@ async function makeRoot(): Promise<string> {
 }
 
 describe("agent context", () => {
-  it("adds one idempotent block that loads the concept index and removes it cleanly", async () => {
+  it("adds one idempotent block that loads the short category map and removes it cleanly", async () => {
     const root = await makeRoot();
     await writeFile(join(root, "CLAUDE.md"), "# Project\n\nExisting rules.\n");
 
@@ -28,9 +28,11 @@ describe("agent context", () => {
     expect(claude.match(/docnexus:start/g)).toHaveLength(1);
     expect(claude).toContain("@docnexus/CONCEPTS.md");
     expect(claude).toContain("`docnexus-recall` skill on your own");
+    expect(claude).toContain("A topic missing from the map is not a reason to skip.");
+    expect(claude).toContain("`docnexus/concepts/`");
 
     await installAgentContext(root, "codex");
-    await expect(readFile(join(root, "AGENTS.md"), "utf8")).resolves.toContain("read it at the start of each task");
+    await expect(readFile(join(root, "AGENTS.md"), "utf8")).resolves.toContain("a short map; read it when useful");
     await expect(hasAgentContext(root, "codex")).resolves.toBe(true);
 
     await expect(removeAgentContext(root)).resolves.toEqual(["CLAUDE.md", "AGENTS.md"]);
