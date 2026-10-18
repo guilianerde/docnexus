@@ -102,6 +102,14 @@ function view(record: ImpactRecord, snapshot: WorkspaceSnapshot) {
     revision: sha256(stableJson([record, source, pages.map(page => basis(snapshot, page.id))])) };
 }
 
+/** Save acknowledgement: per-page state only. Evidence, proposed actions and history stay behind `impact get`. */
+function summary(full: ReturnType<typeof view>) {
+  return { id: full.id, impact_path: full.impact_path, created_at: full.created_at, updated_at: full.updated_at,
+    source: { id: full.source.id, file_path: full.source.file_path },
+    pages: full.pages.map(page => ({ id: page.id, file_path: page.file_path, decision: page.decision, status: page.status, needs_review: page.needs_review })),
+    revision: full.revision, details: ["impact", "get", "--id", full.id] };
+}
+
 /** Save review context separately from canonical knowledge. Equal submissions retain their existing progress. */
 export async function saveImpact(root: string, value: unknown) {
   validateImpactInput(value);
@@ -112,7 +120,7 @@ export async function saveImpact(root: string, value: unknown) {
     const snapshot = await loadWorkspaceSnapshot(root);
     if (prior) {
       if (stableJson(prior.input) !== stableJson(input)) throw new DocNexusError("text_integrity_error", "impact identity does not match its saved input");
-      return { result: "impact_exists" as const, ...view(prior, snapshot) };
+      return { result: "impact_exists" as const, ...summary(view(prior, snapshot)) };
     }
     const source = snapshot.records.find(record => record.id === input.source.id);
     if (!source || snapshot.recordVersion(source.id) !== input.source.record_version) {
@@ -132,7 +140,7 @@ export async function saveImpact(root: string, value: unknown) {
         status: page.decision === "no_change" ? "done" as const : "pending" as const,
         reason: page.evidence, source: basis(snapshot, source.id), target: basis(snapshot, page.id) }]])) };
     await atomicWrite(await impactPath(root, id), `${stableJson(record)}\n`);
-    return { result: "impact_saved" as const, ...view(record, snapshot) };
+    return { result: "impact_saved" as const, ...summary(view(record, snapshot)) };
   });
 }
 

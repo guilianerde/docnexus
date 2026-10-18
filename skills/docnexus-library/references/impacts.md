@@ -32,7 +32,7 @@ Decisions are `update`, `no_change`, `conflict`, `unverified`. Exclude the prima
 ./docnexus/node_modules/.bin/docnexus impact save --file docnexus/drafts/<draft_id>/impact.json
 ```
 
-The CLI verifies the current source and checked-page versions and paths. If they changed, reread the affected source/pages, reconsider the decisions, update the attachment and save again; do not just replace version strings. Equal input returns the existing impact record with its progress intact. Save within the user's authorized capture scope; additional document edits still require their own authorization.
+The CLI verifies the current source and checked-page versions and paths. If they changed, reread the affected source/pages, reconsider the decisions, update the attachment and save again; do not just replace version strings. Equal input returns the existing impact record with its progress intact. The save result is a summary: `id`, `impact_path`, `revision` and, per page, `decision`, `status` and `needs_review`. Read evidence, proposed actions and check history with `impact get --id <impact_id>` when needed. Save within the user's authorized capture scope; additional document edits still require their own authorization.
 
 Primary ingestion and impact saving are separate operations. If saving fails, report the primary as saved and impact tracking as pending, retain the draft attachment and resume the save after resolving the error. Do not re-ingest the primary, discard its draft or claim the impact check is durably registered until `impact save` succeeds. Report `impact_id` and `impact_path` with the document result. Old ingested drafts without an attachment need fresh reads and impact assessment; do not invent a historical checklist.
 

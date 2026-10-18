@@ -29,6 +29,12 @@ it("supports existing workspaces, saves one text record and preserves knowledge 
   const before = await getManagedRecord(root, guide.id);
   const saved = await saveImpact(root, input);
   expect(saved.pages.map(page => page.status)).toEqual(["pending", "done"]);
+  // The save acknowledgement is a summary; evidence, proposed actions and history come from impact get.
+  expect(saved.pages[0]).toEqual({ id: guide.id, file_path: "guide.md", decision: "update", status: "pending", needs_review: false });
+  expect(saved).not.toHaveProperty("scope");
+  expect(saved.details).toEqual(["impact", "get", "--id", saved.id]);
+  expect((await getImpact(root, saved.id)).pages[0]).toMatchObject({ evidence: input.pages[0].evidence, history: [expect.objectContaining({ status: "pending" })] });
+  expect((await getImpact(root, saved.id)).revision).toBe(saved.revision);
   expect(JSON.parse(await readFile(join(root, saved.impact_path), "utf8")).input).toEqual(input);
   const pending = await listImpacts(root, "pending");
   expect(pending.impacts[0].pages.map(page => page.id)).toEqual([guide.id]);
@@ -97,7 +103,9 @@ it("rejects stale capture versions, malformed decisions and forged paths before 
   const unread = structuredClone(input); unread.pages[0].record_version = null;
   await expect(saveImpact(root, unread)).rejects.toMatchObject({ code: "invalid_params" });
   unread.pages[0].decision = "unverified";
-  expect((await saveImpact(root, unread)).pages[0]).toMatchObject({ decision: "unverified", status: "pending", record_version: null });
+  const unverified = await saveImpact(root, unread);
+  expect(unverified.pages[0]).toMatchObject({ decision: "unverified", status: "pending" });
+  expect((await getImpact(root, unverified.id)).pages[0]).toMatchObject({ record_version: null });
 });
 
 it("works from a copied text workspace through the CLI and reset removes impact records", async () => {
