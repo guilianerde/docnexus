@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.22.0 — 2026-10-18
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. The embedding runtime change re-embeds existing projections on the next `recall` or `index sync`; text and timelines are untouched.
 
