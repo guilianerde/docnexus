@@ -1,5 +1,6 @@
 import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isDirectCliInvocation, runCli } from "../src/cli.js";
@@ -153,14 +154,16 @@ describe("runCli", () => {
   });
 
   it("treats symlinked argv[1] as direct CLI invocation", () => {
-    const moduleUrl = "file:///opt/app/dist/src/cli.js";
+    const modulePath = join(tmpdir(), "app", "dist", "src", "cli.js");
+    const executable = join(tmpdir(), "bin", "docnexus");
+    const moduleUrl = pathToFileURL(modulePath).href;
     const resolved = new Map<string, string>([
-      ["/usr/local/bin/docnexus", "/opt/app/dist/src/cli.js"],
-      ["/opt/app/dist/src/cli.js", "/opt/app/dist/src/cli.js"]
+      [executable, modulePath],
+      [modulePath, modulePath]
     ]);
     const fakeRealpath = (value: string): string => resolved.get(value) ?? value;
 
-    expect(isDirectCliInvocation(moduleUrl, "/usr/local/bin/docnexus", fakeRealpath)).toBe(true);
+    expect(isDirectCliInvocation(moduleUrl, executable, fakeRealpath)).toBe(true);
   });
 
   it("ingests a sealed draft into the library and marks it ingested", async () => {

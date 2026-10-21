@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeProject } from "../src/project.js";
 import { deleteManagedDocument, getManagedRecord, inspectRecords, listManagedDocuments, refreshFactViews, syncManagedDocument, upsertManagedDocument } from "../src/managed-documents.js";
@@ -149,7 +149,7 @@ describe("fact-backed Markdown views", () => {
     const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
     let failed = false;
     vi.mocked(fs.rename).mockImplementation(async (from, to) => {
-      if (!failed && String(to).endsWith("library/usage.md")) { failed = true; throw new Error("dependent view write failed"); }
+      if (!failed && String(to).split(sep).join("/").endsWith("library/usage.md")) { failed = true; throw new Error("dependent view write failed"); }
       return actual.rename(from, to);
     });
     await expect(upsertManagedDocument(path, { ...ownerInput, metadata: { ...metadata, facts: [old, next] } })).rejects.toThrow("dependent view write failed");

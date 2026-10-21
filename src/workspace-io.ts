@@ -3,7 +3,7 @@ import { dirname, join, sep } from "node:path";
 
 export async function assertNoSymbolicLinks(root: string, relativePath: string): Promise<void> {
   let current = root;
-  for (const segment of relativePath.split(sep)) {
+  for (const segment of relativePath.split(sep).flatMap(segment => segment.split("/"))) {
     current = join(current, segment);
     const info = await lstat(current).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined;

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import ts from "typescript";
 import { afterEach, expect, it } from "vitest";
@@ -145,15 +145,18 @@ it("runs destructive cleanup through the real npm installation hook and preserve
     }).outputText;
     await writeFile(join(fixture, "dist", "src", `${name}.js`), code);
   }
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const npm = process.platform === "win32" ? process.execPath : "npm";
+  const npmArgs = process.platform === "win32"
+    ? [process.env.npm_execpath ?? join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js")]
+    : [];
   const env = { ...process.env, npm_config_cache: join(caller, "cache"), npm_config_global: "false", npm_config_ignore_scripts: "false" };
-  const packed = JSON.parse((await execute(npm, ["pack", "--json", "--ignore-scripts", "--offline", "--pack-destination", caller], { cwd: fixture, env })).stdout);
+  const packed = JSON.parse((await execute(npm, [...npmArgs, "pack", "--json", "--ignore-scripts", "--offline", "--pack-destination", caller], { cwd: fixture, env })).stdout);
   await legacy(caller); // The caller's CWD is not the consuming project and must remain untouched.
   await legacy(root);
   await legacy(root, ".docnexus", 3);
   await writeFile(join(root, ".docnexus", "package.json"), '{"private":true}');
   const installation = join(root, ".docnexus");
-  const installed = await execute(npm, ["install", "--prefix", installation, "--offline", "--no-audit", "--no-fund", "--package-lock=false", "--foreground-scripts", join(caller, packed[0].filename)], { cwd: caller, env });
+  const installed = await execute(npm, [...npmArgs, "install", "--prefix", installation, "--offline", "--no-audit", "--no-fund", "--package-lock=false", "--foreground-scripts", join(caller, packed[0].filename)], { cwd: caller, env });
   expect(installed.stdout + installed.stderr).toContain("removed legacy docnexus/");
   await expect(stat(join(root, "docnexus"))).rejects.toThrow();
   await expect(stat(join(root, ".docnexus", "project.json"))).rejects.toThrow();
@@ -161,7 +164,7 @@ it("runs destructive cleanup through the real npm installation hook and preserve
   await expect(stat(join(caller, "docnexus", "library", "old.md"))).resolves.toBeDefined();
   await initializeProject(root);
   await writeFile(join(root, "docnexus", "library", "keep.md"), "Current data");
-  await execute(npm, ["rebuild", "--prefix", installation, "--offline", "--foreground-scripts"], { cwd: caller, env });
+  await execute(npm, [...npmArgs, "rebuild", "--prefix", installation, "--offline", "--foreground-scripts"], { cwd: caller, env });
   expect(await readFile(join(root, "docnexus", "library", "keep.md"), "utf8")).toBe("Current data");
 }, 30_000);
 

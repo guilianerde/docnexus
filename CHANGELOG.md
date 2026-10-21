@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.24.0 — 2026-10-21
+## 0.24.1 — 2026-10-21
+
+- Fix cross-platform release checks: normalize source and knowledge-workspace line endings, inspect every component of portable paths on Windows, and run npm and CLI JavaScript through Node instead of Windows command shims in installation verification. Preserve native Windows junction behavior in tests.
 
 Breaking change: workspace format 7; old workspaces are unsupported and no migration is provided. Draft manifest format 3 and retrieval projection schema 2 are unchanged.
 
@@ -8,6 +10,10 @@ Breaking change: workspace format 7; old workspaces are unsupported and no migra
 - Move the project-local npm installation, packaged skills, schema, drafts, retrieval indexes and recovery/usage state to `.docnexus/`.
 - Add `init --output-dir <project-relative-parent>` for knowledge Markdown, source records, impact history and readable concept navigation. Always create a `docnexus/` child under that parent; default the parent to the project root. Persist the parent in `.docnexus/project.json` and return configured paths from CLI results, search, document queries and status.
 - Generate agent context and navigation using the configured directory, and apply it to durable write recovery, reset and optional knowledge Git setup. Reject output directory changes on initialized projects and unsafe or occupied destinations.
+
+## 0.24.0 — 2026-10-21
+
+GitHub release verification failed before npm publication because a retrieval-evaluation source excerpt retained an old documentation version and Windows validation exposed path, line-ending and command-shim assumptions. Not published to npm; superseded by 0.24.1. The fixture now anchors the unchanged architecture description without a release-number prefix; questions, evidence labels and scoring criteria are unchanged.
 
 ## 0.23.0 — 2026-10-18
 

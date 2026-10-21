@@ -255,7 +255,7 @@ it("reads committed knowledge after a manual push and clone into a second projec
   await git(workspace, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "core.hooksPath=/dev/null", "commit", "-m", "Share knowledge");
   await git(workspace, "push", "origin", "HEAD:main");
   const second = await makeRoot();
-  await git(second, "clone", "--branch", "main", remote, "docnexus");
+  await git(second, "-c", "core.autocrlf=true", "clone", "--branch", "main", remote, "docnexus");
   await expect(access(join(second, ".docnexus", "skills"))).rejects.toThrow();
   await expect(access(join(second, ".docnexus", "schemas"))).rejects.toThrow();
   // The installation/configuration directory is backed up separately from knowledge-only Git.

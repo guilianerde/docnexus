@@ -7,7 +7,7 @@ describe("npm package contract", () => {
     const cliSource = await readFile("src/cli.ts", "utf8");
 
     expect(packageJson.name).toBe("@rowansenne/docnexus");
-    expect(packageJson.version).toBe("0.24.0");
+    expect(packageJson.version).toBe("0.24.1");
     expect(packageJson.private).toBe(false);
     expect(packageJson.license).toBe("MIT");
     expect(packageJson.repository).toEqual({

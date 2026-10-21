@@ -28,7 +28,7 @@ it("persists custom knowledge paths through capture, search, recall, navigation,
   expect(JSON.parse(await readFile(projectMarkerPath(root), "utf8"))).toMatchObject({ format_version: 7, output_dir: parent });
   expect(await readFile(join(root, "CLAUDE.md"), "utf8")).toContain(`@${output}/CONCEPTS.md`);
   expect(await readFile(join(root, "AGENTS.md"), "utf8")).toContain(`${output}/concepts/`);
-  expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(join("..", "..", ".docnexus", "skills", "docnexus"));
+  expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(process.platform === "win32" ? join(root, ".docnexus", "skills", "docnexus") : join("..", "..", ".docnexus", "skills", "docnexus"));
 
   const draft = JSON.parse(await runCli(["draft", "new", "--slug", "routing"], root));
   expect(draft.draft_directory).toMatch(/^\.docnexus\/drafts\//);

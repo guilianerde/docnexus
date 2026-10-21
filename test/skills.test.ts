@@ -101,7 +101,7 @@ describe("skills sync and link", () => {
     expect(result.context_file).toBe("AGENTS.md");
     await expect(readFile(join(root, "AGENTS.md"), "utf8")).resolves.toContain("docnexus/CONCEPTS.md");
     expect((await lstat(join(root, ".agents", "skills", "docnexus"))).isSymbolicLink()).toBe(true);
-    expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(join("..", "..", ".docnexus", "skills", "docnexus"));
+    expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(process.platform === "win32" ? join(root, ".docnexus", "skills", "docnexus") : join("..", "..", ".docnexus", "skills", "docnexus"));
     await expect(readFile(join(root, ".agents", "skills", "docnexus-ingest", "SKILL.md"), "utf8")).resolves.toContain("docnexus-ingest");
     const state = await inspectSkills(root);
     expect(state).toMatchObject({ installed: [...SKILL_NAMES], missing: [] });

@@ -25,6 +25,8 @@ beforeAll(async () => {
   }
   await writeFile(join(runtime, "worker.mjs"), `
     import fs from 'node:fs/promises';
+    import { sep } from 'node:path';
+    const portable = value => String(value).split(sep).join('/');
     import { syncBuiltinESMExports } from 'node:module';
     import { upsertManagedDocument, deleteManagedDocument } from './managed-documents.js';
     import { ingestDraft } from './document-service.js';
@@ -36,12 +38,12 @@ beforeAll(async () => {
     const rename = fs.rename;
     let failing = false;
     fs.rename = async (from, to) => {
-      if (rollback && !failing && String(to).endsWith('timeline.md')) { failing = true; throw new Error('injected failure'); }
+      if (rollback && !failing && portable(to).endsWith('timeline.md')) { failing = true; throw new Error('injected failure'); }
       await rename(from, to);
-      if ((rollback && failing && String(to).endsWith('library/memory.md')) || (!rollback && stopAt && String(to).endsWith(stopAt))) await pause();
+      if ((rollback && failing && portable(to).endsWith('library/memory.md')) || (!rollback && stopAt && portable(to).endsWith(stopAt))) await pause();
     };
     const rm = fs.rm;
-    fs.rm = async (path, options) => { await rm(path, options); if (deletion && String(path).endsWith(deletion)) await pause(); };
+    fs.rm = async (path, options) => { await rm(path, options); if (deletion && portable(path).endsWith(deletion)) await pause(); };
     syncBuiltinESMExports();
     if (deletion) await deleteManagedDocument(root, { id: deletion, confirm: true });
     else if (draftId) await ingestDraft(root, { draftId, replace: true });

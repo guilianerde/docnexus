@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { initializeProject } from "../src/project.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
@@ -28,7 +28,7 @@ it.each(["search", "page"])("reads each canonical asset once for a fact-heavy %s
   const render = vi.spyOn(renderer, "renderFactDocument");
   if (operation === "search") expect((await searchDocuments(root, { query: "Shared convention", limit: 10 })).results).toHaveLength(7);
   else expect((await queryDocuments(root, { page_size: 2 })).documents).toHaveLength(2);
-  const paths = vi.mocked(readFile).mock.calls.map(([path]) => String(path)).filter(path => /\/(records|library)\//.test(path));
+  const paths = vi.mocked(readFile).mock.calls.map(([path]) => String(path).split(sep).join("/")).filter(path => /\/(records|library)\//.test(path));
   expect(paths).toHaveLength(7 * 5);
   expect(new Set(paths).size).toBe(paths.length);
   expect(render).toHaveBeenCalledTimes(operation === "page" ? 2 : 7);

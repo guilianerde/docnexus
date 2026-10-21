@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { writeConceptIndex } from "./concepts.js";
 import { draftsPath, PROJECT_FORMAT_VERSION, internalPath, INTERNAL_DIRNAME, libraryPath, normalizeOutputDirectory, projectMarkerPath, WORKSPACE_DIRNAME, WORKSPACE_INSTALLATION_ENTRIES, workspaceDirectory, workspacePath, withOutputDirectory } from "./layout.js";
-import { atomicWrite, ensureIgnoredEntries } from "./workspace-io.js";
+import { atomicWrite, ensureIgnoredEntries, readIfExists } from "./workspace-io.js";
 import { assertNoSymbolicLinks, ensureManagedWorkspace } from "./managed-documents.js";
 import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
 import { assertWorkspaceRepository, configureWorkspaceGit, prepareWorkspaceGit } from "./workspace-git.js";
@@ -104,6 +104,13 @@ export async function initializeProject(projectRoot: string, input: InitializePr
       await mkdir(libraryPath(root), { recursive: true });
       await ensureManagedWorkspace(root);
       await writeFile(join(workspacePath(root), "README.md"), WORKSPACE_README);
+      // Keep canonical text and hashes stable when cloning knowledge on Windows.
+      await assertNoSymbolicLinks(root, join(workspaceDirectory(root), ".gitattributes"));
+      const attributesPath = join(workspacePath(root), ".gitattributes");
+      const attributes = await readIfExists(attributesPath) ?? "";
+      if (!attributes.split(/\r?\n/).includes("* text=auto eol=lf")) {
+        await atomicWrite(attributesPath, `${attributes}${attributes && !attributes.endsWith("\n") ? "\n" : ""}* text=auto eol=lf\n`);
+      }
       await ensureIgnoredEntries(root, ["node_modules/", "store/", ".runtime/", "drafts/"]);
       await writeConceptIndex(root);
       const skills = await syncSkills(root, input.packagedSkillsRoot);

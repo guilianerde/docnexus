@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { cp, mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -64,15 +64,17 @@ try {
   assert(!await stat(legacyWorkspace).then(() => true).catch(() => false), "npm installation did not remove legacy DocNexus data");
 
   const packageDirectory = join(installationDirectory, "node_modules", ...packageNameParts);
-  const cliPath = join(installationDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
+  const binPath = join(installationDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
+  await stat(binPath);
+  const cliPath = process.platform === "win32" ? join(packageDirectory, "dist", "src", "cli.js") : binPath;
   const installedPackagePath = await realpath(packageDirectory);
   const installedCliPath = await realpath(cliPath);
   const workspacePath = await realpath(repositoryRoot);
 
-  if (installedPackagePath.startsWith(`${workspacePath}/`)) {
+  if (installedPackagePath.startsWith(`${workspacePath}${sep}`)) {
     throw new Error(`tarball package unexpectedly resolves inside the workspace: ${installedPackagePath}`);
   }
-  if (!installedCliPath.startsWith(`${installedPackagePath}/`)) {
+  if (!installedCliPath.startsWith(`${installedPackagePath}${sep}`)) {
     throw new Error(`installed docnexus bin does not resolve into the tarball package: ${installedCliPath}`);
   }
 
@@ -406,6 +408,14 @@ async function runJson(executable, args, cwd, env) {
 
 async function run(executable, args, options) {
   try {
+    if (process.platform === "win32") {
+      if (executable === npmExecutable) {
+        const npmCli = process.env.npm_execpath ?? join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+        args = [npmCli, ...args]; executable = process.execPath;
+      } else if (executable.endsWith(".js")) {
+        args = [executable, ...args]; executable = process.execPath;
+      }
+    }
     return await execFileAsync(executable, args, { ...options, maxBuffer: 10 * 1024 * 1024 });
   } catch (error) {
     const stdout = typeof error?.stdout === "string" ? error.stdout : "";
