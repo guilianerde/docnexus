@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.3 — 2026-10-22
+
+- Load only records, metadata and current Markdown in query/index snapshots; retain body and metadata hash validation while moving source/history integrity checks to doctor, explicit reads and writes. Reuse root/output resolution and shared directory checks within each locked snapshot, without mtime or cross-request caches.
+
+- Query snapshots read three knowledge files per document instead of five and validate two asset content hashes instead of four. Source/history damage no longer blocks current knowledge queries; unadopted Markdown/metadata edits, fact-time changes and symbolic links are still detected. Current scans remain O(N).
+
+Compatibility: workspace format 7, draft manifest format 3 and retrieval projection schema 2 are unchanged. Format-7 data is preserved; the existing install-time deletion policy for recognized legacy formats 1–6 remains in effect.
+
 ## 0.24.2 — 2026-10-21
 
 - Upgrade markdown-it to 15.0.3 to fix GHSA-gfr2-rv44-r23c and GHSA-vfgh-jcmw-g37q; production audit reports zero vulnerabilities. Separate cold database startup allowance from the unchanged five-second inference-lock concurrency assertions.

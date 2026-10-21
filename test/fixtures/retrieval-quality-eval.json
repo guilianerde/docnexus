@@ -70,7 +70,7 @@
       "title": "分页默认值与快照冲突",
       "source_path": "docs/architecture/document-query.zh-CN.md",
       "excerpts": [
-        "默认 page 为 1、page_size 为 20，最大 page_size 为 100。`--all` 不能与分页参数并用。文档按 file_path 升序排列；空结果或越界页返回空数组，has_more 为 false。当前分页限制返回数据量与正文渲染量，完整性与快照校验仍会扫描全量文本。每次请求只读取一次各真源资产，并固定一个事实解析时间；revision 由完整 records 的哈希字段和事实状态生成，包含正文与生成表达的全部依赖，随后仅渲染当前页。",
+        "默认 page 为 1、page_size 为 20，最大 page_size 为 100。`--all` 不能与分页参数并用。文档按 file_path 升序排列；空结果或越界页返回空数组，has_more 为 false。当前分页限制返回数据量与正文渲染量，快照仍会扫描全部当前知识。每次快照每篇只读取 record.json、metadata.json 和 library 正文，核对 metadata 与正文模板的内容哈希，不读取或哈希 source.md、timeline.md；不使用 mtime/size 跳过内容检查。根路径与输出目录解析在快照内复用，共享目录的符号链接检查只在同一次持锁快照内复用，下一次请求重新检查，不承诺抵御外部程序在操作途中替换目录。doctor、显式文档读取及文档写入仍检查来源与时间线。快照固定一个事实解析时间；revision 由完整 records 的哈希字段和事实状态生成，包含正文与生成表达的全部依赖，随后仅渲染当前页。",
         "1. 编排层完成 `document add`、`document sync`、`document classify` 或 `document delete`。\n2. 可视化端重新查询第一页或全量结果，并更新分类计数。\n3. 继续翻页时同时传回 revision 和相同筛选条件。\n4. 若期间有写入、重新分类、删除，或事实生效/到期/撤回改变展示结果，则旧 revision 被拒绝；丢弃已积累的页并重新查询第一页。"
       ]
     },
@@ -81,7 +81,7 @@
       "source_path": "docs/architecture/document-query.zh-CN.md",
       "excerpts": [
         "命令启动固定项目的本地服务，仅绑定 `127.0.0.1`。默认自动选择空闲端口，打开终端输出的 URL；Ctrl+C 停止服务。目标项目必须先初始化，不会自动导入当前仓库文件。",
-        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
+        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部当前正文、metadata 及事实时间状态；参数错误为 400，旧 revision 为 409，当前知识文本不可用为 503，不会以 304 隐藏正文或 metadata 的变化或损坏。来源与时间线的损坏不阻塞此查询，也不单独使 ETag 失效，应通过 doctor 检查。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
       ]
     },
     {
@@ -497,7 +497,7 @@
       "evidence": [
         {
           "path": "documents/viewer.md",
-          "text": "每次请求仍校验全部真源及事实时间状态"
+          "text": "每次请求仍校验全部当前正文、metadata 及事实时间状态"
         }
       ]
     },

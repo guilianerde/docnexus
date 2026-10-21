@@ -96,6 +96,8 @@ describe("read-only document viewer", () => {
     expect(changed.status).toBe(200);
     expect(changed.headers.get("etag")).not.toBe(etag);
     const currentHeaders = { "If-None-Match": changed.headers.get("etag")! };
+    await writeFile(join(root, "docnexus/records", record.id, "timeline.md"), "Damaged history");
+    expect((await fetch(url, { headers: currentHeaders })).status).toBe(304);
     await writeFile(join(root, "docnexus/library/policy.md"), "Unadopted edit");
     expect((await fetch(url, { headers: currentHeaders })).status).toBe(503);
   });

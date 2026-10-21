@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.24.2 breaking change: workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation forcibly deletes recognized legacy workspaces, including knowledge, sources and history; no data migration is provided. Draft manifest format 3 and projection schema 2 are unchanged.
+> 0.24.3 breaking change: workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation forcibly deletes recognized legacy workspaces, including knowledge, sources and history; no data migration is provided. Draft manifest format 3 and projection schema 2 are unchanged.
 
 ## Installation cleanup
 
@@ -191,6 +191,8 @@ Saving knowledge commits text first; projections are built on the next semantic 
 Users may edit author-owned library prose and fact references. Generated `<!-- docnexus:fact ... -->` block contents are read-only projections; change the owning metadata facts instead. `status` reports their ids under `records.edited`; keyword search, semantic recall and CLI document reads report unadopted edits. After review, `document sync` adopts the edit, keeps the original source and appends the edited content to the timeline. Restore missing or damaged text from Git or a backup; doctor does not rewrite it.
 
 Deletion removes the current document, source, metadata, timeline and derived entries, unless doing so would leave dangling fact references. Managed paths reject symbolic links. Local processes share a project lock; durable write-ahead intent covers memory files and draft ingestion receipts. Ordinary failures persist rollback intent; the next CLI access recovers an interrupted save, deletion or rollback before reading. Recovery copies are removed on completion. Git, external editors and other machines do not participate in the lock: avoid edits and branch changes during writes or pending recovery. Windows skips directory fsync; process crashes are tested, hardware power loss is not simulated.
+
+Query snapshots used by search, recall, the document browser and index sync read each record, metadata and current Markdown once. They verify body and metadata hashes, but do not read or hash source/history files. Use doctor, explicit document reads or document writes to check source/history integrity. Root/output resolution and shared directory checks are reused only within one locked snapshot; no mtime cache or cross-request validation cache is used. Current knowledge scans remain O(N).
 
 ## CLI
 

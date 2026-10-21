@@ -1,16 +1,18 @@
 import { lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 
-export async function assertNoSymbolicLinks(root: string, relativePath: string): Promise<void> {
+export async function assertNoSymbolicLinks(root: string, relativePath: string, checkedDirectories?: Set<string>): Promise<void> {
   let current = root;
   for (const segment of relativePath.split(sep).flatMap(segment => segment.split("/"))) {
     current = join(current, segment);
+    if (checkedDirectories?.has(current)) continue;
     const info = await lstat(current).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined;
       throw error;
     });
     if (info === undefined) return;
     if (info.isSymbolicLink()) throw new Error("file_path must not contain symbolic links");
+    if (info.isDirectory()) checkedDirectories?.add(current);
   }
 }
 

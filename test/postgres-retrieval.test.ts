@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeProject } from "../src/project.js";
-import { classifyManagedDocument, deleteManagedDocument, getManagedRecord, upsertManagedDocument } from "../src/managed-documents.js";
+import { classifyManagedDocument, deleteManagedDocument, getManagedRecord, inspectRecords, upsertManagedDocument } from "../src/managed-documents.js";
 import { LocalHashEmbedder } from "../src/embedder.js";
 import { ensureRetrievalStore, inspectRetrievalIndex, listIndexedChunks, syncRetrievalIndex } from "../src/retrieval-index.js";
 import { withRetrievalDatabase } from "../src/postgres-engine.js";
@@ -23,6 +23,32 @@ async function indexOid(root: string) {
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 
 describe("unified PostgreSQL retrieval", () => {
+  it("recalls current knowledge without reading historical assets but refuses same-size external edits", async () => {
+    const path = await root();
+    const saved = await upsertManagedDocument(path, input);
+    await syncRetrievalIndex(path, {}, embedder);
+    await rm(join(path, "docnexus/records", saved.id, "source.md"));
+    await writeFile(join(path, "docnexus/records", saved.id, "timeline.md"), "Damaged history");
+    const result = await recall(path, { query: "Refresh tokens", mode: "vector", limit: 1 }, embedder);
+    expect(result.results[0].document_ref.document_id).toBe(saved.id);
+    expect((await inspectRecords(path)).invalid_records[0].id).toBe(saved.id);
+    await expect(getManagedRecord(path, saved.id)).rejects.toThrow();
+    await expect(upsertManagedDocument(path, input)).rejects.toThrow();
+    const file = join(path, "docnexus/library/policy.md");
+    const original = await stat(file);
+    await writeFile(file, input.document.replace("hourly", "weekly"));
+    await utimes(file, original.atime, original.mtime);
+    expect((await stat(file)).size).toBe(original.size);
+    await expect(recall(path, { query: "Refresh tokens", mode: "vector" }, embedder)).rejects.toThrow("externally modified");
+    await writeFile(file, input.document);
+    const metadataFile = join(path, "docnexus/records", saved.id, "metadata.json");
+    const originalMetadata = await stat(metadataFile);
+    await writeFile(metadataFile, (await readFile(metadataFile, "utf8")).replace("Current policy", "Changed policy"));
+    await utimes(metadataFile, originalMetadata.atime, originalMetadata.mtime);
+    expect((await stat(metadataFile)).size).toBe(originalMetadata.size);
+    await expect(recall(path, { query: "Refresh tokens", mode: "vector" }, embedder)).rejects.toThrow("metadata.json");
+  });
+
   it("fills document candidates even when one long document occupies the chunk window", async () => {
     const path = await root();
     const vector = (first: number, second: number) => [first, second, ...Array(510).fill(0)];

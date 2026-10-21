@@ -1,25 +1,24 @@
 import { DocNexusError } from "./errors.js";
-import { realpath } from "node:fs/promises";
 import { factReferenceIds, renderFactDocument } from "./fact-renderer.js";
 import { sha256, stableJson } from "./hash.js";
 import { projectionKnowledge, resolveKnowledge, type KnowledgeDocument } from "./knowledge.js";
-import { listRecordFiles, readAssets } from "./workspace-reader.js";
+import { createWorkspaceReadContext, listRecordFiles, readCurrentAssets } from "./workspace-reader.js";
 import { withProjectLock } from "./project-lock.js";
 import { createSourceView } from "./source-anchor.js";
 import { addUsageMetric, setUsageMetric } from "./usage-metrics.js";
 
-/** An operation-owned, validated view. Revalidate its revision before committing work prepared outside the lock. */
+/** Validates current knowledge, not historical assets. Revalidate before committing work prepared outside the lock. */
 export async function loadWorkspaceSnapshot(projectRoot: string, at?: string) {
   return withProjectLock(projectRoot, async () => {
     at ??= new Date().toISOString();
-    const root = await realpath(projectRoot);
-    const records = (await listRecordFiles(root)).sort((a, b) => a.file_path < b.file_path ? -1 : a.file_path > b.file_path ? 1 : 0);
+    const context = await createWorkspaceReadContext(projectRoot);
+    const { root } = context;
+    const records = (await listRecordFiles(root, context)).sort((a, b) => a.file_path < b.file_path ? -1 : a.file_path > b.file_path ? 1 : 0);
     addUsageMetric("snapshot_loads");
     setUsageMetric("document_count", records.length);
     const documents: KnowledgeDocument[] = [];
     for (const record of [...records].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path))) {
-      // Validate source/history hashes, but do not retain their growing contents.
-      const { metadata, document } = await readAssets(root, record);
+      const { metadata, document } = await readCurrentAssets(root, record, context);
       documents.push({ id: record.id, file_path: record.file_path, document_hash: record.document_hash, metadata, document });
     }
     const knowledge = resolveKnowledge(documents, at);

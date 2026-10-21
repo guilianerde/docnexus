@@ -125,7 +125,7 @@ describe("orchestration document query", () => {
     await writeFile(join(path, "docnexus/library/one.md"), "Unadopted edit");
     await expect(queryDocuments(path)).rejects.toThrow("before querying");
     await writeFile(join(path, "docnexus/library/one.md"), "# one.md\n\nHuman-readable content.");
-    await writeFile(join(path, "docnexus/records", added.id, "timeline.md"), "Tampered history");
+    await writeFile(join(path, "docnexus/records", added.id, "metadata.json"), JSON.stringify({ ...metadata, summary: "Unadopted metadata" }));
     await expect(queryDocuments(path)).rejects.toThrow("before querying");
   });
 

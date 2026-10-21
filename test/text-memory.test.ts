@@ -127,12 +127,13 @@ describe("plain-text project memory", () => {
     await expect(getManagedRecord(path, "../../secret")).rejects.toThrow("document id");
   });
 
-  it("detects missing and tampered text records instead of silently trusting them", async () => {
+  it("reports damaged history in diagnostics without blocking current knowledge searches", async () => {
     const path = await root();
     const added = await upsertManagedDocument(path, input);
     await writeFile(join(path, "docnexus/records", added.id, "timeline.md"), "tampered");
     expect((await inspectRecords(path)).invalid_records[0].id).toBe(added.id);
-    await expect(searchDocuments(path, { query: "rotation" })).rejects.toThrow("timeline");
+    expect((await searchDocuments(path, { query: "rotation" })).results[0].id).toBe(added.id);
+    await expect(getManagedRecord(path, added.id)).rejects.toThrow("timeline.md");
   });
   it("restores prior knowledge, sources and timeline if a later file replacement fails", async () => {
     const path = await root();

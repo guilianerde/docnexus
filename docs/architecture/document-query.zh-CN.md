@@ -22,7 +22,7 @@ node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --page 1 --pa
 node /path/to/query-documents.mjs --project-root /path/to/project --category guide --all
 ```
 
-成功时 stdout 是一个 JSON 对象；失败时 stderr 给出错误，进程以非零状态退出。路径、源文件完整性、项目隔离和恢复锁沿用 CLI 规则。
+成功时 stdout 是一个 JSON 对象；失败时 stderr 给出错误，进程以非零状态退出。路径、当前正文和 metadata 完整性、项目隔离和恢复锁沿用 CLI 规则；查询不核验 source.md 和 timeline.md。
 
 Node 编排或可视化后端也可以直接调用：
 
@@ -48,13 +48,13 @@ const second = await queryDocuments(projectRoot, {
 
 浏览页展示实际分类及计数、10/20/50 篇分页列表、完整当前正文、分类依据、标签和事实来源/生命周期状态。分类由 skills 中的模型维护；浏览操作不触发重分类。页面首次打开、点击刷新或切换分类/分页时读取数据，不定时轮询，切回页面也不会自动刷新。后续查询携带 revision，返回 409 时丢弃旧页并重新读取第一页；所选分类被合并、改名或删除时回到全部文档。读取失败时清除正文，显示错误与重试提示。事实面板保留历史状态，只有“有效”条目代表当前有效事实。
 
-HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部真源及事实时间状态；参数错误为 400，旧 revision 为 409，源文本不可用为 503，不会以 304 隐藏变化或损坏。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。
+HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部当前正文、metadata 及事实时间状态；参数错误为 400，旧 revision 为 409，当前知识文本不可用为 503，不会以 304 隐藏正文或 metadata 的变化或损坏。来源与时间线的损坏不阻塞此查询，也不单独使 ETag 失效，应通过 doctor 检查。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。
 
 服务不保持长期项目锁，每次查询独立获取锁，其他已授权写入可以同时继续。没有新的源数据或后台模型服务，不写入分类、正文或索引；项目锁仍沿用已有中断恢复机制。请求只支持 GET/HEAD，拒绝其他方法、跨源和非本机 Host，不开放 CORS，也不提供任意文件读取。HTML/JS/CSS 与 Markdown 依赖随 npm 包分发，无 CDN 或远程字体。
 
 Markdown 禁用原始 HTML，只将 HTTP/HTTPS 链接显示为可点击外链；相对路径链接显示文本，图片显示替代文字而不自动加载。支持标题、列表、代码块和表格，不执行脚本、内嵌 HTML 或 Mermaid。页面另设严格 CSP 与禁止缓存的响应头。
 
-每次分页或手动刷新仍需扫描并校验整个文本源。大型知识库的查询增量化和性能测量留待后续验证。
+每次分页或手动刷新仍需扫描全部当前正文、metadata 和记录，但不读取来源和时间线。大型知识库的查询增量化和性能测量留待后续验证。
 
 ## 返回约定
 
@@ -74,7 +74,7 @@ Markdown 禁用原始 HTML，只将 HTTP/HTTPS 链接显示为可点击外链；
 
 正文使用本次时间快照重新解析事实引用。即使磁盘上的生成块还是旧快照，接口也返回当前有效的表达；查询本身不写回 library、来源、时间线或检索存储。Markdown 是展示数据，前端应禁用未处理的原始 HTML，或通过自己的消毒策略渲染。
 
-默认 page 为 1、page_size 为 20，最大 page_size 为 100。`--all` 不能与分页参数并用。文档按 file_path 升序排列；空结果或越界页返回空数组，has_more 为 false。当前分页限制返回数据量与正文渲染量，完整性与快照校验仍会扫描全量文本。每次请求只读取一次各真源资产，并固定一个事实解析时间；revision 由完整 records 的哈希字段和事实状态生成，包含正文与生成表达的全部依赖，随后仅渲染当前页。
+默认 page 为 1、page_size 为 20，最大 page_size 为 100。`--all` 不能与分页参数并用。文档按 file_path 升序排列；空结果或越界页返回空数组，has_more 为 false。当前分页限制返回数据量与正文渲染量，快照仍会扫描全部当前知识。每次快照每篇只读取 record.json、metadata.json 和 library 正文，核对 metadata 与正文模板的内容哈希，不读取或哈希 source.md、timeline.md；不使用 mtime/size 跳过内容检查。根路径与输出目录解析在快照内复用，共享目录的符号链接检查只在同一次持锁快照内复用，下一次请求重新检查，不承诺抵御外部程序在操作途中替换目录。doctor、显式文档读取及文档写入仍检查来源与时间线。快照固定一个事实解析时间；revision 由完整 records 的哈希字段和事实状态生成，包含正文与生成表达的全部依赖，随后仅渲染当前页。
 
 ## 写入后的刷新与分页一致性
 
