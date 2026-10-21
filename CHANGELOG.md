@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.24.1 — 2026-10-21
+## 0.24.2 — 2026-10-21
 
+- Upgrade markdown-it to 15.0.3 to fix GHSA-gfr2-rv44-r23c and GHSA-vfgh-jcmw-g37q; production audit reports zero vulnerabilities. Separate cold database startup allowance from the unchanged five-second inference-lock concurrency assertions.
 - Fix cross-platform release checks: normalize source and knowledge-workspace line endings, inspect every component of portable paths on Windows, and run npm and CLI JavaScript through Node instead of Windows command shims in installation verification. Preserve native Windows junction behavior in tests.
 
 Breaking change: workspace format 7; old workspaces are unsupported and no migration is provided. Draft manifest format 3 and retrieval projection schema 2 are unchanged.
@@ -10,6 +11,10 @@ Breaking change: workspace format 7; old workspaces are unsupported and no migra
 - Move the project-local npm installation, packaged skills, schema, drafts, retrieval indexes and recovery/usage state to `.docnexus/`.
 - Add `init --output-dir <project-relative-parent>` for knowledge Markdown, source records, impact history and readable concept navigation. Always create a `docnexus/` child under that parent; default the parent to the project root. Persist the parent in `.docnexus/project.json` and return configured paths from CLI results, search, document queries and status.
 - Generate agent context and navigation using the configured directory, and apply it to durable write recovery, reset and optional knowledge Git setup. Reject output directory changes on initialized projects and unsafe or occupied destinations.
+
+## 0.24.1 — 2026-10-21
+
+Not published to npm: production dependency audit detected markdown-it denial-of-service vulnerabilities, and slow CI runners exceeded the concurrency fixture's cold-start deadline. Superseded by 0.24.2, which updates the dependency and separates startup waiting from lock assertions.
 
 ## 0.24.0 — 2026-10-21
 

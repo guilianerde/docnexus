@@ -15,10 +15,10 @@ const roots: string[] = [];
 afterEach(async () => { vi.useRealTimers(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 const input = { file_path: "memory.md", source: "Decision", document: "Original convention", metadata: { title: "Memory", summary: "Project convention", tags: [], entities: [], relationships: [] } };
 
-async function within<T>(promise: Promise<T>): Promise<T> {
+async function within<T>(promise: Promise<T>, timeoutMs = 5000, message = "model inference held the project lock"): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   try {
-    return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("model inference held the project lock")), 5000); })]);
+    return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })]);
   } finally { clearTimeout(timer!); }
 }
 
@@ -39,7 +39,8 @@ it.each(["core", "cli-index", "cli-recall", "vector"])("allows reads and writes 
     : entry === "vector" ? recall(root, { query: "Find current convention", mode: "vector" }, embedder)
     : runCli(entry === "cli-index" ? ["index", "sync"] : ["recall", "Find current convention"], root);
   try {
-    await within(entered.promise);
+    // Cold database startup precedes inference; retain the shorter lock check once it is paused.
+    await within(entered.promise, 30_000, "model inference did not start");
     expect((await within(queryDocuments(root))).documents[0].document).toBe(input.document);
     await within(upsertManagedDocument(root, { ...input, source: "New decision", document: "Updated convention to preserve" }));
   } finally { resume.resolve(); await pending; }
@@ -82,7 +83,8 @@ it("replans after another model changes the index while embeddings are being pre
   } };
   const pending = syncRetrievalIndex(root, {}, model);
   try {
-    await within(entered.promise);
+    // Cold database startup precedes inference; retain the shorter lock check once it is paused.
+    await within(entered.promise, 30_000, "model inference did not start");
     await within(syncRetrievalIndex(root, {}, { dimension: hash.dimension, embed: async text => {
       const vector = await hash.embed(text); return [...vector.slice(1), vector[0]];
     } }));

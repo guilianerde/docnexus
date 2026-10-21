@@ -89,6 +89,10 @@ For each release:
 
 Only the publish job receives `id-token: write`. Release builds disable npm dependency caching. Keep the workflow filename aligned with the npm Trusted Publisher configuration.
 
+## Audit snapshot — 2026-10-21
+
+`markdown-it` is pinned by the lockfile to 15.0.3 (manifest minimum `^15.0.3`), fixing [quadratic link-reference parsing](https://github.com/advisories/GHSA-gfr2-rv44-r23c) and [inline HTML parsing](https://github.com/advisories/GHSA-vfgh-jcmw-g37q). The viewer keeps HTML disabled; the link-reference issue affects default parser options. Targeted viewer tests and `npm audit --omit=dev --audit-level=high` pass, with zero reported production vulnerabilities.
+
 ## Audit snapshot — 2026-10-18
 
 `npm audit --omit=dev` reports 0 vulnerabilities after upgrading `@huggingface/transformers` from 3.8.1 to 4.3.1, which moves `onnxruntime-node` to 1.30.0 and drops the `sprintf-js → roarr → global-agent 3` chain behind the five earlier moderate findings ([GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)). The sharp override stays at `^0.35.5`.
