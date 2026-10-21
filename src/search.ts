@@ -115,7 +115,7 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput):
     results.push({
       id: document.id,
       file_path: document.file_path,
-      library_path: libraryRelativePath(document.file_path),
+      library_path: libraryRelativePath(document.file_path, snapshot.root),
       title: document.title,
       summary: metadata.summary,
       matched_terms: matched,

@@ -3,7 +3,7 @@ import { cp, lstat, mkdir, readFile, readlink, rm, stat, symlink, writeFile } fr
 import { installAgentContext } from "./agent-context.js";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { skillsPath, WORKSPACE_DIRNAME } from "./layout.js";
+import { skillsPath, INTERNAL_DIRNAME } from "./layout.js";
 import { ensureIgnoredEntries } from "./workspace-io.js";
 
 export type SkillsTarget = "codex" | "claude";
@@ -100,7 +100,7 @@ export async function ensureSkillsCurrent(projectRoot: string): Promise<SyncSkil
   return state.outdated || state.missing.length > 0 ? syncSkills(projectRoot) : undefined;
 }
 
-/** Copies the packaged skills into `docnexus/skills/`, replacing previous copies of the same skills. */
+/** Copies the packaged skills into `.docnexus/skills/`, replacing previous copies of the same skills. */
 export async function syncSkills(projectRoot: string, packagedSkillsRoot = bundledSkillsRoot()): Promise<SyncSkillsOutput> {
   await ensureIgnoredEntries(projectRoot, BUNDLED_ASSET_IGNORE_ENTRIES);
   const destination = skillsPath(projectRoot);
@@ -115,9 +115,9 @@ export async function syncSkills(projectRoot: string, packagedSkillsRoot = bundl
 }
 
 /**
- * Exposes `docnexus/skills/<name>` to an agent by linking it from the agent's project skills directory, and
+ * Exposes `.docnexus/skills/<name>` to an agent by linking it from the agent's project skills directory, and
  * adds a marked DocNexus block to the agent's instructions file (CLAUDE.md or AGENTS.md) so the agent loads
- * the concept index and recalls on its own. These are the only DocNexus entries outside `docnexus/`.
+ * the concept index and recalls on its own. These are the only DocNexus entries outside `.docnexus/`.
  */
 export async function linkSkills(projectRoot: string, target: SkillsTarget): Promise<LinkSkillsOutput> {
   const directory = agentSkillsDirectory(projectRoot, target);
@@ -126,7 +126,7 @@ export async function linkSkills(projectRoot: string, target: SkillsTarget): Pro
   for (const skill of SKILL_NAMES) {
     const source = join(skillsPath(projectRoot), skill);
     if (!(await stat(source).then((info) => info.isDirectory()).catch(() => false))) {
-      throw new Error(`skill ${skill} is missing from ${WORKSPACE_DIRNAME}/skills; run "docnexus skills sync"`);
+      throw new Error(`skill ${skill} is missing from ${INTERNAL_DIRNAME}/skills; run "docnexus skills sync"`);
     }
     const linkPath = join(directory, skill);
     const existing = await lstat(linkPath).catch(() => undefined);
@@ -147,7 +147,7 @@ export async function linkSkills(projectRoot: string, target: SkillsTarget): Pro
   return { target, directory, linked, context_file: contextFile };
 }
 
-/** Removes agent links that point into this project's `docnexus/skills/`. Other entries are left untouched. */
+/** Removes agent links that point into this project's `.docnexus/skills/`. Other entries are left untouched. */
 export async function unlinkSkills(projectRoot: string): Promise<string[]> {
   const removed: string[] = [];
   for (const target of SKILLS_TARGETS) {

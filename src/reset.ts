@@ -2,10 +2,10 @@ import { withProjectLock } from "./project-lock.js";
 import { lstat, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { removeAgentContext } from "./agent-context.js";
-import { projectMarkerPath, WORKSPACE_INSTALLATION_ENTRIES, workspacePath } from "./layout.js";
+import { internalPath, projectMarkerPath, WORKSPACE_INSTALLATION_ENTRIES, workspaceDirectory, workspacePath } from "./layout.js";
 import { unlinkSkills } from "./skills.js";
 import { withRetrievalDatabase } from "./postgres-engine.js";
-import { ensureIgnoredEntries } from "./workspace-io.js";
+import { assertNoSymbolicLinks, ensureIgnoredEntries } from "./workspace-io.js";
 
 export interface ResetOutput {
   removed_workspace: string;
@@ -21,6 +21,7 @@ export async function resetProjectData(projectRoot: string, options: { force: bo
     if (!options.force) {
       throw new Error("reset requires --force");
     }
+    await assertNoSymbolicLinks(projectRoot, workspaceDirectory(projectRoot));
     const workspace = workspacePath(projectRoot);
     const info = await lstat(workspace).catch(() => undefined);
     if (!info) {
@@ -38,14 +39,21 @@ export async function resetProjectData(projectRoot: string, options: { force: bo
     const removedLinks = await unlinkSkills(projectRoot);
     const cleaned = await removeAgentContext(projectRoot);
     const entries = await readdir(workspace);
-    const preserveInstallation = entries.some(entry => WORKSPACE_INSTALLATION_ENTRIES.includes(entry));
+    const internal = internalPath(projectRoot);
+    const internalEntries = await readdir(internal);
+    const preserveInstallation = internalEntries.some(entry => WORKSPACE_INSTALLATION_ENTRIES.includes(entry));
     const preserveGit = entries.includes(".git");
-    if (preserveInstallation || preserveGit) {
+    if (preserveGit) {
       for (const entry of entries) {
-        if (!WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore" && entry !== ".git") await rm(join(workspace, entry), { recursive: true, force: true });
+        if (entry !== ".gitignore" && entry !== ".git") await rm(join(workspace, entry), { recursive: true, force: true });
+      }
+    } else await rm(workspace, { recursive: true, force: true });
+    if (preserveInstallation) {
+      for (const entry of internalEntries) {
+        if (!WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore") await rm(join(internal, entry), { recursive: true, force: true });
       }
       await ensureIgnoredEntries(projectRoot, ["node_modules/"]);
-    } else await rm(workspace, { recursive: true, force: true });
+    } else await rm(internal, { recursive: true, force: true });
     return { removed_workspace: workspace, removed_links: removedLinks, cleaned_context_files: cleaned,
       ...(preserveInstallation ? { preserved_installation: true } : {}), ...(preserveGit ? { preserved_git: true } : {}) };
   });

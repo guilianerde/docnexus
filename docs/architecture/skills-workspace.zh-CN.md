@@ -13,6 +13,14 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 | `docnexus-library` | 文档与草稿浏览、历史查看、人工编辑采纳、删除 |
 | `docnexus-maintain` | 文本诊断、目录刷新、skills 同步与重置 |
 
+## 目录配置（格式 7）
+
+这是破坏性更新，不兼容旧工作区，不迁移旧数据；npm postinstall 强制删除识别出的旧版目录及其中知识、来源和历史。程序安装清单、依赖、skills、schema、草稿、检索索引和恢复日志统一放在项目根目录的 `.docnexus/`。
+
+`docnexus init --output-dir docs/knowledge --agent codex` 将知识工作区创建在 `docs/knowledge/docnexus/`；`--output-dir` 指定父目录，固定追加 `docnexus/`。省略时父目录为项目根目录，工作区为 `docnexus/`。工作区保存 `library/`、`records/`、`impacts/`、`CONCEPTS.md` 与 `concepts/`。配置存于 `.docnexus/project.json`（`format_version: 7`、`output_dir`（父目录，默认为 `.`）、`initialized_at`）。不支持项目外目录、符号链接及内部或智能体目录；初始化后拒绝直接改换目录，需明确 reset 或换新项目。
+
+`status` 提供实际 `workspace_path`、`library_path` 和 `internal_directory`。以下 `docnexus/` 知识路径均为默认值示例，智能体使用实际返回的路径。Claude 导入和 Codex 指引、导航文件、检索引用、影响记录和事务恢复均读取同一配置。保存知识时更新可读导航；下次 recall 或显式 index sync 才更新 `.docnexus/store/` 下的派生检索数据。
+
 ## 捕获
 
 `draft new` 返回 source、document、metadata 的项目相对路径。智能体仅写这些路径，CLI 管理 manifest 与最终产出。
@@ -33,7 +41,7 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 开发版通过 `impact save/list/get/set` 将交接登记到 `docnexus/impacts/<impact_id>.json`（记录 schema 1）。输入包含已保存主文档的 source id/record_version、scope/limitations 和相关页判断。草稿中的 `impact.json` 附件不参与知识封存；主文档入库后再填写实际 source 版本并登记，失败可通过保留的附件续办，两次操作不构成同一事务。清单 ID 按规范输入哈希生成，重复保存保留进度；`impact save` 只返回摘要（ID、路径、revision 及每页的判定、状态和是否需要复查），证据、建议和核对历史通过 `impact get` 读取；每个单文件写入使用项目锁和 fsync 原子替换。
 
-清单保留原始判断，状态核对追加历史及当时 source/target 的 record_version 和生成正文哈希。读取时从当前真源构建快照；身份、版本或有效事实造成的正文变化会派生 `needs_review`。`impact set` 的 revision 同时约束记录和关联正文上下文，拒绝并发旧核对；状态更新不编辑知识，不构成语义正确或授权证明。相关页独立保存后需要重新读取清单，再标记结果。清单随 Git/文本克隆，不进入向量或关键词索引，不放在可丢弃的 `.runtime/`；reset 按工作区清理它们。格式 6 工作区按需创建 impacts，无需 reset。
+清单保留原始判断，状态核对追加历史及当时 source/target 的 record_version 和生成正文哈希。读取时从当前真源构建快照；身份、版本或有效事实造成的正文变化会派生 `needs_review`。`impact set` 的 revision 同时约束记录和关联正文上下文，拒绝并发旧核对；状态更新不编辑知识，不构成语义正确或授权证明。相关页独立保存后需要重新读取清单，再标记结果。清单随 Git/文本克隆，不进入向量或关键词索引，不放在可丢弃的 `.runtime/`；reset 按工作区清理它们。格式 7 工作区按需创建 impacts。
 
 | 判定 | 后续 |
 | --- | --- |
@@ -68,44 +76,20 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 只读查找与浏览、目录生成可直接执行。写入、覆盖、采纳人工编辑、删除、丢弃草稿与 reset 必须有用户授权；已有明确授权不需重复询问。`--force`、`--replace` 表示 CLI 执行授权后的操作。
 
-删除同时移除当前知识、来源、metadata、记录、整个时间线和派生数据库条目。reset 删除知识数据及指向它的 skills 链接、带标记的智能体指令区块；保留顶层 package.json、package-lock.json、node_modules 及其 .gitignore，避免删除正在执行的 CLI。保留安装文件时返回 preserved_installation: true；没有这些文件的旧工作区仍整体移除。
+删除同时移除当前知识、来源、metadata、记录、整个时间线和派生数据库条目。reset 删除知识数据及指向它的 skills 链接、带标记的智能体指令区块；保留 `.docnexus/` 内的 package.json、package-lock.json、node_modules 及其 .gitignore，避免删除正在执行的 CLI。保留安装文件时返回 preserved_installation: true；没有安装文件时 `.docnexus/` 整体移除。
 
 ## 独立安装目录
 
-消费项目在根目录执行 `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus`，将 package.json、package-lock.json、node_modules 一并放入 docnexus/；默认调用 `./docnexus/node_modules/.bin/docnexus`，工作目录仍为项目根目录，其他目录使用 `--project-root`。不要在 docnexus/ 内执行不带项目根参数的 init，避免产生嵌套工作区。源码仓库自身的构建清单与宿主应用原有 npm 清单保持各自职责，不迁移宿主清单。
+在项目根目录执行 `npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus`，通过 `./.docnexus/node_modules/.bin/docnexus` 调用；不要进入 `.docnexus/` 执行 init。安装时通过 postinstall 识别并删除根目录旧版 docnexus/ 及旧格式 .docnexus/ 数据，清理旧 skills 链接与指引；隐藏目录保留当前 npm 安装文件，格式 7 数据保持不变。识别仅限合法的旧格式标记或旧 docnexus/ npm 安装清单，不递归搜索项目，不跟随符号链接。旧 --prefix ./docnexus 位置拒绝安装；全局、npx、传递依赖和源码仓库跳过清理。禁用生命周期脚本会跳过自动清理，init 仍拒绝旧格式。
 
-首次 init 允许 docnexus/ 仅包含上述 npm 安装条目与可选的 .gitignore，且 manifest 必须声明 @rowansenne/docnexus 依赖；也允许有效的独立 Git 仓库元数据与这些安装条目组合，其他非空无标记目录仍拒绝接管。node_modules/ 与 store/、.runtime/ 一同忽略，manifest/lockfile 可随知识文本提交；克隆后通过 `npm ci --prefix ./docnexus` 恢复依赖。
-
-原来的根目录安装仍兼容；skills 在新路径不存在时使用根目录 CLI，文档查询脚本先从 docnexus/package.json 位置解析，再按 Node 父目录查找兼容根目录安装。升级现有根安装可以先在 docnexus/ 新装后执行 init/skills sync，确认后再自行移除旧 DocNexus 依赖，不能删除宿主应用其他依赖或清单。
+首次初始化允许内部目录仅包含声明 DocNexus 依赖的 npm 清单、锁文件、依赖和可选 `.gitignore`；父目录下的 `docnexus/` 必须为空或仅包含有效 Git 元数据，父目录中的其他文件保留。
 
 ## 分发与 Git
 
-默认不创建 Git 仓库或配置远程。`init --git-remote <url>` 可为新旧工作区配置独立 `origin`，固定新仓库的 `main` 或已有仓库的当前分支；拒绝额外本地分支和 detached HEAD，检查在文本事务恢复之前执行，不自动切换或删除分支。配置和约束保存在 `.git`，reset 保留它们，每位成员克隆后需重新运行带远程参数的初始化。该选项不提交或访问远程，不限制终端 Git 命令或远程分支。
+skills 源文件随包分发，初始化复制到 `.docnexus/skills/`，再从 `.agents/skills/` 或 `.claude/skills/` 链接。六个官方副本、版本标记、生成 metadata schema、依赖、草稿、store 和 runtime 由 `.docnexus/.gitignore` 忽略。其他名称的自定义 skills 和 schema 仍可提交；升级替换官方副本，不在其中保存定制。
 
-从外层目录工作时显式使用本项目可执行文件与 `--project-root <工作区根目录>`。工作区根目录是 `docnexus/` 的直接父目录，不自动递归发现子项目或生成外层项目路由；外层 agent 指引由用户配置。
+知识输出目录与 `.docnexus/project.json`、npm manifest/lockfile 一同提交、备份。恢复时保持项目相对结构，从项目根目录运行 `npm ci --prefix ./.docnexus` 和 `init --agent codex|claude|all`；检索索引由 recall 或 index sync 重建。
 
-skills 源文件随包发布，初始化复制到 `docnexus/skills/`，再链接到 `.agents/skills/` 或 `.claude/skills/`。六个官方副本、`skills/.docnexus-skills.json` 和自动生成的 `schemas/metadata.schema.json` 仅保留本地，初始化、skills 同步及普通工作区命令补齐精确的 Git 忽略规则；其他名称的自定义 skill 和其他 schema 文件仍可提交。不要在官方副本中保存项目定制，升级会覆盖它们。源码仓库和 npm 包仍包含官方 skills；这里只忽略消费项目中的副本。包版本变化或 skills 缺失后，工作区命令自动刷新副本；`doctor` 只报告偏差。
+默认不要求 Git。`init --git-remote <url>` 仅为配置的知识输出目录创建独立仓库、设置 origin 和单分支约束；不提交或访问远程。配置和安装清单位于知识仓库之外，需单独备份恢复。宿主仓库已跟踪输出内容时拒绝配置，命令不更改宿主索引；成功配置后在宿主 `.gitignore` 排除实际输出路径。分支约束在恢复事务前检查，reset 保留知识仓库 `.git` 与历史；克隆后需重新执行带远程参数的 init 安装本机分支约束。
 
-Git 保存完整知识真源（`library/`、`records/`、`impacts/` 等）、工作区配置和安装 manifest/lockfile。克隆后从项目根目录执行 `npm ci --prefix ./docnexus`，再执行 `./docnexus/node_modules/.bin/docnexus init --agent codex`（或 `claude` / `all`），重建 skills、schema 和 agent 链接；独立知识仓库同时传入 `--git-remote <url>` 恢复本地分支约束。安装遵循锁文件，不自动升级到 latest；恢复不改变已保存的知识。
-
-知识真源为文本，`node_modules/` 是可重装运行依赖；`store/` 为 Git 忽略的派生状态，`.runtime/` 为 Git 忽略的本机恢复日志。未完成写入或恢复时不要手动编辑、拉取或切换分支。克隆后关键词查找和全文阅读可直接运行；`index sync` 或 `recall` 补建 PGLite/Postgres＋pgvector 投影，普通变更复用未变片段并增量维护 HNSW，模型签名变化时重新嵌入。默认模型随包发布，自定义覆盖需单独备份。切换分支只同步当前工作目录。
-
-### 已有仓库迁移
-
-新增忽略规则不会取消已跟踪的文件。先确认官方副本内没有需要保留的定制（如有，先转存为不同名称的自定义 skill），再运行 `init` 或 `skills sync` 更新规则。命令不会自动修改 Git 索引。
-
-随宿主项目管理知识时，从项目根目录执行下面的命令，仅取消官方副本的跟踪，保留本地文件：
-
-```bash
-git rm -r --cached --ignore-unmatch -- \
-  docnexus/skills/docnexus \
-  docnexus/skills/docnexus-extract \
-  docnexus/skills/docnexus-ingest \
-  docnexus/skills/docnexus-recall \
-  docnexus/skills/docnexus-library \
-  docnexus/skills/docnexus-maintain \
-  docnexus/skills/.docnexus-skills.json \
-  docnexus/schemas/metadata.schema.json
-```
-
-独立知识仓库使用 `git -C docnexus rm`，并去掉上述路径前的 `docnexus/`。核对 `git diff --cached`，将这些删除记录与更新后的 `docnexus/.gitignore` 一起提交（独立仓库中为 `.gitignore`）。后续克隆按上文安装并初始化即可恢复，无需重置知识。拉取这次取消跟踪的提交后，也需重新初始化本地副本。
+reset 删除配置的知识输出和 `.docnexus/` 内部数据，保留 npm 安装及输出目录的 Git 元数据。源码项目原有 npm 文件和其他项目目录不受影响。没有旧格式自动迁移、存量搬运或兼容路径。

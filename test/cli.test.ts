@@ -61,10 +61,10 @@ describe("runCli", () => {
   it("refreshes the metadata contract with outdated workspace skills", async () => {
     const projectRoot = await makeRoot();
     await runCli(["init"], projectRoot);
-    await writeFile(join(projectRoot, "docnexus/skills/.docnexus-skills.json"), JSON.stringify({ version: "0.6.0" }));
-    await writeFile(join(projectRoot, "docnexus/schemas/metadata.schema.json"), "{}");
+    await writeFile(join(projectRoot, ".docnexus/skills/.docnexus-skills.json"), JSON.stringify({ version: "0.6.0" }));
+    await writeFile(join(projectRoot, ".docnexus/schemas/metadata.schema.json"), "{}");
     await runCli(["document", "list"], projectRoot);
-    const schema = JSON.parse(await readFile(join(projectRoot, "docnexus/schemas/metadata.schema.json"), "utf8"));
+    const schema = JSON.parse(await readFile(join(projectRoot, ".docnexus/schemas/metadata.schema.json"), "utf8"));
     expect(schema.optionalFields["facts[]"].valid_from).toContain("ISO 8601");
   });
   it("initializes the current project through the CLI", async () => {
@@ -73,8 +73,8 @@ describe("runCli", () => {
     const output = JSON.parse(await runCli(["init"], projectRoot));
 
     expect(output).toMatchObject({ project_root: projectRoot, initialized: true, created: true, links: [] });
-    await expect(stat(join(projectRoot, "docnexus", "project.json"))).resolves.toBeDefined();
-    await expect(stat(join(projectRoot, "docnexus", "skills", "docnexus", "SKILL.md"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, ".docnexus", "project.json"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, ".docnexus", "skills", "docnexus", "SKILL.md"))).resolves.toBeDefined();
   });
 
   it("links skills into agent directories during init and on demand", async () => {
@@ -97,7 +97,7 @@ describe("runCli", () => {
     const output = JSON.parse(await runCli(["--project-root", projectRoot, "init"], cwd));
 
     expect(output.project_root).toBe(projectRoot);
-    await expect(stat(join(projectRoot, "docnexus", "project.json"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, ".docnexus", "project.json"))).resolves.toBeDefined();
   });
 
   it("rejects project data commands before initialization", async () => {
@@ -268,7 +268,7 @@ describe("runCli", () => {
     const read = JSON.parse(await runCli(["document", "get", "--id", added.id, "--include", "document,timeline"], projectRoot));
     expect(read.document).toContain("Tokens rotate hourly");
     expect(read.timeline).toContain("User chose hourly rotation");
-    await expect(stat(join(projectRoot, "docnexus/store/brain.pglite"))).resolves.toBeDefined();
+    await expect(stat(join(projectRoot, ".docnexus/store/brain.pglite"))).resolves.toBeDefined();
     await writeFile(join(projectRoot, "docnexus/library/auth.md"), "# Auth\n\nTokens rotate per use.");
     expect(JSON.parse(await runCli(["status"], projectRoot)).records.edited).toEqual([added.id]);
     await runCli(["document", "sync", "--id", added.id], projectRoot);

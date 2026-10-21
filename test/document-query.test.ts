@@ -113,9 +113,9 @@ describe("orchestration document query", () => {
   it("works without retrieval stores or model assets and isolates projects", async () => {
     const path = await root();
     await add(path, "offline.md", "reference");
-    await rm(join(path, "docnexus/store"), { recursive: true, force: true });
+    await rm(join(path, ".docnexus/store"), { recursive: true, force: true });
     expect((await queryDocuments(path, { all: true })).documents).toHaveLength(1);
-    await expect(stat(join(path, "docnexus/store"))).rejects.toThrow();
+    await expect(stat(join(path, ".docnexus/store"))).rejects.toThrow();
     expect((await queryDocuments(await root(), { all: true })).documents).toEqual([]);
   });
 

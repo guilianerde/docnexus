@@ -48,7 +48,7 @@ it("opts into a separate origin without changing the host remote or staging file
   expect(await git(root, "check-ignore", "docnexus/library/test.md")).toBe("docnexus/library/test.md");
   expect(await git(workspace, "ls-files")).toBe("");
   for (const path of ["node_modules/test", "store/test", ".runtime/test"]) {
-    expect(await git(workspace, "check-ignore", path)).toBe(path);
+    expect(await git(root, "check-ignore", `.docnexus/${path}`)).toBe(`.docnexus/${path}`);
   }
 });
 
@@ -71,45 +71,49 @@ it("keeps bundled assets local in a host repository while tracking knowledge, ve
   await git(root, "init");
   await initializeProject(root);
   const workspace = join(root, "docnexus");
+  const internal = join(root, ".docnexus");
   // Simulate an existing workspace whose skills already match the installed version.
-  await writeFile(join(workspace, ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
-  await mkdir(join(workspace, "skills", "docnexus-custom"));
-  await writeFile(join(workspace, "skills", "docnexus-custom", "SKILL.md"), "Project-owned workflow");
-  await writeFile(join(workspace, "schemas", "custom.json"), "{}");
-  await writeFile(join(workspace, "package.json"), JSON.stringify({ dependencies: { "@rowansenne/docnexus": "0.22.0" } }));
-  await writeFile(join(workspace, "package-lock.json"), "version lock sentinel");
+  await writeFile(join(internal, ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
+  await mkdir(join(internal, "skills", "docnexus-custom"));
+  await writeFile(join(internal, "skills", "docnexus-custom", "SKILL.md"), "Project-owned workflow");
+  await writeFile(join(internal, "schemas", "custom.json"), "{}");
+  await writeFile(join(internal, "package.json"), JSON.stringify({ dependencies: { "@rowansenne/docnexus": "0.22.0" } }));
+  await writeFile(join(internal, "package-lock.json"), "version lock sentinel");
   await mkdir(join(workspace, "impacts"));
   await writeFile(join(workspace, "impacts", "keep.json"), "{}");
   const saved = await upsertManagedDocument(root, { file_path: "keep.md", source: "Original source", document: "# Keep knowledge",
     metadata: { title: "Keep", summary: "Knowledge sentinel", tags: [], entities: [], relationships: [] } });
 
   await runCli(["document", "list"], root);
-  const ignore = await readFile(join(workspace, ".gitignore"), "utf8");
+  const ignore = await readFile(join(internal, ".gitignore"), "utf8");
   await runCli(["skills", "sync"], root);
-  expect(await readFile(join(workspace, ".gitignore"), "utf8")).toBe(ignore);
+  expect(await readFile(join(internal, ".gitignore"), "utf8")).toBe(ignore);
   for (const path of [...SKILL_NAMES.map(name => `skills/${name}/SKILL.md`), "skills/.docnexus-skills.json", "schemas/metadata.schema.json"]) {
-    expect(await git(root, "check-ignore", `docnexus/${path}`)).toBe(`docnexus/${path}`);
+    expect(await git(root, "check-ignore", `.docnexus/${path}`)).toBe(`.docnexus/${path}`);
   }
   await git(root, "add", ".");
   const tracked = (await git(root, "ls-files")).split("\n");
-  for (const path of ["project.json", "package.json", "package-lock.json", "library/keep.md", "impacts/keep.json", "skills/docnexus-custom/SKILL.md", "schemas/custom.json",
+  for (const path of ["library/keep.md", "impacts/keep.json",
     ...["source.md", "metadata.json", "timeline.md", "record.json"].map(name => `records/${saved.id}/${name}`)]) {
     expect(tracked).toContain(`docnexus/${path}`);
   }
-  expect(tracked.some(path => SKILL_NAMES.some(name => path.startsWith(`docnexus/skills/${name}/`)))).toBe(false);
-  expect(tracked).not.toContain("docnexus/schemas/metadata.schema.json");
+  for (const path of ["project.json", "package.json", "package-lock.json", "skills/docnexus-custom/SKILL.md", "schemas/custom.json"]) {
+    expect(tracked).toContain(`.docnexus/${path}`);
+  }
+  expect(tracked.some(path => SKILL_NAMES.some(name => path.startsWith(`.docnexus/skills/${name}/`)))).toBe(false);
+  expect(tracked).not.toContain(".docnexus/schemas/metadata.schema.json");
 });
 
 it("adds ignore rules without untracking previously committed package assets", async () => {
   const root = await makeRoot();
   await git(root, "init");
   await initializeProject(root);
-  await writeFile(join(root, "docnexus", ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
+  await writeFile(join(root, ".docnexus", ".gitignore"), "node_modules/\nstore/\n.runtime/\n");
   await git(root, "add", ".");
   await git(root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "core.hooksPath=/dev/null", "commit", "-m", "Existing workspace");
   const index = await git(root, "ls-files", "--stage");
-  expect(index).toContain("docnexus/skills/docnexus/SKILL.md");
-  expect(index).toContain("docnexus/schemas/metadata.schema.json");
+  expect(index).toContain(".docnexus/skills/docnexus/SKILL.md");
+  expect(index).toContain(".docnexus/schemas/metadata.schema.json");
   await initializeProject(root);
   await runCli(["skills", "sync"], root);
   expect(await git(root, "ls-files", "--stage")).toBe(index);
@@ -129,16 +133,16 @@ it("blocks recovery, CLI writes, reset and reconfiguration after a branch switch
   const root = await makeRoot();
   await initializeProject(root, { gitRemote: "https://example.com/knowledge.git" });
   const workspace = join(root, "docnexus");
-  await mkdir(join(workspace, ".runtime"));
-  const journal = join(workspace, ".runtime", "transaction.json");
+  await mkdir(join(root, ".docnexus", ".runtime"));
+  const journal = join(root, ".docnexus", ".runtime", "transaction.json");
   await writeFile(journal, JSON.stringify({ version: 1, phase: "apply", entries: [{ path: "docnexus/library/recovery-probe.md", before: null, after: "Recovery probe" }],
     remove_directories: [], rollback_directories: [] }));
   await git(workspace, "switch", "--orphan", "other");
-  const marker = await readFile(join(workspace, "project.json"), "utf8");
+  const marker = await readFile(join(root, ".docnexus", "project.json"), "utf8");
   await expect(runCli(["draft", "new"], root)).rejects.toMatchObject({ code: "git_branch_mismatch", details: { allowed_branch: "main", actual_branch: "other" } });
   await expect(resetProjectData(root, { force: true })).rejects.toMatchObject({ code: "git_branch_mismatch" });
   await expect(initializeProject(root, { gitRemote: "https://example.com/other.git" })).rejects.toMatchObject({ code: "git_branch_mismatch" });
-  expect(await readFile(join(workspace, "project.json"), "utf8")).toBe(marker);
+  expect(await readFile(join(root, ".docnexus", "project.json"), "utf8")).toBe(marker);
   await expect(access(join(workspace, "library", "recovery-probe.md"))).rejects.toThrow();
   await expect(access(journal)).resolves.toBeUndefined();
   expect(await git(workspace, "remote", "get-url", "origin")).toBe("https://example.com/knowledge.git");
@@ -197,7 +201,7 @@ it("refuses host-tracked knowledge before creating a nested repository or changi
   const root = await makeRoot();
   await git(root, "init");
   await initializeProject(root);
-  await git(root, "add", "docnexus/project.json");
+  await git(root, "add", "docnexus/CONCEPTS.md");
   const index = await git(root, "ls-files", "--stage");
   await expect(initializeProject(root, { gitRemote: "https://example.com/knowledge.git" })).rejects.toMatchObject({ code: "git_operation_failed" });
   expect(await git(root, "ls-files", "--stage")).toBe(index);
@@ -252,11 +256,14 @@ it("reads committed knowledge after a manual push and clone into a second projec
   await git(workspace, "push", "origin", "HEAD:main");
   const second = await makeRoot();
   await git(second, "clone", "--branch", "main", remote, "docnexus");
-  await expect(access(join(second, "docnexus", "skills"))).rejects.toThrow();
-  await expect(access(join(second, "docnexus", "schemas"))).rejects.toThrow();
+  await expect(access(join(second, ".docnexus", "skills"))).rejects.toThrow();
+  await expect(access(join(second, ".docnexus", "schemas"))).rejects.toThrow();
+  // The installation/configuration directory is backed up separately from knowledge-only Git.
+  await mkdir(join(second, ".docnexus"));
+  await writeFile(join(second, ".docnexus", "project.json"), await readFile(join(first, ".docnexus", "project.json")));
   await expect(runCli(["document", "list"], second)).resolves.toContain(saved.id);
-  await expect(readFile(join(second, "docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
-  await expect(readFile(join(second, "docnexus", "schemas", "metadata.schema.json"), "utf8")).resolves.toContain("facts");
+  await expect(readFile(join(second, ".docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
+  await expect(readFile(join(second, ".docnexus", "schemas", "metadata.schema.json"), "utf8")).resolves.toContain("facts");
   await expect(initializeProject(second, { gitRemote: remote, agents: ["codex"] })).resolves.toMatchObject({ created: false });
   await expect(readFile(join(second, ".agents", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
   expect(await git(join(second, "docnexus"), "status", "--porcelain")).toBe("");
@@ -276,7 +283,7 @@ it("preserves Git history and origin through reset and reinitialization", async 
   expect(result).toMatchObject({ preserved_git: true });
   expect(await git(workspace, "rev-parse", "HEAD")).toBe(head);
   expect(await git(workspace, "remote", "get-url", "origin")).toBe("https://example.com/knowledge.git");
-  await expect(access(join(workspace, "project.json"))).rejects.toThrow();
+  await expect(access(join(root, ".docnexus", "project.json"))).rejects.toThrow();
   await expect(initializeProject(root)).resolves.toMatchObject({ created: true });
   expect(await git(workspace, "rev-parse", "HEAD")).toBe(head);
 });

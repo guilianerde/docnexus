@@ -86,7 +86,7 @@ const usage: CommandHandler = async ({ projectRoot, subcommand, rest }) => {
 const init: CommandHandler = async ({ projectRoot, args }) => {
   const options = parseOptions(args);
   const agents = options.agent === undefined || options.agent === "none" ? [] : parseSkillsTargets(options.agent);
-  return json(await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"] }));
+  return json(await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"], outputDir: options["output-dir"] }));
 };
 
 const reset: CommandHandler = async ({ projectRoot, args }) =>
@@ -189,7 +189,7 @@ const documentAdd: CommandHandler = async ({ projectRoot, rest }) => {
   }
   const result = await ingestDraft(projectRoot, { draftId: options.draft, replace });
   await writeConceptIndex(projectRoot);
-  return json({ ...result, draft_id: options.draft, library_path: libraryRelativePath(result.file_path) });
+  return json({ ...result, draft_id: options.draft, library_path: libraryRelativePath(result.file_path, projectRoot) });
 };
 
 // Related-page impact tracking.
@@ -234,7 +234,7 @@ const concepts: CommandHandler = async ({ projectRoot, args }) => {
     throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
   }
   const index = await buildConceptIndex(projectRoot, { type: options.type, query: options.query, category: options.category });
-  return options.format === "md" ? renderConceptListing(index) : json(index);
+  return options.format === "md" ? renderConceptListing(index, projectRoot) : json(index);
 };
 
 const factsList: CommandHandler = async ({ projectRoot, rest }) => {
@@ -333,7 +333,7 @@ const documentSync: CommandHandler = async ({ projectRoot, rest }) => {
     : undefined;
   const result = await syncManagedDocument(projectRoot, { id: options.id, file_path: options.file, metadata });
   await writeConceptIndex(projectRoot);
-  return json({ ...result, library_path: libraryRelativePath(result.file_path) });
+  return json({ ...result, library_path: libraryRelativePath(result.file_path, projectRoot) });
 };
 
 // Retrieval maintenance.

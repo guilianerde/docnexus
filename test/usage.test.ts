@@ -28,14 +28,14 @@ it("is opt-in and disabling preserves records without changing command output", 
   const path = await root(); await seed(path);
   const before = await runCli(["search", query], path);
   expect(await command(path, ["usage", "status"])).toMatchObject({ enabled: false, events: 0 });
-  await expect(stat(join(path, "docnexus/.runtime/usage.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(stat(join(path, ".docnexus/.runtime/usage.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
   await command(path, ["usage", "enable"]);
   expect(await runCli(["search", query], path)).toBe(before);
   expect(await command(path, ["usage", "status"])).toMatchObject({ enabled: true, events: 1 });
   await command(path, ["usage", "disable"]);
   expect(await runCli(["search", query], path)).toBe(before);
   expect(await command(path, ["usage", "status"])).toMatchObject({ enabled: false, events: 1 });
-  expect(await readFile(join(path, "docnexus/.gitignore"), "utf8")).toContain(".runtime/");
+  expect(await readFile(join(path, ".docnexus/.gitignore"), "utf8")).toContain(".runtime/");
 });
 
 it("exports correlated pseudonyms without query text, document text, names, paths, credentials or the key", async () => {
@@ -47,7 +47,7 @@ it("exports correlated pseudonyms without query text, document text, names, path
   await expect(runCli(["doctor"], path, { doctor: async () => { throw new Error("postgres://SECRET_CREDENTIAL_CANARY@host/db"); } })).rejects.toThrow("SECRET_CREDENTIAL_CANARY");
   const exported = await command(path, ["usage", "export"]);
   const text = JSON.stringify(exported);
-  const config = JSON.parse(await readFile(join(path, "docnexus/.runtime/usage-config.json"), "utf8"));
+  const config = JSON.parse(await readFile(join(path, ".docnexus/.runtime/usage-config.json"), "utf8"));
   for (const secret of [query, path, saved.id, config.key, ...Object.values(metadata).filter(value => typeof value === "string"),
     "PRIVATE_PATH_CANARY", "PRIVATE_SOURCE_CANARY", "PRIVATE_BODY_CANARY", "SECRET_CREDENTIAL_CANARY"]) expect(text).not.toContain(secret);
   expect(exported.events[0].query_id).toMatch(/^[a-f0-9]{64}$/);
@@ -95,7 +95,7 @@ it("links explicit feedback to the selected query without treating hits as usefu
 
 it("serializes concurrent events and isolates a partial line left by an interrupted writer", async () => {
   const path = await root(); await command(path, ["usage", "enable"]);
-  await appendFile(join(path, "docnexus/.runtime/usage.jsonl"), '{"schema_version":');
+  await appendFile(join(path, ".docnexus/.runtime/usage.jsonl"), '{"schema_version":');
   await Promise.all(Array.from({ length: 8 }, () => command(path, ["search", query])));
   const report = await command(path, ["usage", "export"]);
   expect(report.invalid_lines).toBe(1);
@@ -106,19 +106,19 @@ it("serializes concurrent events and isolates a partial line left by an interrup
 it("does not follow log symlinks or replace a successful command with a recorder failure", async () => {
   const path = await root(); await command(path, ["usage", "enable"]);
   const target = join(path, "outside.log"); await writeFile(target, "untouched");
-  await symlink(target, join(path, "docnexus/.runtime/usage.jsonl"));
+  await symlink(target, join(path, ".docnexus/.runtime/usage.jsonl"));
   const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   expect(await command(path, ["search", query])).toMatchObject({ results: [] });
   expect(await readFile(target, "utf8")).toBe("untouched");
   expect(stderr).toHaveBeenCalledWith(expect.stringContaining("usage recording unavailable"));
-  await rm(join(path, "docnexus/.runtime/usage.jsonl"));
-  await mkdir(join(path, "docnexus/.runtime/usage.jsonl"));
+  await rm(join(path, ".docnexus/.runtime/usage.jsonl"));
+  await mkdir(join(path, ".docnexus/.runtime/usage.jsonl"));
   await expect(command(path, ["document", "get", "--id", "invalid"])).rejects.toMatchObject({ code: "invalid_params" });
 });
 
 it("bounds disk usage and reports a full log without failing retrieval", async () => {
   const path = await root(); await command(path, ["usage", "enable"]);
-  const log = join(path, "docnexus/.runtime/usage.jsonl"); await writeFile(log, ""); await truncate(log, USAGE_MAX_BYTES);
+  const log = join(path, ".docnexus/.runtime/usage.jsonl"); await writeFile(log, ""); await truncate(log, USAGE_MAX_BYTES);
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   expect(await command(path, ["search", query])).toMatchObject({ results: [] });
   expect((await stat(log)).size).toBe(USAGE_MAX_BYTES);

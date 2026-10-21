@@ -1,5 +1,6 @@
 import { readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
+import { workspaceDirectory } from "./layout.js";
 import { DocNexusError, rereadCommand } from "./errors.js";
 import { sha256, stableJson } from "./hash.js";
 import { isTimestamp } from "./metadata.js";
@@ -8,7 +9,7 @@ import { assertNoSymbolicLinks, atomicWrite, readIfExists } from "./workspace-io
 import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { normalizeManagedFilePath } from "./workspace-reader.js";
 
-const DIRECTORY = "docnexus/impacts";
+const directory = (root: string) => `${workspaceDirectory(root)}/impacts`;
 const ID = /^impact_[a-f0-9]{16}$/;
 const DOCUMENT_ID = /^doc_[a-f0-9]{16}$/;
 const VERSION = /^[a-f0-9]{64}$/;
@@ -57,7 +58,7 @@ export function validateImpactInput(value: unknown): asserts value is ImpactInpu
 
 async function impactPath(root: string, id: string) {
   if (!ID.test(id)) throw new DocNexusError("invalid_params", "invalid impact id");
-  const relative = join(DIRECTORY, `${id}.json`);
+  const relative = join(directory(root), `${id}.json`);
   await assertNoSymbolicLinks(await realpath(root), relative);
   return join(root, relative);
 }
@@ -77,7 +78,7 @@ async function readRecord(root: string, id: string): Promise<ImpactRecord | unde
           && nonempty(check.reason) && basisValid(check.source) && basisValid(check.target)))) throw new Error("invalid record");
     return record;
   } catch {
-    throw new DocNexusError("text_integrity_error", `invalid impact record: ${DIRECTORY}/${id}.json; restore or review the file`);
+    throw new DocNexusError("text_integrity_error", `invalid impact record: ${directory(root)}/${id}.json; restore or review the file`);
   }
 }
 
@@ -87,7 +88,7 @@ function basis(snapshot: WorkspaceSnapshot, id: string): Basis {
     : { record_version: null, document_hash: null };
 }
 
-function view(record: ImpactRecord, snapshot: WorkspaceSnapshot) {
+function view(root: string, record: ImpactRecord, snapshot: WorkspaceSnapshot) {
   const source = basis(snapshot, record.input.source.id);
   const pages = record.input.pages.map(page => {
     const history = record.checks[page.id], checked = history.at(-1)!;
@@ -96,7 +97,7 @@ function view(record: ImpactRecord, snapshot: WorkspaceSnapshot) {
     return { ...page, recorded_status: checked.status, status: needsReview ? "needs_review" as const : checked.status,
       needs_review: needsReview, current_record_version: current.record_version, history };
   });
-  return { id: record.id, impact_path: `${DIRECTORY}/${record.id}.json`, created_at: record.created_at, updated_at: record.updated_at,
+  return { id: record.id, impact_path: `${directory(root)}/${record.id}.json`, created_at: record.created_at, updated_at: record.updated_at,
     source: { ...record.input.source, file_path: record.source_path, current_record_version: source.record_version },
     scope: record.input.scope, limitations: record.input.limitations, pages,
     revision: sha256(stableJson([record, source, pages.map(page => basis(snapshot, page.id))])) };
@@ -120,7 +121,7 @@ export async function saveImpact(root: string, value: unknown) {
     const snapshot = await loadWorkspaceSnapshot(root);
     if (prior) {
       if (stableJson(prior.input) !== stableJson(input)) throw new DocNexusError("text_integrity_error", "impact identity does not match its saved input");
-      return { result: "impact_exists" as const, ...summary(view(prior, snapshot)) };
+      return { result: "impact_exists" as const, ...summary(view(root, prior, snapshot)) };
     }
     const source = snapshot.records.find(record => record.id === input.source.id);
     if (!source || snapshot.recordVersion(source.id) !== input.source.record_version) {
@@ -142,7 +143,7 @@ export async function saveImpact(root: string, value: unknown) {
         status: page.decision === "no_change" ? "done" as const : "pending" as const,
         reason: page.evidence, source: basis(snapshot, source.id), target: basis(snapshot, page.id) }]])) };
     await atomicWrite(await impactPath(root, id), `${stableJson(record)}\n`);
-    return { result: "impact_saved" as const, ...summary(view(record, snapshot)) };
+    return { result: "impact_saved" as const, ...summary(view(root, record, snapshot)) };
   });
 }
 
@@ -150,15 +151,15 @@ export async function getImpact(root: string, id: string) {
   return withProjectLock(root, async () => {
     const record = await readRecord(root, id);
     if (!record) throw new DocNexusError("impact_not_found", "impact record not found");
-    return view(record, await loadWorkspaceSnapshot(root));
+    return view(root, record, await loadWorkspaceSnapshot(root));
   });
 }
 
 export async function listImpacts(root: string, status?: string) {
   if (status !== undefined && ![...statuses, "needs_review"].includes(status)) throw new DocNexusError("invalid_params", "impact status must be pending, done, dismissed or needs_review");
   return withProjectLock(root, async () => {
-    await assertNoSymbolicLinks(await realpath(root), DIRECTORY);
-    const entries = await readdir(join(root, DIRECTORY)).catch((error: NodeJS.ErrnoException) => {
+    await assertNoSymbolicLinks(await realpath(root), directory(root));
+    const entries = await readdir(join(root, directory(root))).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return [];
       throw error;
     });
@@ -168,7 +169,7 @@ export async function listImpacts(root: string, status?: string) {
       if (!file.endsWith(".json")) continue;
       const record = await readRecord(root, file.slice(0, -5));
       if (!record) continue;
-      const result = view(record, snapshot);
+      const result = view(root, record, snapshot);
       if (status !== undefined) result.pages = result.pages.filter(page => page.status === status);
       if (status === undefined || result.pages.length) impacts.push(result);
     }
@@ -185,7 +186,7 @@ export async function setImpactStatus(root: string, input: { id: string; documen
     const record = await readRecord(root, input.id);
     if (!record) throw new DocNexusError("impact_not_found", "impact record not found");
     const snapshot = await loadWorkspaceSnapshot(root);
-    const current = view(record, snapshot);
+    const current = view(root, record, snapshot);
     if (current.revision !== input.revision) throw new DocNexusError("impact_changed", "impact or document context changed; reread the impact and affected documents before updating its status");
     const page = record.input.pages.find(page => page.id === input.document);
     if (!page) throw new DocNexusError("invalid_params", "document is not a page in this impact record");
@@ -201,6 +202,6 @@ export async function setImpactStatus(root: string, input: { id: string; documen
     const at = new Date().toISOString();
     history.push({ at, ...check }); record.updated_at = at;
     await atomicWrite(await impactPath(root, record.id), `${stableJson(record)}\n`);
-    return { result: "impact_updated" as const, ...view(record, snapshot) };
+    return { result: "impact_updated" as const, ...view(root, record, snapshot) };
   });
 }

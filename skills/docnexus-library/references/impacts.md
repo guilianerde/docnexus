@@ -29,7 +29,7 @@ After the authorized primary document is ingested, read its full current documen
 Build `pages` from the related-page lookup in [capture resolution](../../docnexus-extract/references/capture-resolution.md#check-related-page-impact): search and recall for the changed claim, not only the document catalog. Decisions are `update`, `no_change`, `conflict`, `unverified`. Exclude the primary page from `pages`; an empty array is allowed with an explicit successful lookup scope. `no_change` starts done; the other decisions start pending. Unknown read versions must remain null and unverified, never guessed from a search hit.
 
 ```bash
-./docnexus/node_modules/.bin/docnexus impact save --file docnexus/drafts/<draft_id>/impact.json
+./.docnexus/node_modules/.bin/docnexus impact save --file .docnexus/drafts/<draft_id>/impact.json
 ```
 
 The CLI verifies the current source and checked-page versions and paths. If they changed, reread the affected source/pages, reconsider the decisions, update the attachment and save again; do not just replace version strings. Equal input returns the existing impact record with its progress intact. The save result is a summary: `id`, `impact_path`, `revision` and, per page, `decision`, `status` and `needs_review`. Read evidence, proposed actions and check history with `impact get --id <impact_id>` when needed. Save within the user's authorized capture scope; additional document edits still require their own authorization.
@@ -39,10 +39,10 @@ Primary ingestion and impact saving are separate operations. If saving fails, re
 ## Resume and resolve
 
 ```bash
-./docnexus/node_modules/.bin/docnexus impact list
-./docnexus/node_modules/.bin/docnexus impact list --status pending
-./docnexus/node_modules/.bin/docnexus impact list --status needs_review
-./docnexus/node_modules/.bin/docnexus impact get --id <impact_id>
+./.docnexus/node_modules/.bin/docnexus impact list
+./.docnexus/node_modules/.bin/docnexus impact list --status pending
+./.docnexus/node_modules/.bin/docnexus impact list --status needs_review
+./.docnexus/node_modules/.bin/docnexus impact get --id <impact_id>
 ```
 
 Each page retains its original decision/read version and status history. `pending` needs action, `done` records a completed check and `dismissed` records a reasoned decision not to pursue it. `needs_review` is computed from changes to the source or target identity/version/rendered content since the last recorded check. It can reopen a done or dismissed page, including after a fact expires without changing the record version. Read both pending and needs-review work; checking only pending can miss reopened items.
@@ -52,7 +52,7 @@ Each `--status` accepts one value. Use the two separate queries above or an unfi
 Before acknowledging a page, read the current source and related full document, resolve or explain any conflict and inspect the latest `impact get`. For content changes, use a separate authorized draft with the actual base version, preview and ingestion. Then acknowledge the result using the fresh impact revision:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus impact set --id <impact_id> --document <document_id> \
+./.docnexus/node_modules/.bin/docnexus impact set --id <impact_id> --document <document_id> \
   --status done --reason "Reviewed the current page and verified the separate update" --revision <impact_revision>
 ```
 

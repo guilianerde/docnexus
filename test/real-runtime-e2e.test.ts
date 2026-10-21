@@ -57,7 +57,7 @@ describe("real local ONNX runtime", () => {
 
     const initialized = JSON.parse(await runCli(["init"], projectRoot));
     expect(initialized).toMatchObject({ project_root: projectRoot, initialized: true });
-    await expect(stat(join(projectRoot, "docnexus", "store", "models"))).rejects.toThrow();
+    await expect(stat(join(projectRoot, ".docnexus", "store", "models"))).rejects.toThrow();
 
     const draft = JSON.parse(await runCli(["draft", "new", "--slug", "onnx"], projectRoot));
     const sourcePath = join(projectRoot, draft.artifacts.source);

@@ -7,7 +7,7 @@ describe("npm package contract", () => {
     const cliSource = await readFile("src/cli.ts", "utf8");
 
     expect(packageJson.name).toBe("@rowansenne/docnexus");
-    expect(packageJson.version).toBe("0.23.0");
+    expect(packageJson.version).toBe("0.24.0");
     expect(packageJson.private).toBe(false);
     expect(packageJson.license).toBe("MIT");
     expect(packageJson.repository).toEqual({
@@ -32,11 +32,13 @@ describe("npm package contract", () => {
       ])
     );
     expect(packageJson.files).toContain("models");
+    expect(packageJson.files).toContain("scripts/postinstall.mjs");
     expect(packageJson.files).toEqual(
       expect.arrayContaining(["!dist/src/**/*.map", "!dist/src/**/*.d.ts", "!docs/operations/baselines"])
     );
     expect(packageJson.scripts.build).toContain("rmSync('dist'");
     expect(packageJson.scripts.prepack).toBe("npm run build");
+    expect(packageJson.scripts.postinstall).toBe("node scripts/postinstall.mjs");
     expect(packageJson.scripts["audit:prod"]).toBe("npm audit --omit=dev --audit-level=high");
     expect(packageJson.dependencies).toHaveProperty("@electric-sql/pglite");
     expect(packageJson.dependencies).toHaveProperty("@electric-sql/pglite-pgvector");

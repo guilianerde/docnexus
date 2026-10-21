@@ -63,13 +63,13 @@ async function preflightWorkspace(projectRoot: string, syncingSkills: boolean): 
     const synced = await ensureSkillsCurrent(projectRoot);
     if (synced) {
       await ensureManagedWorkspace(projectRoot);
-      process.stderr.write(`docnexus: refreshed docnexus/skills to ${synced.version}\n`);
+      process.stderr.write(`docnexus: refreshed .docnexus/skills to ${synced.version}\n`);
     }
   });
 }
 
 const USAGE = `Setup
-  docnexus init [--agent claude|codex|all] [--git-remote <url>]
+  docnexus init [--output-dir <directory>] [--agent claude|codex|all] [--git-remote <url>]
   docnexus --project-root path/to/project init [--git-remote <url>]
   docnexus skills sync
   docnexus skills link --target claude|codex|all
@@ -79,7 +79,7 @@ const USAGE = `Setup
 
 Capture (extract -> seal -> ingest)
   docnexus draft new [--slug auth]
-  docnexus metadata validate --file docnexus/drafts/<draft_id>/metadata.json
+  docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
   docnexus draft seal --id <draft_id> --file <library_path.md> [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
   docnexus draft preview --id <draft_id>
   docnexus document add --draft <draft_id> [--replace]

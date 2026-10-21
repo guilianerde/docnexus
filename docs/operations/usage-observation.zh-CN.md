@@ -7,11 +7,11 @@
 默认关闭，按项目启用。已安装包含该功能的版本后，在项目根目录运行：
 
 ```bash
-./docnexus/node_modules/.bin/docnexus usage enable
-./docnexus/node_modules/.bin/docnexus usage status
+./.docnexus/node_modules/.bin/docnexus usage enable
+./.docnexus/node_modules/.bin/docnexus usage status
 # 正常使用 DocNexus，之后导出：
-./docnexus/node_modules/.bin/docnexus usage export > docnexus/.runtime/usage-report.json
-./docnexus/node_modules/.bin/docnexus usage disable
+./.docnexus/node_modules/.bin/docnexus usage export > .docnexus/.runtime/usage-report.json
+./.docnexus/node_modules/.bin/docnexus usage disable
 ```
 
 开发仓库运行 `npm run build` 后，可使用 `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/host-project` 替代上述可执行文件。宿主项目必须已初始化；启用记录不会创建知识或导入文件。后续使用也必须经过包含该功能的 CLI；旧 npm CLI 的操作不会被新版旁观记录。
@@ -22,9 +22,9 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `docnexus/.runtime/usage-config.json` | 开关与项目专用的随机密钥，不导出、不分享 |
-| `docnexus/.runtime/usage.jsonl` | 逐条追加的本地事件 |
-| `docnexus/.runtime/usage-report.json` | 用户显式重定向生成的单文件导出 |
+| `.docnexus/.runtime/usage-config.json` | 开关与项目专用的随机密钥，不导出、不分享 |
+| `.docnexus/.runtime/usage.jsonl` | 逐条追加的本地事件 |
+| `.docnexus/.runtime/usage-report.json` | 用户显式重定向生成的单文件导出 |
 
 这些文件位于 Git 忽略的 `.runtime/` 中。配置和新建日志按 `0600` 创建。查询以 NFKC、去除首尾空白及小写归一化后，使用项目密钥做 HMAC；同一项目内可关联重复问题，不同项目的标识不同。文档和分类也只保留带密钥的标识。导出不包含密钥、原始查询、路径、文档标题/摘要/正文、来源、命令原始参数、数据库 URL 或原生错误消息。时间、平台和行为模式仍属于使用信息，分享由用户决定。
 
@@ -64,9 +64,9 @@
 对于确实观察到的问题，可关联最近一次 search/recall：
 
 ```bash
-./docnexus/node_modules/.bin/docnexus usage feedback --rating useful
-./docnexus/node_modules/.bin/docnexus usage feedback --rating partial --reason truncated
-./docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
+./.docnexus/node_modules/.bin/docnexus usage feedback --rating useful
+./.docnexus/node_modules/.bin/docnexus usage feedback --rating partial --reason truncated
+./.docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
 ```
 
 `rating` 支持 `useful`、`partial`、`miss`。可选 `reason` 支持 `needs_multihop`、`missing_document`、`irrelevant`、`truncated`、`stale`、`slow`、`other`，不收集自由文本。反馈必须在启用且日志未满时写入。默认关联最后一个已记录的搜索/召回事件；并发使用或反馈早先查询时，用 `usage status`/导出中的事件 ID 加 `--event <event_id>`。多次反馈按时间保留，不覆盖旧判断。

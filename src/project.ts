@@ -1,32 +1,33 @@
 import { DocNexusError } from "./errors.js";
 import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { writeConceptIndex } from "./concepts.js";
-import { draftsPath, libraryPath, projectMarkerPath, WORKSPACE_DIRNAME, WORKSPACE_INSTALLATION_ENTRIES, workspacePath } from "./layout.js";
-import { ensureIgnoredEntries } from "./workspace-io.js";
+import { draftsPath, PROJECT_FORMAT_VERSION, internalPath, INTERNAL_DIRNAME, libraryPath, normalizeOutputDirectory, projectMarkerPath, WORKSPACE_DIRNAME, WORKSPACE_INSTALLATION_ENTRIES, workspaceDirectory, workspacePath, withOutputDirectory } from "./layout.js";
+import { atomicWrite, ensureIgnoredEntries } from "./workspace-io.js";
 import { assertNoSymbolicLinks, ensureManagedWorkspace } from "./managed-documents.js";
 import { type LinkSkillsOutput, linkSkills, type SkillsTarget, syncSkills } from "./skills.js";
 import { assertWorkspaceRepository, configureWorkspaceGit, prepareWorkspaceGit } from "./workspace-git.js";
 
-export { projectMarkerPath };
-
-export const PROJECT_FORMAT_VERSION = 6;
+export { projectMarkerPath, PROJECT_FORMAT_VERSION };
 
 interface ProjectMarker {
   format_version: number;
   initialized_at: string;
+  output_dir: string;
 }
 
 export interface InitializeProjectInput {
   agents?: SkillsTarget[];
   packagedSkillsRoot?: string;
   gitRemote?: string;
+  outputDir?: string;
 }
 
 export interface InitializeProjectOutput {
   project_root: string;
   workspace: string;
+  internal_directory: string;
   initialized: true;
   created: boolean;
   skills: readonly string[];
@@ -37,136 +38,99 @@ export interface InitializeProjectOutput {
 async function assertProjectDirectory(projectRoot: string): Promise<string> {
   const root = resolve(projectRoot);
   const info = await stat(root).catch(() => undefined);
-  if (!info) {
-    throw new DocNexusError("project_not_found", `project root does not exist: ${root}`);
-  }
-  if (!info.isDirectory()) {
-    throw new DocNexusError("unsupported_format", `project root is not a directory: ${root}`);
-  }
+  if (!info) throw new DocNexusError("project_not_found", `project root does not exist: ${root}`);
+  if (!info.isDirectory()) throw new DocNexusError("unsupported_format", `project root is not a directory: ${root}`);
   return root;
 }
 
-async function readMarker(projectRoot: string): Promise<ProjectMarker | undefined> {
-  const content = await readFile(projectMarkerPath(projectRoot), "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
-      return undefined;
-    }
+async function readMarker(root: string): Promise<ProjectMarker | undefined> {
+  await assertNoSymbolicLinks(root, join(INTERNAL_DIRNAME, "project.json"));
+  const content = await readFile(projectMarkerPath(root), "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined;
     throw error;
   });
   if (content === undefined) {
+    if (await stat(join(root, WORKSPACE_DIRNAME, "project.json")).catch(() => undefined)) {
+      throw new DocNexusError("unsupported_format", "Legacy DocNexus workspaces are unsupported; reinstall this release under .docnexus with npm lifecycle scripts enabled to delete legacy data. No migration is provided.");
+    }
     return undefined;
   }
   const marker = JSON.parse(content) as Partial<ProjectMarker>;
-  if (marker.format_version !== PROJECT_FORMAT_VERSION || typeof marker.initialized_at !== "string") {
-    throw new DocNexusError("unsupported_format",
-      `unsupported DocNexus project format at ${projectMarkerPath(projectRoot)}; run "docnexus reset --force" and then "docnexus init"`
-    );
+  if (marker.format_version !== PROJECT_FORMAT_VERSION || typeof marker.initialized_at !== "string" || typeof marker.output_dir !== "string") {
+    throw new DocNexusError("unsupported_format", `unsupported DocNexus project format at ${projectMarkerPath(root)}; use a fresh project`);
   }
+  normalizeOutputDirectory(root, marker.output_dir);
   return marker as ProjectMarker;
 }
 
 export async function requireInitializedProject(projectRoot: string): Promise<string> {
   return withProjectLock(projectRoot, async () => {
     const root = await assertProjectDirectory(projectRoot);
-    await assertNoSymbolicLinks(root, WORKSPACE_DIRNAME);
     if (!(await readMarker(root))) {
       throw new DocNexusError("project_not_initialized", `DocNexus project is not initialized: ${root}. Run "docnexus init" in that project first.`);
     }
+    await assertNoSymbolicLinks(root, workspaceDirectory(root));
     return root;
   });
 }
 
-/**
- * Creates the `docnexus/` workspace (skills, drafts, library, records) and optionally links the skills
- * into agent directories. Git setup runs only when an explicit remote is supplied.
- */
-export async function initializeProject(
-  projectRoot: string,
-  input: InitializeProjectInput = {}
-): Promise<InitializeProjectOutput> {
+/** Internal package assets and local state stay separate from the configurable knowledge output. */
+export async function initializeProject(projectRoot: string, input: InitializeProjectInput = {}): Promise<InitializeProjectOutput> {
   return withProjectLock(projectRoot, async () => {
     const root = await assertProjectDirectory(projectRoot);
-    await assertNoSymbolicLinks(root, WORKSPACE_DIRNAME);
     const marker = await readMarker(root);
-    const gitPlan = input.gitRemote === undefined ? undefined : await prepareWorkspaceGit(root, input.gitRemote);
-    if (!marker) {
-      const entries: string[] = await readdir(workspacePath(root)).catch(() => []);
-      if (entries.includes(".git")) await assertWorkspaceRepository(root);
-      const nonGitEntries = entries.filter(entry => entry !== ".git");
-      const gitOnly = entries.includes(".git") && nonGitEntries.every(entry => entry === ".gitignore");
-      if (entries.length > 0 && !gitOnly && !(await isInstallationOnly(root, nonGitEntries))) {
-        throw new DocNexusError("unsupported_format",
-          `${workspacePath(root)} already exists and is not a DocNexus workspace; move it before running "docnexus init"`
-        );
+    const outputDir = normalizeOutputDirectory(root, input.outputDir ?? marker?.output_dir ?? ".");
+    if (marker && outputDir !== marker.output_dir) {
+      throw new DocNexusError("invalid_params", "--output-dir cannot change an initialized workspace; reset it explicitly or use a fresh project");
+    }
+    return withOutputDirectory(root, outputDir, async () => {
+      await assertNoSymbolicLinks(root, workspaceDirectory(root));
+      const gitPlan = input.gitRemote === undefined ? undefined : await prepareWorkspaceGit(root, input.gitRemote);
+      if (!marker) {
+        const internalEntries = await readdir(internalPath(root)).catch(() => []);
+        if (internalEntries.length && !(await isInstallationOnly(root, internalEntries))) {
+          throw new DocNexusError("unsupported_format", `${internalPath(root)} already exists and is not a DocNexus installation`);
+        }
+        const entries: string[] = await readdir(workspacePath(root)).catch(() => []);
+        if (entries.includes(".git")) await assertWorkspaceRepository(root);
+        const gitOnly = entries.includes(".git") && entries.every(entry => [".git", ".gitignore"].includes(entry));
+        if (entries.length && !gitOnly) {
+          throw new DocNexusError("unsupported_format", `${workspacePath(root)} already exists and is not a DocNexus workspace; choose an output parent with an empty docnexus/ directory`);
+        }
+        await atomicWrite(projectMarkerPath(root), `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString(), output_dir: outputDir }, null, 2)}\n`);
       }
       await mkdir(workspacePath(root), { recursive: true });
       await mkdir(draftsPath(root), { recursive: true });
       await mkdir(libraryPath(root), { recursive: true });
       await ensureManagedWorkspace(root);
-      await writeFile(workspaceReadmePath(root), WORKSPACE_README);
-    } else {
-      // A clone already carries all memory; only empty directories may need recreating.
-      await mkdir(draftsPath(root), { recursive: true });
-      await ensureManagedWorkspace(root);
-    }
-    await ensureIgnoredEntries(root, ["node_modules/", "store/", ".runtime/"]);
-    await writeConceptIndex(root);
-
-    const skills = await syncSkills(root, input.packagedSkillsRoot);
-    const links: LinkSkillsOutput[] = [];
-    for (const agent of input.agents ?? []) {
-      links.push(await linkSkills(root, agent));
-    }
-
-    if (!marker) {
-      await writeFile(
-        projectMarkerPath(root),
-        `${JSON.stringify({ format_version: PROJECT_FORMAT_VERSION, initialized_at: new Date().toISOString() }, null, 2)}\n`,
-        { flag: "wx" }
-      );
-    }
-    const git = gitPlan ? await configureWorkspaceGit(gitPlan) : undefined;
-    return { project_root: root, workspace: workspacePath(root), initialized: true, created: !marker, skills: skills.synced, links,
-      ...(git ? { git } : {}) };
+      await writeFile(join(workspacePath(root), "README.md"), WORKSPACE_README);
+      await ensureIgnoredEntries(root, ["node_modules/", "store/", ".runtime/", "drafts/"]);
+      await writeConceptIndex(root);
+      const skills = await syncSkills(root, input.packagedSkillsRoot);
+      const links: LinkSkillsOutput[] = [];
+      for (const agent of input.agents ?? []) links.push(await linkSkills(root, agent));
+      const git = gitPlan ? await configureWorkspaceGit(gitPlan) : undefined;
+      return { project_root: root, workspace: workspacePath(root), internal_directory: internalPath(root), initialized: true, created: !marker, skills: skills.synced, links, ...(git ? { git } : {}) };
+    });
   });
 }
 
-async function isInstallationOnly(projectRoot: string, entries: string[]): Promise<boolean> {
+async function isInstallationOnly(root: string, entries: string[]): Promise<boolean> {
   if (entries.some(entry => !WORKSPACE_INSTALLATION_ENTRIES.includes(entry) && entry !== ".gitignore")) return false;
   try {
-    const manifest = JSON.parse(await readFile(resolve(workspacePath(projectRoot), "package.json"), "utf8"));
+    const manifest = JSON.parse(await readFile(join(internalPath(root), "package.json"), "utf8"));
     const dependency = manifest?.dependencies?.["@rowansenne/docnexus"] ?? manifest?.devDependencies?.["@rowansenne/docnexus"];
     return typeof dependency === "string" && dependency.trim().length > 0;
   } catch { return false; }
 }
 
-function workspaceReadmePath(projectRoot: string): string {
-  return resolve(workspacePath(projectRoot), "README.md");
-}
+const WORKSPACE_README = `# DocNexus knowledge workspace
 
-const WORKSPACE_README = `# ${WORKSPACE_DIRNAME}/
+The knowledge workspace is always <output_dir>/docnexus/; output_dir defaults to the project root. This workspace contains library/ (current Markdown), records/ (sources, metadata and timelines), impacts/ (related-page review records), CONCEPTS.md and concepts/ (generated readable navigation). Commit and back up these files together with .docnexus/project.json at the project root.
 
-DocNexus project workspace. Everything DocNexus owns for this project lives here.
+The project's .docnexus/ directory holds its npm installation, skills/, schemas/, drafts/, store/ and .runtime/. Install with npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus. Run ./.docnexus/node_modules/.bin/docnexus from the project root; use --project-root when working elsewhere. After cloning, run npm ci --prefix ./.docnexus and init --agent codex (or claude/all) to restore skills and schema. Retrieval indexes are rebuilt by recall or index sync.
 
-| Path | Purpose |
-| --- | --- |
-| \`package.json\`, \`package-lock.json\` | Isolated DocNexus npm manifest and lockfile. |
-| \`node_modules/\` | Reinstallable npm runtime, ignored by Git. |
-| \`skills/\` | Local packaged skill copies and version stamp, ignored by Git. Start from \`skills/docnexus/SKILL.md\`. |
-| \`drafts/\` | Extraction drafts; \`manifest.json\` marks a sealed draft. |
-| \`library/\` | Author-owned Markdown and fact references with generated read-only fact blocks. Adopt authored edits with \`docnexus document sync\`. |
-| \`records/\` | Per-document source, metadata, timeline, and \`record.json\`; the text source of truth. |
-| \`CONCEPTS.md\` | Generated short category map that agents load while working; never edit. |
-| \`concepts/\` | Generated per-category concept files (documents, concepts, aliases, relations) that the map routes to. |
-| \`schemas/\` | Generated metadata JSON schema, ignored by Git. |
-| \`store/\` | Rebuildable PostgreSQL/PGLite retrieval projections and optional local model overrides. |
-| \`.runtime/\` | Pending text transaction recovery journal and optional local usage records; do not delete during recovery. |
+Use status to inspect configured paths. Edit library Markdown and adopt edits with document sync. Never edit generated fact blocks or navigation. Keep source records intact. CLI writes use a project lock and durable recovery; do not Git pull, switch branches or edit managed files during writes or pending recovery.
 
-Commit knowledge, sources, metadata, timelines, impact records, workspace configuration and npm manifests/lockfiles. Git ignores \`node_modules/\`, \`store/\`, \`.runtime/\`, the six official skill copies, their version stamp and \`schemas/metadata.schema.json\`. Custom skills with other names remain trackable; keep project customizations outside official copies, which upgrades replace. From the project root, restore the locked runtime with \`npm ci --prefix ./docnexus\`, then run \`./docnexus/node_modules/.bin/docnexus init --agent codex\` (or \`claude\` / \`all\`) to recreate skills, schema and agent links. Separate knowledge repositories also need \`--git-remote <url>\` to restore the local branch guard. Existing tracked copies require explicit \`git rm --cached\`; initialization and skills sync never change the Git index. CLI access takes the local project lock and recovers pending text transactions first.
-Run \`./docnexus/node_modules/.bin/docnexus index sync\` after a Git pull; default hybrid recall also syncs automatically. Avoid Git changes and external edits during writes or pending recovery.
-Entity aliases and optional facts track identity, provenance and effective validity. Run \`docnexus facts list --include-inactive\` to inspect fact history.
-Define a fact only in its owner's metadata; reference it on a standalone \`{{fact:fact_id}}\` line. The CLI renders attributed current values and updates dependent pages. Use \`document get --include template,metadata\` for the editable structure and \`document render\` to refresh all views; there is no background timer.
-The model running skills chooses project-defined \`metadata.category\` names and \`category_reason\` from project context and existing documents. Use \`document classify --id <id> --category <name> --reason <basis>\` for category-only adjustments. \`document query\` derives current Markdown, used-category counts and revision from text without another stored document source.
-
-Run \`./docnexus/node_modules/.bin/docnexus status\` from the project root for an overview. Legacy root installations may use \`./node_modules/.bin/docnexus\`. Optional \`init --git-remote <url>\` configures a separate workspace repository pinned to one local branch (new repositories use \`main\`); branch mismatch, detached HEAD or extra local branches block DocNexus operations. Default workspaces do not require Git; configured workspaces require it to check the pin. No command automatically synchronizes a remote. Reset removes knowledge and integration but preserves the npm installation and any \`.git\` metadata/history and branch pin.
+Optional init --git-remote configures this knowledge directory as a separate repository pinned to one local branch. No command synchronizes remotes automatically. Keep .docnexus/project.json and npm manifests separately if using a knowledge-only repository. Reset deletes the knowledge output and local state but preserves the .docnexus npm installation and the knowledge repository's .git metadata.
 `;

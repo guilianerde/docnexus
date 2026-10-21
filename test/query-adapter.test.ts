@@ -12,7 +12,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 
 it.each([true, false])("resolves a workspace CLI when available (%s) and retains legacy root fallback", async nested => {
   const root = await mkdtemp(join(tmpdir(), "docnexus-query-adapter-")); roots.push(root);
-  for (const [directory, installation] of [[root, "legacy"], ...(nested ? [[join(root, "docnexus"), "workspace"]] : [])]) {
+  for (const [directory, installation] of [[root, "legacy"], ...(nested ? [[join(root, ".docnexus"), "workspace"]] : [])]) {
     const cliDirectory = join(directory, "node_modules/@rowansenne/docnexus/dist/src");
     await mkdir(cliDirectory, { recursive: true });
     await writeFile(join(cliDirectory, "cli.js"), `process.stdout.write(JSON.stringify({ installation: ${JSON.stringify(installation)}, args: process.argv.slice(2) }));`);

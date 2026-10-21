@@ -26,7 +26,7 @@ describe("packaged skills", () => {
     for (const name of SKILL_NAMES) {
       const content = await readSkill(name);
       expect(content.startsWith(`---\nname: ${name}\ndescription: `)).toBe(true);
-      expect(content).not.toContain(".docnexus");
+      expect(content).toContain(".docnexus");
     }
   });
 
@@ -74,7 +74,7 @@ describe("skills sync and link", () => {
   it("installs capture resolution and keeps workflow reference links inside the portable skill bundle", async () => {
     const root = await makeRoot();
     await initializeProject(root);
-    const installed = join(root, "docnexus", "skills");
+    const installed = join(root, ".docnexus", "skills");
     const reference = "docnexus-extract/references/capture-resolution.md";
     expect(await readFile(join(installed, reference), "utf8")).toBe(await readFile(join(process.cwd(), "skills", reference), "utf8"));
     for (const name of ["docnexus", "docnexus-extract", "docnexus-ingest"]) {
@@ -101,7 +101,7 @@ describe("skills sync and link", () => {
     expect(result.context_file).toBe("AGENTS.md");
     await expect(readFile(join(root, "AGENTS.md"), "utf8")).resolves.toContain("docnexus/CONCEPTS.md");
     expect((await lstat(join(root, ".agents", "skills", "docnexus"))).isSymbolicLink()).toBe(true);
-    expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(join("..", "..", "docnexus", "skills", "docnexus"));
+    expect(await readlink(join(root, ".agents", "skills", "docnexus"))).toBe(join("..", "..", ".docnexus", "skills", "docnexus"));
     await expect(readFile(join(root, ".agents", "skills", "docnexus-ingest", "SKILL.md"), "utf8")).resolves.toContain("docnexus-ingest");
     const state = await inspectSkills(root);
     expect(state).toMatchObject({ installed: [...SKILL_NAMES], missing: [] });
@@ -117,12 +117,12 @@ describe("skills sync and link", () => {
     await expect(inspectSkills(root)).resolves.toMatchObject({ version: packageVersion(), outdated: false });
     await expect(ensureSkillsCurrent(root)).resolves.toBeUndefined();
 
-    await writeFile(join(root, "docnexus", "skills", ".docnexus-skills.json"), JSON.stringify({ version: "0.0.1" }));
-    await writeFile(join(root, "docnexus", "skills", "docnexus", "SKILL.md"), "stale");
+    await writeFile(join(root, ".docnexus", "skills", ".docnexus-skills.json"), JSON.stringify({ version: "0.0.1" }));
+    await writeFile(join(root, ".docnexus", "skills", "docnexus", "SKILL.md"), "stale");
     await expect(inspectSkills(root)).resolves.toMatchObject({ version: "0.0.1", outdated: true });
 
     await expect(ensureSkillsCurrent(root)).resolves.toMatchObject({ version: packageVersion() });
-    await expect(readFile(join(root, "docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
+    await expect(readFile(join(root, ".docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
   });
 
   it("refuses to replace a real directory and requires synced skills", async () => {
@@ -133,7 +133,7 @@ describe("skills sync and link", () => {
 
     await expect(linkSkills(root, "claude")).rejects.toThrow("is not a DocNexus skill link");
 
-    await rm(join(root, "docnexus", "skills", "docnexus-maintain"), { recursive: true });
+    await rm(join(root, ".docnexus", "skills", "docnexus-maintain"), { recursive: true });
     await expect(linkSkills(root, "codex")).rejects.toThrow("docnexus skills sync");
     expect((await inspectSkills(root)).missing).toEqual(["docnexus-maintain"]);
     await syncSkills(root);

@@ -28,7 +28,7 @@ node scripts/eval-agent.mjs call --run <run_root> --task update -- draft preview
 
 观测器实际执行构建后的 CLI，固定到该 run 的项目目录，删除远程数据库配置并使用默认离线模型；禁止命令覆盖项目根。它记录参数、起止时间、退出码、stdout/stderr 和调用后的文档状态到 `events.jsonl`。失败调用也保留；读取后置状态失败不会抹掉已经发生的调用。
 
-`--` 后直接写 `status`、`search`、`document get` 等子命令及参数，不要再加 `docnexus` 或 `./docnexus/node_modules/.bin/docnexus`。观测器已经选定可执行文件。
+`--` 后直接写 `status`、`search`、`document get` 等子命令及参数，不要再加 `docnexus` 或 `./.docnexus/node_modules/.bin/docnexus`。观测器已经选定可执行文件。
 
 智能体按 `prompt.txt` 写出实际回答 `answers.json`。每题包含 `text`、实际阅读的 `citations[]` 和 `status`（supported 或 insufficient_evidence）。写入题另附 `reviewed_previews[]`（draft_id、sealed_version），只声明实际审阅的版本；impact 题另附 skill 定义的 `impact_check`（scope、limitations、pages）。源问题、观察调用和模型回答均保留供审阅。
 

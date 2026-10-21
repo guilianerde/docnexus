@@ -37,7 +37,7 @@ it.each(["unversioned", "old", "partial"])("diagnoses and rebuilds a %s projecti
   expect((await syncRetrievalIndex(root, {}, new LocalHashEmbedder())).processed_documents).toBe(1);
   expect(await inspectRetrievalIndex(root)).toMatchObject({ in_sync: true, schema_status: "current", expected_schema_version: PROJECTION_SCHEMA_VERSION });
   expect(await Promise.all(files.map(file => readFile(join(root, file), "utf8")))).toEqual(contents);
-  expect(await readFile(join(root, "docnexus/skills/.docnexus-skills.json"), "utf8")).toBeTruthy();
+  expect(await readFile(join(root, ".docnexus/skills/.docnexus-skills.json"), "utf8")).toBeTruthy();
   expect(draft.draft_id).toBeTruthy();
   await expect((await import("node:fs/promises")).stat(join(root, draft.draft_directory))).resolves.toBeDefined();
 });

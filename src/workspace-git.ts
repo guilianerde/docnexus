@@ -3,7 +3,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { DocNexusError } from "./errors.js";
-import { workspacePath } from "./layout.js";
+import { workspacePath, workspaceDirectory } from "./layout.js";
 import { assertNoSymbolicLinks, atomicWrite, readIfExists } from "./workspace-io.js";
 
 const execute = promisify(execFile);
@@ -33,15 +33,15 @@ async function git(root: string, args: string[], allow?: "no_repository" | "deta
 }
 
 export async function assertWorkspaceRepository(root: string): Promise<void> {
-  await assertNoSymbolicLinks(root, join("docnexus", ".git"));
+  await assertNoSymbolicLinks(root, join(workspaceDirectory(root), ".git"));
   const workspace = workspacePath(root);
   const top = await git(workspace, ["rev-parse", "--show-toplevel"]);
   if (!top || await realpath(top) !== await realpath(workspace)) {
-    throw new DocNexusError("git_operation_failed", "docnexus/.git must identify the docnexus workspace itself.");
+    throw new DocNexusError("git_operation_failed", "The knowledge .git must identify the configured workspace itself.");
   }
 }
 
-const branchPolicyFile = join("docnexus", ".git", "docnexus-branch.json");
+const branchPolicyFile = (root: string) => join(workspaceDirectory(root), ".git", "docnexus-branch.json");
 
 async function currentBranch(root: string): Promise<string | undefined> {
   const ref = await git(workspacePath(root), ["symbolic-ref", "--quiet", "HEAD"], "detached");
@@ -65,14 +65,14 @@ export async function assertWorkspaceBranch(root: string): Promise<void> {
     throw error;
   });
   if (!metadata?.isDirectory()) return;
-  await assertNoSymbolicLinks(root, branchPolicyFile);
-  const text = await readIfExists(join(root, branchPolicyFile));
+  await assertNoSymbolicLinks(root, branchPolicyFile(root));
+  const text = await readIfExists(join(root, branchPolicyFile(root)));
   if (text === undefined) return;
   let policy: { format_version?: number; branch?: string };
   try { policy = JSON.parse(text); }
-  catch { throw new DocNexusError("git_operation_failed", "Invalid local knowledge branch policy; inspect docnexus/.git/docnexus-branch.json before retrying."); }
+  catch { throw new DocNexusError("git_operation_failed", `Invalid local knowledge branch policy; inspect ${branchPolicyFile(root)} before retrying.`); }
   if (policy?.format_version !== 1 || typeof policy.branch !== "string" || !policy.branch || policy.branch !== policy.branch.trim()) {
-    throw new DocNexusError("git_operation_failed", "Invalid local knowledge branch policy; inspect docnexus/.git/docnexus-branch.json before retrying.");
+    throw new DocNexusError("git_operation_failed", `Invalid local knowledge branch policy; inspect ${branchPolicyFile(root)} before retrying.`);
   }
   await assertWorkspaceRepository(root);
   await assertSingleBranch(root, policy.branch);
@@ -84,7 +84,7 @@ export async function prepareWorkspaceGit(root: string, remote: string): Promise
     throw new DocNexusError("invalid_params", "--git-remote requires a nonempty Git remote address without surrounding whitespace, control characters or a leading dash.");
   }
   await git(root, ["--version"]);
-  await assertNoSymbolicLinks(root, join("docnexus", ".git"));
+  await assertNoSymbolicLinks(root, join(workspaceDirectory(root), ".git"));
   const metadata = await lstat(join(workspacePath(root), ".git")).catch(error => {
     if (error.code === "ENOENT") return undefined;
     throw error;
@@ -92,7 +92,7 @@ export async function prepareWorkspaceGit(root: string, remote: string): Promise
   let branch = "main";
   if (metadata) {
     if (!metadata.isDirectory()) throw new DocNexusError("git_operation_failed", "--git-remote requires a standalone .git directory; configure submodules or linked worktrees with Git directly.");
-    await assertNoSymbolicLinks(root, join("docnexus", ".git", "config"));
+    await assertNoSymbolicLinks(root, join(workspaceDirectory(root), ".git", "config"));
     await assertWorkspaceRepository(root);
     const current = await currentBranch(root);
     if (!current) throw new DocNexusError("git_branch_mismatch", "Return to a named knowledge branch before enabling single-branch use.");
@@ -101,9 +101,9 @@ export async function prepareWorkspaceGit(root: string, remote: string): Promise
   }
   const host = await git(root, ["rev-parse", "--show-toplevel"], "no_repository");
   if (host) {
-    const path = relative(await realpath(host), join(await realpath(root), "docnexus")).split(sep).join("/");
+    const path = relative(await realpath(host), join(await realpath(root), workspaceDirectory(root))).split(sep).join("/");
     if (await git(host, ["ls-files", "--", `:(top,literal)${path}`])) {
-      throw new DocNexusError("git_operation_failed", "The host repository already tracks docnexus files. Review and remove them from its index (keeping local files) before enabling a separate knowledge repository; no index entries were changed.");
+      throw new DocNexusError("git_operation_failed", "The host repository already tracks knowledge output files. Review and remove them from its index (keeping local files) before enabling a separate knowledge repository; no index entries were changed.");
     }
     await assertNoSymbolicLinks(root, ".gitignore");
   }
@@ -122,11 +122,11 @@ export async function configureWorkspaceGit(plan: WorkspaceGitPlan) {
     const path = join(plan.root, ".gitignore");
     const current = await readIfExists(path) ?? "";
     // Keep this rule last so an earlier negation cannot expose the nested repository.
-    if (current.split(/\r?\n/).filter(line => line.length).at(-1) !== "/docnexus/") {
-      await atomicWrite(path, `${current}${current && !current.endsWith("\n") ? "\n" : ""}/docnexus/\n`);
+    if (current.split(/\r?\n/).filter(line => line.length).at(-1) !== `/${workspaceDirectory(plan.root)}/`) {
+      await atomicWrite(path, `${current}${current && !current.endsWith("\n") ? "\n" : ""}/${workspaceDirectory(plan.root)}/\n`);
     }
   }
-  await assertNoSymbolicLinks(plan.root, branchPolicyFile);
-  await atomicWrite(join(plan.root, branchPolicyFile), JSON.stringify({ format_version: 1, branch: plan.branch }) + "\n");
+  await assertNoSymbolicLinks(plan.root, branchPolicyFile(plan.root));
+  await atomicWrite(join(plan.root, branchPolicyFile(plan.root)), JSON.stringify({ format_version: 1, branch: plan.branch }) + "\n");
   return { repository: workspace, remote: plan.remote, branch: plan.branch };
 }

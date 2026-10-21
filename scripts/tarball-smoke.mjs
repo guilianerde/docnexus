@@ -12,7 +12,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const smokeRoot = await realpath(await mkdtemp(join(tmpdir(), "docnexus-tarball-smoke-")));
 const packDirectory = join(smokeRoot, "pack");
 const projectDirectory = join(smokeRoot, "project");
-const installationDirectory = join(projectDirectory, "docnexus");
+const installationDirectory = join(projectDirectory, ".docnexus");
 const npmEnvironment = { ...process.env };
 const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
 const sourceManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
@@ -45,16 +45,23 @@ try {
     integrity: `sha512-${createHash("sha512").update(await readFile(tarballPath)).digest("base64")}`,
     dependencies: sourceManifest.dependencies,
     bin: sourceManifest.bin,
-    engines: sourceManifest.engines
+    engines: sourceManifest.engines,
+    hasInstallScript: true
   };
   await writeFile(join(installationDirectory, "package.json"), JSON.stringify({
     name: lock.name, version: lock.version, private: true,
     dependencies: { [sourceManifest.name]: dependency }, overrides: sourceManifest.overrides
   }));
   await writeFile(join(installationDirectory, "package-lock.json"), JSON.stringify(lock));
+  const legacyWorkspace = join(projectDirectory, "docnexus");
+  await mkdir(join(legacyWorkspace, "library"), { recursive: true });
+  await writeFile(join(legacyWorkspace, "project.json"), JSON.stringify({ format_version: 6, initialized_at: "2026-01-01T00:00:00Z" }));
+  await writeFile(join(legacyWorkspace, "library", "legacy.md"), "Remove this old-version knowledge during installation");
   await run(npmExecutable, ["ci", "--prefix", installationDirectory, "--offline", "--omit=dev", "--no-audit", "--no-fund"], {
     cwd: projectDirectory, env: npmEnvironment
   });
+
+  assert(!await stat(legacyWorkspace).then(() => true).catch(() => false), "npm installation did not remove legacy DocNexus data");
 
   const packageDirectory = join(installationDirectory, "node_modules", ...packageNameParts);
   const cliPath = join(installationDirectory, "node_modules", ".bin", process.platform === "win32" ? "docnexus.cmd" : "docnexus");
@@ -85,7 +92,7 @@ try {
   assert(!await stat(join(installationDirectory, "docnexus")).then(() => true).catch(() => false), "init created a nested docnexus workspace");
   const initializedExplicitly = await runJson(cliPath, ["--project-root", projectDirectory, "init"], smokeRoot, cliEnvironment);
   assert(initializedExplicitly.created === false && initializedExplicitly.workspace === initialized.workspace, "explicit project root did not reuse the same workspace");
-  await stat(join(projectDirectory, "docnexus", "skills", "docnexus", "SKILL.md"));
+  await stat(join(projectDirectory, ".docnexus", "skills", "docnexus", "SKILL.md"));
   await stat(join(projectDirectory, ".agents", "skills", "docnexus", "SKILL.md"));
   const agentsInstructions = await readFile(join(projectDirectory, "AGENTS.md"), "utf8");
   assert(agentsInstructions.includes("docnexus/CONCEPTS.md"), "init did not add the DocNexus block to AGENTS.md");
@@ -149,7 +156,7 @@ try {
   let catalog = await runJson(cliPath, ["document", "query", "--all"], projectDirectory, cliEnvironment);
   assert(catalog.schema_version === 1 && catalog.pagination === null && catalog.total === 1, "full document query did not return a complete snapshot");
   assert(catalog.documents[0].category === "codeReview" && catalog.documents[0].category_reason === "Caller-selected release review" && catalog.documents[0].document.includes("local project memory"), "document query lost caller classification or generated content");
-  const queryScript = join(projectDirectory, "docnexus/skills/docnexus-library/scripts/query-documents.mjs");
+  const queryScript = join(projectDirectory, ".docnexus/skills/docnexus-library/scripts/query-documents.mjs");
   const page = await runJson(process.execPath, [queryScript, "--project-root", projectDirectory, "--page", "1", "--page-size", "1", "--category", "codeReview", "--revision", catalog.revision], smokeRoot, cliEnvironment);
   assert(page.documents[0].id === added.id && page.pagination.page_size === 1 && page.revision === catalog.revision, "orchestration query script did not delegate the stable paginated query");
   const classified = await runJson(cliPath, ["document", "classify", "--id", added.id, "--category", "发布与分发", "--reason", "结合项目 npm 分发流程与安装包验证文档统一归类", "--revision", catalog.revision], projectDirectory, cliEnvironment);
@@ -259,17 +266,20 @@ try {
   assert(historical.facts?.length === 1 && historical.facts[0].id === "fact_tarball_old", "effective-time lookup did not preserve earlier knowledge");
   const drafts = await runJson(cliPath, ["draft", "list", "--status", "ingested"], projectDirectory, cliEnvironment);
   assert(drafts.drafts?.[0]?.document_id === added.id, "transaction did not persist its draft receipt");
-  await stat(join(projectDirectory, "docnexus/store/brain.pglite"));
+  await stat(join(projectDirectory, ".docnexus/store/brain.pglite"));
 
   const cloneDirectory = join(smokeRoot, "clone");
   await mkdir(cloneDirectory);
   await cp(join(projectDirectory, "docnexus"), join(cloneDirectory, "docnexus"), {
     recursive: true, filter: source => source !== join(installationDirectory, "node_modules")
   });
-  await rm(join(cloneDirectory, "docnexus/store"), { recursive: true, force: true });
+  await cp(installationDirectory, join(cloneDirectory, ".docnexus"), {
+    recursive: true, filter: source => source !== join(installationDirectory, "node_modules")
+  });
+  await rm(join(cloneDirectory, ".docnexus/store"), { recursive: true, force: true });
   const sourceOnly = await runJson(cliPath, ["document", "query", "--all"], cloneDirectory, cliEnvironment);
   assert(sourceOnly.documents[0].id === added.id && sourceOnly.revision === catalog.revision, "document query depended on retrieval stores or changed the text snapshot");
-  assert(!await stat(join(cloneDirectory, "docnexus/store")).then(() => true).catch(() => false), "document query recreated derived stores");
+  assert(!await stat(join(cloneDirectory, ".docnexus/store")).then(() => true).catch(() => false), "document query recreated derived stores");
   const recovered = await runJson(cliPath, ["recall", "installed DocNexus tarball", "--limit", "1"], cloneDirectory, cliEnvironment);
   assert(recovered.results?.[0]?.document_ref?.document_id === added.id, "text clone could not rebuild semantic memory");
   await runJson(cliPath, ["document", "delete", "--id", added.id, "--force"], cloneDirectory, cliEnvironment);
@@ -316,7 +326,7 @@ try {
 
   const configured = await runJson(cliPath, ["init", "--git-remote", "https://example.com/team/knowledge.git"], projectDirectory, cliEnvironment);
   assert(configured.git?.branch === "main", "installed Git setup did not pin main");
-  const git = args => run("git", ["-C", installationDirectory, ...args], { cwd: projectDirectory, env: cliEnvironment });
+  const git = args => run("git", ["-C", configured.git.repository, ...args], { cwd: projectDirectory, env: cliEnvironment });
   assert((await git(["remote", "get-url", "origin"])).stdout.trim() === configured.git.remote, "installed setup lost its knowledge origin");
   await git(["symbolic-ref", "HEAD", "refs/heads/other"]);
   let branchRefused = false;
@@ -326,7 +336,7 @@ try {
   await git(["symbolic-ref", "HEAD", "refs/heads/main"]);
   const gitReset = await runJson(cliPath, ["reset", "--force"], projectDirectory, cliEnvironment);
   assert(gitReset.preserved_git && gitReset.preserved_installation, "installed reset did not preserve Git and the npm runtime");
-  await stat(join(installationDirectory, ".git", "docnexus-branch.json"));
+  await stat(join(configured.git.repository, ".git", "docnexus-branch.json"));
   await runJson(cliPath, ["init"], projectDirectory, cliEnvironment);
   assert((await git(["symbolic-ref", "HEAD"])).stdout.trim() === "refs/heads/main", "reinitialization lost the pinned branch");
 

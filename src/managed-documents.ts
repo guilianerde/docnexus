@@ -3,7 +3,7 @@ import { mkdir, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { sha256, stableJson } from "./hash.js";
 import { createDocumentId } from "./ids.js";
-import { libraryPath, recordRelativePath, recordsPath, schemasPath, workspacePath } from "./layout.js";
+import { internalPath, libraryPath, recordRelativePath, recordsPath, schemasPath, workspacePath } from "./layout.js";
 import { assertValidMetadata, metadataSchema } from "./metadata.js";
 import { documentCategoryLabel, type DocNexusMetadata, type ManagedDocument, type StoreStatus, type StoredRecordSummary } from "./types.js";
 import { assertNoSymbolicLinks, atomicWrite, readIfExists } from "./workspace-io.js";
@@ -121,7 +121,7 @@ export async function upsertManagedDocument(
     }
     if (options.ingestion) files.set(options.ingestion.receipt.path, options.ingestion.receipt.content);
     await commitTextTransaction(projectRoot, files, { rollbackDirectories: prior ? [] : [directory] });
-    return { id, file_path: record.file_path, operation, updated_at: record.updated_at, timeline_path: `${recordRelativePath(id)}/timeline.md` };
+    return { id, file_path: record.file_path, operation, updated_at: record.updated_at, timeline_path: `${recordRelativePath(id, projectRoot)}/timeline.md` };
   });
 }
 
@@ -131,7 +131,7 @@ export async function listManagedDocuments(projectRoot: string): Promise<Managed
     for (const record of await listRecordFiles(projectRoot)) {
       const metadata = await readRecordMetadata(projectRoot, record.id);
       if (sha256(stableJson(metadata)) !== record.metadata_hash) throw new DocNexusError("text_integrity_error", `record ${record.id} metadata.json does not match record.json`);
-      documents.push({ ...record, summary: metadata.summary, tags: metadata.tags, sidecar_path: recordRelativePath(record.id) });
+      documents.push({ ...record, summary: metadata.summary, tags: metadata.tags, sidecar_path: recordRelativePath(record.id, projectRoot) });
     }
     return documents.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.file_path.localeCompare(b.file_path));
   });
@@ -174,7 +174,7 @@ export async function getManagedRecord(projectRoot: string, id: string, include:
 
 export async function getManagedStatus(projectRoot: string): Promise<StoreStatus> {
   return withProjectLock(projectRoot, async () => {
-    return { project_root: projectRoot, workspace_path: workspacePath(projectRoot), library_path: libraryPath(projectRoot), initialized: true, document_count: (await listRecordFiles(projectRoot)).length };
+    return { project_root: projectRoot, workspace_path: workspacePath(projectRoot), internal_directory: internalPath(projectRoot), library_path: libraryPath(projectRoot), initialized: true, document_count: (await listRecordFiles(projectRoot)).length };
   });
 }
 

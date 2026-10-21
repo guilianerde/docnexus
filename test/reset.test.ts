@@ -65,7 +65,7 @@ describe("reset", () => {
   it("preserves a workspace npm installation and host manifests so reset can be followed by init", async () => {
     const root = await makeRoot();
     await initializeProject(root, { agents: ["codex"] });
-    const directory = join(root, "docnexus");
+    const directory = join(root, ".docnexus");
     await mkdir(join(directory, "node_modules"));
     const files = new Map([
       [join(root, "package.json"), '{"name":"host"}'],
@@ -82,15 +82,7 @@ describe("reset", () => {
     for (const [path, value] of files) expect(await readFile(path, "utf8")).toBe(value);
     await expect(lstat(join(root, ".agents", "skills", "docnexus"))).rejects.toThrow();
     await expect(initializeProject(root, { agents: ["codex"] })).resolves.toMatchObject({ created: true });
-    expect(await readdir(join(directory, "records"))).toEqual([]);
+    expect(await readdir(join(root, "docnexus", "records"))).toEqual([]);
   });
 
-  it("resets an unsupported project format so it can be initialized again", async () => {
-    const root = await makeRoot();
-    await mkdir(join(root, "docnexus"), { recursive: true });
-    await writeFile(join(root, "docnexus", "project.json"), JSON.stringify({ format_version: 1, initialized_at: "old" }));
-
-    await resetProjectData(root, { force: true });
-    await expect(initializeProject(root)).resolves.toMatchObject({ created: true });
-  });
 });

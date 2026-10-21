@@ -161,7 +161,7 @@ describe("serialized writes and durable text recovery", () => {
     const path = await root();
     const saved = await upsertManagedDocument(path, input);
     const before = await readFile(join(path, "docnexus/library/memory.md"), "utf8");
-    await writeFile(join(path, "docnexus/.runtime/transaction.json"), JSON.stringify({ version: 1, phase: "apply", entries: [{ path: "docnexus/library/memory.md", before, after: "tamper" }, { path: "../escape.md", before: null, after: "escape" }], remove_directories: [], rollback_directories: [] }));
+    await writeFile(join(path, ".docnexus/.runtime/transaction.json"), JSON.stringify({ version: 1, phase: "apply", entries: [{ path: "docnexus/library/memory.md", before, after: "tamper" }, { path: "../escape.md", before: null, after: "escape" }], remove_directories: [], rollback_directories: [] }));
     await expect(getManagedRecord(path, saved.id)).rejects.toThrow("transaction path");
     expect(await readFile(join(path, "docnexus/library/memory.md"), "utf8")).toBe(before);
   });
@@ -170,8 +170,8 @@ describe("serialized writes and durable text recovery", () => {
     const path = await root();
     const other = await root();
     const saved = await upsertManagedDocument(path, input);
-    await rm(join(path, "docnexus/.runtime"), { recursive: true });
-    await symlink(other, join(path, "docnexus/.runtime"), process.platform === "win32" ? "junction" : "dir");
+    await rm(join(path, ".docnexus/.runtime"), { recursive: true });
+    await symlink(other, join(path, ".docnexus/.runtime"), process.platform === "win32" ? "junction" : "dir");
     await expect(getManagedRecord(path, saved.id)).rejects.toThrow("symbolic");
   });
 

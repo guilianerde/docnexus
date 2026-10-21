@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.23.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 0.24.0 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
@@ -23,6 +23,8 @@ DocNexus 0.23.0 采用分层项目记忆：Markdown 当前知识与来源时间�
 
 ## 数据边界
 
+知识路径相对于工作区：`init --output-dir <父目录>` 固定创建 `<父目录>/docnexus/`，省略时为项目根目录下的 `docnexus/`；程序文件固定在项目根目录的 `.docnexus/`。格式 7 不兼容或迁移旧工作区，配置位于 `.docnexus/project.json`。
+
 | 路径 | 内容 | 属性 |
 | --- | --- | --- |
 | `library/<file_path>` | 人工正文、事实 ID 引用及生成的当前事实内容 | 正文与引用为真源；标记内事实为派生 |
@@ -32,11 +34,11 @@ DocNexus 0.23.0 采用分层项目记忆：Markdown 当前知识与来源时间�
 | `records/<id>/record.json` | 稳定身份、时间戳、source/正文模板/metadata/时间线哈希 | 文本真源；正文哈希不包含生成块内容 |
 | `CONCEPTS.md` | 简短分类路由表（≤ 3 KB） | 由 metadata 再生成 |
 | `concepts/<分类>.md` | 按分类的文档、概念、别名与关系；每个文件不超过 32 KB，过大时按实体类型分页 | 由 metadata 再生成 |
-| `drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
-| `skills/`、`schemas/` | 工作流与格式说明 | 官方副本与生成 schema 仅本地，Git 忽略 |
-| `store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |
-| `store/models/` | 可选本地模型覆盖 | 非派生资产，需要另行备份 |
-| `.runtime/transaction.json` | 未完成文本事务的前后镜像、恢复方向及入库收据 | 临时恢复状态，Git 忽略，不能随意删除 |
+| `.docnexus/drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
+| `.docnexus/skills/`、`.docnexus/schemas/` | 工作流与格式说明 | 官方副本与生成 schema 仅本地，Git 忽略 |
+| `.docnexus/store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |
+| `.docnexus/store/models/` | 可选本地模型覆盖 | 非派生资产，需要另行备份 |
+| `.docnexus/.runtime/transaction.json` | 未完成文本事务的前后镜像、恢复方向及入库收据 | 临时恢复状态，Git 忽略，不能随意删除 |
 
 默认模型 `BAAI/bge-small-zh-v1.5` 的 q8 ONNX 文件随 npm 包发布；覆盖完整时优先使用项目模型。运行时禁用远程模型下载。实体与关系数组可以为空，实体为空的文档仍可进行关键词与语义召回。
 
@@ -68,7 +70,7 @@ PGLite 在首次索引操作时创建，纯文本 init、search 和 document que
 
 `RealEmbedder.embed` 在推理前再次计数，超出模型上限就报错，避免 pipeline 自动截掉尾部。普通查询支持模型硬上限，而不是索引片段的较小预算；过长查询需要用户或智能体缩短。开发用 hash/custom embedder 未提供 `tokenBudget()` 时，使用 1000 字符硬限制，不加载模型；自定义模型实现可提供该接口使用自己的实际 tokenizer。
 
-数据库 `index_state.chunking_signature` 记录策略版本与参数，缺失或变化会使现有投影过期。embedding 签名另包含模型 token 上限；同步成功后才提交新签名，失败会保留旧签名以便重试。升级后的首次 `recall` / `index sync` 从格式 6 文本补建新引擎投影，保持来源、事实定义和时间线不变。重切块后仍复用文本和模型签名完全一致的片段；模型变化会重新计算全部向量，但仍不重建 HNSW 对象。
+数据库 `index_state.chunking_signature` 记录策略版本与参数，缺失或变化会使现有投影过期。embedding 签名另包含模型 token 上限；同步成功后才提交新签名，失败会保留旧签名以便重试。升级后的首次 `recall` / `index sync` 从格式 7 文本补建新引擎投影，保持来源、事实定义和时间线不变。重切块后仍复用文本和模型签名完全一致的片段；模型变化会重新计算全部向量，但仍不重建 HNSW 对象。
 
 数据库内部投影现在共用事务；文本与数据库仍不是跨存储原子事务，采用文本先落盘、下次召回前协调的方式。数据库不可用时，文本读取、可视化查询和写入仍可运行；删除的派生清理失败会报告待同步，下次同步清除残留后才允许召回。文本的持久化恢复日志独立于 `store/`，删除或重建检索数据库不会丢失恢复意图。
 
@@ -134,7 +136,7 @@ CLI 在现有 Markdown 内生成 `<!-- docnexus:fact fact_id -->` 与 `<!-- /doc
 
 带事实引用的草稿在 seal 时生成 `preview.md`，封存其哈希。入库验证预览未被改动，并要求它与当前有效事实生成的结果一致；引用值或状态变化时需重新 seal 和审阅。未解析引用、被引用事实的删除会被拒绝。
 
-草稿 manifest 格式 3 保存 `base_record_hash`。`document get` 和 `document query` 返回各文档的 `record_version`；更新草稿封存必须通过 `--base-version <record_version>` 提交提炼读取时的版本，新路径可用 `--base-version new`。封存和入库均在项目锁内复核完整 record 的规范哈希，覆盖读取、提炼、封存到入库的变更窗口。冲突后必须复读并合并正文、metadata 和历史，再使用该次读取的版本；仅刷新版本不构成合并。目标的正文、来源、metadata/分类、时间线或身份变化，以及原先空路径被占用，都会拒绝旧草稿；`--replace` 不绕过检查。无关文档更新和只刷新生成块不会改变目标版本。旧格式 1/2 的待入库草稿需复读合并后重新封存，已存文档和工作区格式 6 不变。
+草稿 manifest 格式 3 保存 `base_record_hash`。`document get` 和 `document query` 返回各文档的 `record_version`；更新草稿封存必须通过 `--base-version <record_version>` 提交提炼读取时的版本，新路径可用 `--base-version new`。封存和入库均在项目锁内复核完整 record 的规范哈希，覆盖读取、提炼、封存到入库的变更窗口。冲突后必须复读并合并正文、metadata 和历史，再使用该次读取的版本；仅刷新版本不构成合并。目标的正文、来源、metadata/分类、时间线或身份变化，以及原先空路径被占用，都会拒绝旧草稿；`--replace` 不绕过检查。无关文档更新和只刷新生成块不会改变目标版本。旧格式 1/2 的待入库草稿需复读合并后重新封存，已存文档和工作区格式 7 不变。
 
 这一保证适用于显式事实引用。旧正文中的同义句或手写重复值不能可靠自动识别，需一次性审阅后换为引用。摘要和解释应描述主题与原因，避免再次手工维护可变事实值。示例与操作见 [事实工作流](../../skills/docnexus-extract/references/facts.md)。
 
@@ -178,4 +180,4 @@ Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `no
 
 小型检索基线见 [检索评估](../operations/retrieval-evaluation.md)。
 
-工作区格式仍为 6，可为此前的格式 6 文本工作区补建派生索引；不迁移格式 5 及更早的工作区。旧历史方案文档保持删除。
+工作区格式为 7，程序文件在 `.docnexus/`，知识输出目录通过 `init --output-dir` 指定；不兼容或迁移任何旧格式。旧历史方案文档保持删除。

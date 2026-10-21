@@ -91,7 +91,7 @@ export async function queryDocuments(projectRoot: string, input: DocumentQueryIn
         const category = categoryFor(record.id);
         const view = renderDocument(record.id);
         return {
-          id: record.id, record_version: sha256(stableJson(record)), file_path: record.file_path, library_path: libraryRelativePath(record.file_path),
+          id: record.id, record_version: sha256(stableJson(record)), file_path: record.file_path, library_path: libraryRelativePath(record.file_path, root),
           observed_at: metadata.observed_at ?? null, title: metadata.title, summary: metadata.summary, category, category_label: documentCategoryLabel(category), category_reason: metadata.category_reason ?? null, tags: metadata.tags,
           created_at: record.created_at, updated_at: record.updated_at, document: view.document,
           fact_references: view.references, facts: factsForDocuments(knowledge.facts, [record.id], documents)

@@ -59,11 +59,11 @@ CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表
 用户或调用方 skill 已确定文档类型时，可在封存阶段指定分类，跳过本次写入的模型分类。例如 code-review skill 已准备好三份草稿产物：
 
 ```bash
-./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
+./.docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md \
   --base-version new --category codeReview \
   --category-reason "Produced by the code-review skill"
 # 审阅最终 metadata 和文档；含事实引用时同时审阅 preview_file。
-./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
+./.docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
 | CLI 参数 | Node `sealDraft` 输入 | 含义 |

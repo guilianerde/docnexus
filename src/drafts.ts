@@ -3,7 +3,7 @@ import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256, stableJson } from "./hash.js";
-import { draftsPath, WORKSPACE_DIRNAME } from "./layout.js";
+import { draftsPath, INTERNAL_DIRNAME } from "./layout.js";
 import { listRecordFiles, normalizeManagedFilePath, readAssets } from "./workspace-reader.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { validateMetadata } from "./metadata.js";
@@ -84,7 +84,7 @@ function assertDraftId(draftId: string | undefined): string {
 }
 
 function relativeDraftPath(draftId: string, file?: string): string {
-  const base = `${WORKSPACE_DIRNAME}/drafts/${draftId}`;
+  const base = `${INTERNAL_DIRNAME}/drafts/${draftId}`;
   return file ? `${base}/${file}` : base;
 }
 
@@ -98,7 +98,7 @@ function artifactPaths(draftId: string): Record<ArtifactName, string> {
 
 async function draftDirectory(projectRoot: string, draftId: string): Promise<string> {
   const root = await realpath(projectRoot);
-  await assertNoSymbolicLinks(root, join(WORKSPACE_DIRNAME, "drafts", draftId));
+  await assertNoSymbolicLinks(root, join(INTERNAL_DIRNAME, "drafts", draftId));
   return join(draftsPath(root), draftId);
 }
 

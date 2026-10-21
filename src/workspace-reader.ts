@@ -2,7 +2,7 @@ import { DocNexusError } from "./errors.js";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { sha256, stableJson } from "./hash.js";
-import { libraryPath, recordRelativePath, recordsPath, WORKSPACE_DIRNAME } from "./layout.js";
+import { libraryPath, recordRelativePath, recordsPath, workspaceDirectory } from "./layout.js";
 import { assertValidMetadata } from "./metadata.js";
 import type { DocNexusMetadata } from "./types.js";
 import { assertNoSymbolicLinks, readIfExists } from "./workspace-io.js";
@@ -28,13 +28,13 @@ export function assertDocumentId(id: string): void {
 export async function recordDirectory(projectRoot: string, id: string): Promise<string> {
   assertDocumentId(id);
   const root = await realpath(projectRoot);
-  await assertNoSymbolicLinks(root, recordRelativePath(id));
+  await assertNoSymbolicLinks(root, recordRelativePath(id, projectRoot));
   return join(recordsPath(root), id);
 }
 
 export async function readRecordAsset(projectRoot: string, id: string, name: string): Promise<string> {
   const directory = await recordDirectory(projectRoot, id);
-  await assertNoSymbolicLinks(await realpath(projectRoot), join(recordRelativePath(id), name));
+  await assertNoSymbolicLinks(await realpath(projectRoot), join(recordRelativePath(id, projectRoot), name));
   return readFile(join(directory, name), "utf8");
 }
 
@@ -109,8 +109,8 @@ export async function resolveManagedTarget(projectRoot: string, filePath: string
   const managedRoot = libraryPath(root);
   const absolutePath = resolve(managedRoot, filePath);
   const relativePath = relative(managedRoot, absolutePath);
-  if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new DocNexusError("invalid_params", `file_path must remain inside the ${WORKSPACE_DIRNAME}/library directory`);
-  await assertNoSymbolicLinks(root, join(WORKSPACE_DIRNAME, "library", relativePath));
+  if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new DocNexusError("invalid_params", `file_path must remain inside the ${workspaceDirectory(projectRoot)}/library directory`);
+  await assertNoSymbolicLinks(root, relative(root, absolutePath));
   return { absolutePath, relativePath: relativePath.split(sep).join("/") };
 }
 

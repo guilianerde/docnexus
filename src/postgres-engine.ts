@@ -54,8 +54,8 @@ async function openRetrievalDatabase<T>(root: string, operation: (db: RetrievalD
     db = adapt(sql);
     close = () => sql.end({ timeout: 5 });
   } else {
-    await assertNoSymbolicLinks(root, "docnexus/store");
-    await assertNoSymbolicLinks(root, "docnexus/store/brain.pglite");
+    await assertNoSymbolicLinks(root, ".docnexus/store");
+    await assertNoSymbolicLinks(root, ".docnexus/store/brain.pglite");
     if (!create && !await stat(pglitePath(root)).then(() => true).catch(() => false)) return undefined;
     await mkdir(storePath(root), { recursive: true });
     await ensureIgnoredEntries(root, ["store/", ".runtime/"]);

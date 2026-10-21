@@ -45,8 +45,8 @@ export async function atomicWrite(path: string, content: string): Promise<void> 
 }
 
 export async function ensureIgnoredEntries(root: string, entries: string[]): Promise<void> {
-  await assertNoSymbolicLinks(root, join("docnexus", ".gitignore"));
-  const path = join(root, "docnexus", ".gitignore");
+  await assertNoSymbolicLinks(root, join(".docnexus", ".gitignore"));
+  const path = join(root, ".docnexus", ".gitignore");
   const current = (await readIfExists(path)) ?? "";
   const missing = entries.filter((entry) => !current.split(/\r?\n/).includes(entry));
   if (missing.length) await atomicWrite(path, `${current}${current && !current.endsWith("\n") ? "\n" : ""}${missing.join("\n")}\n`);

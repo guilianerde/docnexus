@@ -7,7 +7,7 @@ import { packageVersion } from "./skills.js";
 import { atomicWrite, assertNoSymbolicLinks, ensureIgnoredEntries, readIfExists } from "./workspace-io.js";
 import { usageMetrics, type UsageMetrics } from "./usage-metrics.js";
 
-const directory = join("docnexus", ".runtime");
+const directory = join(".docnexus", ".runtime");
 const configFile = join(directory, "usage-config.json");
 const logFile = join(directory, "usage.jsonl");
 export const USAGE_MAX_BYTES = 10 * 1024 * 1024;

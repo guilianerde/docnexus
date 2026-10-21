@@ -1,6 +1,6 @@
 {
   "name": "@rowansenne/docnexus",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -22,6 +22,7 @@
     "models",
     "viewer",
     "skills",
+    "scripts/postinstall.mjs",
     "README.md",
     "README.zh-CN.md",
     "CHANGELOG.md",
@@ -39,6 +40,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/src/cli.js', 0o755)\"",
     "prepack": "npm run build",
+    "postinstall": "node scripts/postinstall.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "audit:prod": "npm audit --omit=dev --audit-level=high",

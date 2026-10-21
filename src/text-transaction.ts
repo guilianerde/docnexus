@@ -1,5 +1,6 @@
 import { mkdir, realpath, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { workspaceDirectory } from "./layout.js";
 import { withProjectLock } from "./project-lock.js";
 import { assertNoSymbolicLinks, atomicWrite, ensureIgnoredEntries, readIfExists, syncDirectory } from "./workspace-io.js";
 
@@ -12,14 +13,17 @@ interface Journal {
   remove_indexed_document?: string;
 }
 
-const JOURNAL = "docnexus/.runtime/transaction.json";
+const JOURNAL = ".docnexus/.runtime/transaction.json";
 
 async function safePath(root: string, path: string, directory = false): Promise<string> {
   const absolute = resolve(root, path);
   const normalized = relative(root, absolute).split(sep).join("/");
+  const prefix = `${workspaceDirectory(root)}/`;
+  const knowledge = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : "";
   const allowed = directory
-    ? /^docnexus\/records\/doc_[a-f0-9]{16}$/.test(normalized)
-    : /^docnexus\/(library\/.+\.md|records\/doc_[a-f0-9]{16}\/(source\.md|metadata\.json|timeline\.md|record\.json)|drafts\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json)$/.test(normalized);
+    ? /^records\/doc_[a-f0-9]{16}$/.test(knowledge)
+    : /^(library\/.+\.md|records\/doc_[a-f0-9]{16}\/(source\.md|metadata\.json|timeline\.md|record\.json))$/.test(knowledge)
+      || /^\.docnexus\/drafts\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\/manifest\.json$/.test(normalized);
   if (isAbsolute(path) || normalized !== path || !allowed) throw new Error("invalid text transaction path");
   await assertNoSymbolicLinks(root, path.split("/").join(sep));
   return absolute;
@@ -34,7 +38,7 @@ async function applyJournal(root: string, journal: Journal): Promise<void> {
   if (journal.version !== 1 || !["apply", "rollback"].includes(journal.phase) || !Array.isArray(journal.entries)
     || !Array.isArray(journal.remove_directories) || !Array.isArray(journal.rollback_directories)
     || (journal.remove_indexed_document !== undefined && !/^doc_[a-f0-9]{16}$/.test(journal.remove_indexed_document))) {
-    throw new Error("invalid text transaction journal; inspect docnexus/.runtime/transaction.json");
+    throw new Error("invalid text transaction journal; inspect .docnexus/.runtime/transaction.json");
   }
   // Validate the whole intent before touching any destination.
   for (const entry of journal.entries) {

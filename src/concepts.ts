@@ -2,7 +2,7 @@ import { lstat, readdir, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withProjectLock } from "./project-lock.js";
 import { atomicWrite, readIfExists } from "./workspace-io.js";
-import { conceptIndexPath, conceptShardsPath, libraryRelativePath, WORKSPACE_DIRNAME } from "./layout.js";
+import { conceptIndexPath, conceptShardsPath, libraryRelativePath, WORKSPACE_DIRNAME, workspaceDirectory } from "./layout.js";
 import { assertNoSymbolicLinks, listManagedDocuments, readRecordMetadata } from "./managed-documents.js";
 import type { EntityType, RelationshipType } from "./types.js";
 import { resolveKnowledge } from "./knowledge.js";
@@ -107,17 +107,17 @@ function truncate(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, length - 1)}…` : value;
 }
 
-function documentLine(document: ConceptIndex["documents"][number]): string {
-  return truncate(`- **${document.title}** — ${truncate(document.summary, MAX_DESCRIPTION_LENGTH)} → \`${libraryRelativePath(document.file_path)}\``, MAX_LINE_LENGTH);
+function documentLine(document: ConceptIndex["documents"][number], projectRoot?: string): string {
+  return truncate(`- **${document.title}** — ${truncate(document.summary, MAX_DESCRIPTION_LENGTH)} → \`${libraryRelativePath(document.file_path, projectRoot)}\``, MAX_LINE_LENGTH);
 }
 
 function capped(items: string[], limit: number, more: (count: number) => string): string[] {
   return items.length > limit ? [...items.slice(0, limit), more(items.length - limit)] : items;
 }
 
-function conceptLine(entry: ConceptEntry, limitLists = false): string {
+function conceptLine(entry: ConceptEntry, limitLists = false, projectRoot?: string): string {
   let relations = entry.relations.map((relation) => `${relation.type} ${relation.to}`);
-  let documents = entry.documents.map((path) => `\`${libraryRelativePath(path)}\``);
+  let documents = entry.documents.map((path) => `\`${libraryRelativePath(path, projectRoot)}\``);
   if (limitLists) {
     relations = capped(relations, MAX_LINE_RELATIONS, (count) => `${count} more`);
     documents = capped(documents, MAX_LINE_DOCUMENTS, (count) => `${count} more: \`docnexus concepts --query "${entry.name}"\``);
@@ -126,20 +126,20 @@ function conceptLine(entry: ConceptEntry, limitLists = false): string {
   return limitLists ? truncate(line, MAX_LINE_LENGTH) : line;
 }
 
-function conceptSections(concepts: ConceptEntry[], limitLists = false): string[] {
+function conceptSections(concepts: ConceptEntry[], limitLists = false, projectRoot?: string): string[] {
   const lines: string[] = [];
   for (const type of [...new Set(concepts.map((entry) => entry.type))].sort()) {
-    lines.push(`## ${type}`, "", ...concepts.filter((entry) => entry.type === type).map((entry) => conceptLine(entry, limitLists)), "");
+    lines.push(`## ${type}`, "", ...concepts.filter((entry) => entry.type === type).map((entry) => conceptLine(entry, limitLists, projectRoot)), "");
   }
   return lines;
 }
 
 /** Full, uncapped listing of documents and concepts, grouped by entity type. */
-export function renderConceptListing(index: ConceptIndex): string {
+export function renderConceptListing(index: ConceptIndex, projectRoot?: string): string {
   const lines = ["# DocNexus concepts", "", `${index.document_count} document(s) and ${index.concept_count} concept(s).`, ""];
-  if (index.documents.length > 0) lines.push("## Documents", "", ...index.documents.map(documentLine), "");
+  if (index.documents.length > 0) lines.push("## Documents", "", ...index.documents.map(document => documentLine(document, projectRoot)), "");
   if (index.concepts.length === 0) lines.push(index.document_count === 0 ? "_No concepts._" : "_No named concepts. Read the documents above._", "");
-  else lines.push(...conceptSections(index.concepts));
+  else lines.push(...conceptSections(index.concepts, false, projectRoot));
   return lines.join("\n");
 }
 
@@ -162,7 +162,7 @@ function tableCell(value: string): string {
   return truncate(value, MAX_LABEL_LENGTH).replace(/\|/g, "\\|").replace(/`/g, "'");
 }
 
-function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEntry[], page?: string): string[] {
+function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEntry[], page?: string, projectRoot?: string): string[] {
   const documentCount = index.documents.filter((document) => document.category === category).length;
   return [
     `# DocNexus concepts: ${category}${page ? ` — ${page}` : ""}`,
@@ -170,7 +170,7 @@ function shardHeader(category: string, index: ConceptIndex, concepts: ConceptEnt
     GENERATED_NOTICE,
     "",
     `Category \`${category}\` holds ${documentCount} document(s) and ${concepts.length} concept(s). Concepts shared with other categories list all their documents.`,
-    `Narrow retrieval to this domain with \`--category "${category}"\`. Other categories are listed in \`${WORKSPACE_DIRNAME}/CONCEPTS.md\`.`,
+    `Narrow retrieval to this domain with \`--category "${category}"\`. Other categories are listed in \`${projectRoot ? workspaceDirectory(projectRoot) : WORKSPACE_DIRNAME}/CONCEPTS.md\`.`,
     ""
   ];
 }
@@ -196,12 +196,12 @@ function paginate(lines: string[], fixedBytes: number, budget = SHARD_BUDGET_BYT
   return pages;
 }
 
-function renderShards(index: ConceptIndex, category: string, slug: string): Map<string, string> {
+function renderShards(index: ConceptIndex, category: string, slug: string, projectRoot?: string): Map<string, string> {
   const documents = index.documents.filter((document) => document.category === category);
   const concepts = index.concepts.filter((entry) => entry.categories.includes(category));
-  const header = shardHeader(category, index, concepts);
-  const documentSection = documents.length > 0 ? ["## Documents", "", ...documents.map(documentLine), ""] : [];
-  const single = [...header, ...documentSection, ...(concepts.length > 0 ? conceptSections(concepts, true) : ["_No named concepts. Read the documents above._", ""])].join("\n");
+  const header = shardHeader(category, index, concepts, undefined, projectRoot);
+  const documentSection = documents.length > 0 ? ["## Documents", "", ...documents.map(document => documentLine(document, projectRoot)), ""] : [];
+  const single = [...header, ...documentSection, ...(concepts.length > 0 ? conceptSections(concepts, true, projectRoot) : ["_No named concepts. Read the documents above._", ""])].join("\n");
   if (Buffer.byteLength(single) <= SHARD_BUDGET_BYTES) return new Map([[`concepts/${slug}.md`, single]]);
 
   // Oversized domains keep a hub with documents and links to type pages, each page within the same budget.
@@ -209,22 +209,22 @@ function renderShards(index: ConceptIndex, category: string, slug: string): Map<
   const links: string[] = [];
   for (const type of [...new Set(concepts.map((entry) => entry.type))].sort()) {
     const entries = concepts.filter((entry) => entry.type === type);
-    const lines = entries.map((entry) => conceptLine(entry, true));
-    const fixed = bytes([...shardHeader(category, index, concepts, `${type} page 0000 of 0000`), `## ${type}`, "", ""]);
+    const lines = entries.map((entry) => conceptLine(entry, true, projectRoot));
+    const fixed = bytes([...shardHeader(category, index, concepts, `${type} page 0000 of 0000`, projectRoot), `## ${type}`, "", ""]);
     const pages = paginate(lines, fixed);
     let first = 1;
     pages.forEach((page, number) => {
       const name = number === 0 ? `${type}.md` : `${type}-${number + 1}.md`;
       const label = pages.length > 1 ? `${type} page ${number + 1} of ${pages.length}` : type;
-      files.set(`concepts/${slug}/${name}`, [...shardHeader(category, index, concepts, label), `## ${type}`, "", ...page, ""].join("\n"));
-      links.push(`- ${type} ${first}–${first + page.length - 1} of ${entries.length} → \`${WORKSPACE_DIRNAME}/concepts/${slug}/${name}\``);
+      files.set(`concepts/${slug}/${name}`, [...shardHeader(category, index, concepts, label, projectRoot), `## ${type}`, "", ...page, ""].join("\n"));
+      links.push(`- ${type} ${first}–${first + page.length - 1} of ${entries.length} → \`${projectRoot ? workspaceDirectory(projectRoot) : WORKSPACE_DIRNAME}/concepts/${slug}/${name}\``);
       first += page.length;
     });
   }
   const typeSection = links.length > 0 ? ["## Concepts by type", "", ...links, ""] : [];
   const overflow = (count: number) => `_${count} more document(s): run \`docnexus document query --category "${category}"\`._`;
   const fixed = bytes([...header, "## Documents", "", overflow(documents.length), "", ...typeSection]) + 1;
-  const lines = documents.map(documentLine);
+  const lines = documents.map(document => documentLine(document, projectRoot));
   const shown = lines.length > 0 && fixed + Buffer.byteLength(lines[0]) + 1 <= SHARD_BUDGET_BYTES ? paginate(lines, fixed)[0] : [];
   const hub = [...header];
   if (documents.length > 0) {
@@ -238,7 +238,7 @@ function renderShards(index: ConceptIndex, category: string, slug: string): Map<
 }
 
 /** Short routing map loaded into agent context: one row per category, never the full index. */
-export function renderConceptIndex(index: ConceptIndex): string {
+export function renderConceptIndex(index: ConceptIndex, projectRoot?: string): string {
   const intro = [
     "# DocNexus concepts",
     "",
@@ -262,14 +262,14 @@ export function renderConceptIndex(index: ConceptIndex): string {
       .sort((a, b) => b.uses - a.uses || a.entry.name.localeCompare(b.entry.name))
       .slice(0, signposts)
       .map(({ entry }) => tableCell(entry.name));
-    return `| ${tableCell(category.name)} | ${category.document_count} | ${category.concept_count} | ${key.join(", ")} | \`${WORKSPACE_DIRNAME}/concepts/${names.get(category.name)}.md\` |`;
+    return `| ${tableCell(category.name)} | ${category.document_count} | ${category.concept_count} | ${key.join(", ")} | \`${projectRoot ? workspaceDirectory(projectRoot) : WORKSPACE_DIRNAME}/concepts/${names.get(category.name)}.md\` |`;
   };
   const render = (rows: string[], omitted: number) => [
     ...intro,
     "| Category | Docs | Concepts | Key concepts | File |",
     "| --- | ---: | ---: | --- | --- |",
     ...rows,
-    ...(omitted > 0 ? ["", `_${omitted} more categor${omitted === 1 ? "y" : "ies"} in \`${WORKSPACE_DIRNAME}/concepts/\`._`] : []),
+    ...(omitted > 0 ? ["", `_${omitted} more categor${omitted === 1 ? "y" : "ies"} in \`${projectRoot ? workspaceDirectory(projectRoot) : WORKSPACE_DIRNAME}/concepts/\`._`] : []),
     ""
   ].join("\n");
   for (const signposts of SIGNPOST_STEPS) {
@@ -283,11 +283,11 @@ export function renderConceptIndex(index: ConceptIndex): string {
 }
 
 /** Every generated concept file, keyed by its path relative to the workspace. */
-export function renderConceptFiles(index: ConceptIndex): Map<string, string> {
-  const files = new Map<string, string>([["CONCEPTS.md", renderConceptIndex(index)]]);
+export function renderConceptFiles(index: ConceptIndex, projectRoot?: string): Map<string, string> {
+  const files = new Map<string, string>([["CONCEPTS.md", renderConceptIndex(index, projectRoot)]]);
   const names = categoryFileNames(index.categories.map((category) => category.name));
   for (const category of index.categories) {
-    for (const [path, content] of renderShards(index, category.name, names.get(category.name)!)) files.set(path, content);
+    for (const [path, content] of renderShards(index, category.name, names.get(category.name)!, projectRoot)) files.set(path, content);
   }
   return files;
 }
@@ -314,14 +314,14 @@ async function removeEmptyDirectories(directory: string, keepRoot: boolean): Pro
 
 export async function writeConceptIndex(projectRoot: string): Promise<void> {
   return withProjectLock(projectRoot, async () => {
-    const files = renderConceptFiles(await buildConceptIndex(projectRoot));
+    const files = renderConceptFiles(await buildConceptIndex(projectRoot), projectRoot);
     const shardsRoot = conceptShardsPath(projectRoot);
-    await assertNoSymbolicLinks(projectRoot, join(WORKSPACE_DIRNAME, "concepts"));
-    for (const path of files.keys()) await assertNoSymbolicLinks(projectRoot, join(WORKSPACE_DIRNAME, ...path.split("/")));
+    await assertNoSymbolicLinks(projectRoot, join(workspaceDirectory(projectRoot), "concepts"));
+    for (const path of files.keys()) await assertNoSymbolicLinks(projectRoot, join(workspaceDirectory(projectRoot), ...path.split("/")));
     // Only files carrying the generated notice are removed, so hand-placed files survive.
     for (const path of await listGeneratedShards(shardsRoot, "concepts/")) {
       if (files.has(path)) continue;
-      const absolute = join(WORKSPACE_DIRNAME, ...path.split("/"));
+      const absolute = join(workspaceDirectory(projectRoot), ...path.split("/"));
       await assertNoSymbolicLinks(projectRoot, absolute);
       if ((await readIfExists(join(projectRoot, absolute)))?.includes(GENERATED_NOTICE)) await rm(join(projectRoot, absolute), { force: true });
     }

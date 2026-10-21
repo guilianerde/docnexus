@@ -5,7 +5,9 @@ description: Use proactively, without waiting to be asked, when a project task t
 
 # DocNexus Recall
 
-Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+Run commands from the project root using `./.docnexus/node_modules/.bin/docnexus`. Do not change into `.docnexus/`; from another directory pass `--project-root <project>`.
+
+Run `docnexus status` to read `workspace_path` and `library_path`; knowledge output is `<parent>/docnexus/`, where `init --output-dir <project-relative-parent>` selects the parent (default: project root). Paths below using `docnexus/library`, `docnexus/records`, `docnexus/concepts`, `docnexus/impacts` or `docnexus/CONCEPTS.md` illustrate the default output: substitute the configured workspace. Use returned artifact, library and timeline paths directly. Internal files always remain under `.docnexus/`.
 
 ## When to recall
 
@@ -16,13 +18,13 @@ Decide from the task itself. Recall before planning or changing code when the wo
 Use the project-local CLI from the project root:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus search "<exact name, identifier or keywords>" --limit 5
-./docnexus/node_modules/.bin/docnexus recall "<concept and what you need to know>" --limit 5
-./docnexus/node_modules/.bin/docnexus search "<keywords>" --category codeReview
-./docnexus/node_modules/.bin/docnexus recall "<question>" --category codeReview --return-unit section --context-budget 4000
-./docnexus/node_modules/.bin/docnexus --json recall "<question>" --return-unit section --context-budget 4000
-./docnexus/node_modules/.bin/docnexus facts list --entity "<name or alias>" --include-inactive
-./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./.docnexus/node_modules/.bin/docnexus search "<exact name, identifier or keywords>" --limit 5
+./.docnexus/node_modules/.bin/docnexus recall "<concept and what you need to know>" --limit 5
+./.docnexus/node_modules/.bin/docnexus search "<keywords>" --category codeReview
+./.docnexus/node_modules/.bin/docnexus recall "<question>" --category codeReview --return-unit section --context-budget 4000
+./.docnexus/node_modules/.bin/docnexus --json recall "<question>" --return-unit section --context-budget 4000
+./.docnexus/node_modules/.bin/docnexus facts list --entity "<name or alias>" --include-inactive
+./.docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
 ```
 
 - Start with `search` or `recall` built from the user's request, the current code and the task goal. Open a category file `docnexus/concepts/<category>.md` (linked from the map) when you need to list a domain completely, to find canonical names and aliases for a better query, or when results are weak; then narrow with `--category <exact name>`. Every category file stays within 32 KB; large categories link paged files per entity type, and long document lists point to `concepts --query`.

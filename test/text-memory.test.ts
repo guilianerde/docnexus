@@ -37,7 +37,7 @@ describe("plain-text project memory", () => {
     expect(saved.timeline).toContain(input.source);
     expect(saved.timeline).toContain(first.updated_at);
     expect(first).not.toHaveProperty("chunk_count");
-    await expect(stat(join(path, "docnexus/store/brain.pglite"))).rejects.toThrow();
+    await expect(stat(join(path, ".docnexus/store/brain.pglite"))).rejects.toThrow();
     const before = saved.timeline;
     await upsertManagedDocument(path, input);
     expect((await getManagedRecord(path, first.id)).timeline).toBe(before);
@@ -80,11 +80,12 @@ describe("plain-text project memory", () => {
     const added = await upsertManagedDocument(path, input);
     const clone = await root();
     await cp(join(path, "docnexus"), join(clone, "docnexus"), { recursive: true });
+    await cp(join(path, ".docnexus"), join(clone, ".docnexus"), { recursive: true });
     expect((await searchDocuments(clone, { query: "rotation" })).results[0].id).toBe(added.id);
     await rm(join(clone, "docnexus/records", added.id), { recursive: true });
     expect((await searchDocuments(clone, { query: "rotation" })).results).toEqual([]);
     expect(await listManagedDocuments(clone)).toEqual([]);
-    await expect(stat(join(clone, "docnexus/store/brain.pglite"))).rejects.toThrow();
+    await expect(stat(join(clone, ".docnexus/store/brain.pglite"))).rejects.toThrow();
   });
 
   it("reports hand edits, requires adoption, and keeps original source", async () => {

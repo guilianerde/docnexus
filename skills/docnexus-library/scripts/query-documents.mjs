@@ -13,7 +13,7 @@ try {
     args.splice(0, 2);
   }
   // Resolve the workspace installation first; Node's parent lookup retains root-install compatibility.
-  const require = createRequire(join(root, "docnexus", "package.json"));
+  const require = createRequire(join(root, ".docnexus", "package.json"));
   const cli = require.resolve("@rowansenne/docnexus/dist/src/cli.js");
   const child = spawn(process.execPath, [cli, "--project-root", root, "document", "query", ...args], { stdio: "inherit" });
   child.on("error", (error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

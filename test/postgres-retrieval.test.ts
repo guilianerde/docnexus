@@ -122,7 +122,7 @@ describe("unified PostgreSQL retrieval", () => {
     const path = await root(); const saved = await upsertManagedDocument(path, input); await syncRetrievalIndex(path, {}, embedder);
     const before = await getManagedRecord(path, saved.id);
     const record = await readFile(join(path, "docnexus/records", saved.id, "record.json"), "utf8");
-    await rm(join(path, "docnexus/store"), { recursive: true, force: true });
+    await rm(join(path, ".docnexus/store"), { recursive: true, force: true });
     expect((await inspectRetrievalIndex(path)).unindexed).toEqual([saved.id]);
     await syncRetrievalIndex(path, {}, embedder);
     expect(await getManagedRecord(path, saved.id)).toEqual(before);

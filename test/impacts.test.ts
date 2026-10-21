@@ -45,7 +45,7 @@ it("supports existing workspaces, saves one text record and preserves knowledge 
   expect((await saveImpact(root, input)).result).toBe("impact_exists");
   expect((await getImpact(root, saved.id)).pages[0].history).toHaveLength(2);
   expect((await setImpactStatus(root, { id: saved.id, document: guide.id, status: "done", reason: "Reviewed the separate guide update", revision: changed.revision })).result).toBe("impact_unchanged");
-  await expect(stat(join(root, "docnexus/store/brain.pglite"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(stat(join(root, ".docnexus/store/brain.pglite"))).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("reopens changed context for review and rejects stale acknowledgments, including other writers", async () => {
@@ -114,6 +114,7 @@ it("works from a copied text workspace through the CLI and reset removes impact 
   const saved = JSON.parse(await runCli(["impact", "save", "--file", inputFile], root));
   const clone = await mkdtemp(join(tmpdir(), "docnexus-impact-clone-")); roots.push(clone);
   await cp(join(root, "docnexus"), join(clone, "docnexus"), { recursive: true });
+  await cp(join(root, ".docnexus"), join(clone, ".docnexus"), { recursive: true });
   const loaded = JSON.parse(await runCli(["impact", "get", "--id", saved.id], clone));
   expect(loaded.revision).toBe(saved.revision);
   const updated = JSON.parse(await runCli(["impact", "set", "--id", saved.id, "--document", guide.id, "--status", "pending", "--reason", "Resume in another workspace", "--revision", loaded.revision], clone));

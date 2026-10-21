@@ -5,7 +5,9 @@ description: Browse DocNexus documents and saved related-page impact work, resum
 
 # DocNexus Library
 
-Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`.
+Run commands from the project root using `./.docnexus/node_modules/.bin/docnexus`. Do not change into `.docnexus/`; from another directory pass `--project-root <project>`.
+
+Run `docnexus status` to read `workspace_path` and `library_path`; knowledge output is `<parent>/docnexus/`, where `init --output-dir <project-relative-parent>` selects the parent (default: project root). Paths below using `docnexus/library`, `docnexus/records`, `docnexus/concepts`, `docnexus/impacts` or `docnexus/CONCEPTS.md` illustrate the default output: substitute the configured workspace. Use returned artifact, library and timeline paths directly. Internal files always remain under `.docnexus/`.
 
 Browse and curate what DocNexus holds.
 
@@ -14,13 +16,13 @@ For saved related-page work, follow [impact tracking](references/impacts.md): li
 ## Read
 
 ```bash
-./docnexus/node_modules/.bin/docnexus concepts [--type <entity_type>] [--query <text>] [--format md]
-./docnexus/node_modules/.bin/docnexus document list [--limit 50] [--tag <tag>]
-./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
-./docnexus/node_modules/.bin/docnexus document get --id <document_id> --include template,metadata
-./docnexus/node_modules/.bin/docnexus document render
-./docnexus/node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
-./docnexus/node_modules/.bin/docnexus facts list [--entity <name-or-alias>] [--at <ISO-timestamp>] [--include-inactive]
+./.docnexus/node_modules/.bin/docnexus concepts [--type <entity_type>] [--query <text>] [--format md]
+./.docnexus/node_modules/.bin/docnexus document list [--limit 50] [--tag <tag>]
+./.docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
+./.docnexus/node_modules/.bin/docnexus document get --id <document_id> --include template,metadata
+./.docnexus/node_modules/.bin/docnexus document render
+./.docnexus/node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
+./.docnexus/node_modules/.bin/docnexus facts list [--entity <name-or-alias>] [--at <ISO-timestamp>] [--include-inactive]
 ```
 
 - Present documents as `title` — `docnexus/library/<file_path>` with tags and `updated_at`.
@@ -31,10 +33,10 @@ For saved related-page work, follow [impact tracking](references/impacts.md): li
 ## Query for a document viewer
 
 ```bash
-./docnexus/node_modules/.bin/docnexus document query --all
-./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20
-./docnexus/node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
-node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
+./.docnexus/node_modules/.bin/docnexus document query --all
+./.docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20
+./.docnexus/node_modules/.bin/docnexus document query --category architecture --page 1 --page-size 20
+node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
 The script is a thin adapter to the project's installed CLI. From another directory, start its arguments with `--project-root <project>`. It returns JSON on stdout; errors use stderr and a nonzero exit code.
@@ -56,8 +58,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 3. Ensure the user has authorized adopting the reviewed edit, then run one of:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus document sync --id <document_id>
-./docnexus/node_modules/.bin/docnexus document sync --id <document_id> --metadata-file docnexus/drafts/<draft_id>/metadata.json
+./.docnexus/node_modules/.bin/docnexus document sync --id <document_id>
+./.docnexus/node_modules/.bin/docnexus document sync --id <document_id> --metadata-file .docnexus/drafts/<draft_id>/metadata.json
 ```
 
 4. Report `id`, `library_path`, and `metadata_updated`. The original `source.md` is kept unchanged.
@@ -69,8 +71,8 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 3. If the user has not already explicitly confirmed deleting this target, ask. With authorization, run one of:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus document delete --id <document_id> --force
-./docnexus/node_modules/.bin/docnexus document delete --file <file_path> --force
+./.docnexus/node_modules/.bin/docnexus document delete --id <document_id> --force
+./.docnexus/node_modules/.bin/docnexus document delete --file <file_path> --force
 ```
 
 4. Report the deleted `id` and `file_path`.
@@ -84,7 +86,7 @@ Drafts are disposable but may hold unsaved work. Confirm with the user, then:
 For ingested drafts with `impact.json`, confirm its impact check was registered before discarding the attachment. A successful primary ingestion does not prove impact registration; retain/report pending attachments until saved or the user explicitly chooses to discard that work.
 
 ```bash
-./docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force
+./.docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force
 ```
 
 Offer to discard `ingested` drafts when the user asks to tidy up.

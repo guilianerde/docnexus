@@ -6,48 +6,51 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.23.0 keeps workspace format 6, draft manifest format 3 and projection schema 2. Existing format-6 workspaces need no reset, and root npm installations remain supported. Earlier formats are unsupported. Save any text you need before explicitly resetting an older workspace.
+> 0.24.0 breaking change: workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation forcibly deletes recognized legacy workspaces, including knowledge, sources and history; no data migration is provided. Draft manifest format 3 and projection schema 2 are unchanged.
+
+## Installation cleanup
+
+This breaking release runs destructive cleanup from npm `postinstall`. It removes recognized legacy `docnexus/` directories at the consuming project root, including knowledge, sources, runtime and any contained Git history. It also clears legacy data in `.docnexus/`, preserving its npm manifests, lockfile and `node_modules/` so the newly installed runtime remains usable. Legacy markers use DocNexus format 1–6; uninitialized old `docnexus/` installations must contain only npm installation files and a DocNexus dependency in their manifest. Old skill links and marked agent instructions are removed. There is no extra confirmation, migration or backup.
+
+Install with `npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus`; the old `--prefix ./docnexus` location is refused before deletion. Reinstallation preserves format-7 data. Unrecognized directories and external symlink targets are preserved. Global installs, temporary npx caches, transitive dependencies and source checkouts skip project cleanup. Disabling lifecycle scripts with `--ignore-scripts` skips cleanup; initialization continues to refuse legacy workspaces.
 
 ## Quick start
 
 Requires Node.js 22.13.0 or newer and npm. Run in the target project:
 
 ```bash
-mkdir -p docnexus
-npm install --prefix ./docnexus --save-exact @rowansenne/docnexus
-./docnexus/node_modules/.bin/docnexus init --agent codex  # or claude / all
-./docnexus/node_modules/.bin/docnexus doctor
+mkdir -p .docnexus
+npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus
+./.docnexus/node_modules/.bin/docnexus init --output-dir docs/knowledge --agent codex  # or claude / all
+./.docnexus/node_modules/.bin/docnexus doctor
 ```
 
-The installation manifest, lockfile and dependencies stay in `docnexus/`, separate from the host project’s npm files. Run commands from the project root; from another directory pass `--project-root <project>`. Update with `npm install --prefix ./docnexus --save-exact @rowansenne/docnexus@latest`; after a clone, restore with `npm ci --prefix ./docnexus`. Existing root installations remain supported with `./node_modules/.bin/docnexus`; do not move or delete the host project’s own manifests.
+The installation manifest, lockfile, runtime, skills, schema, drafts and retrieval indexes stay in `.docnexus/`. `init --output-dir <parent>` selects a project-relative parent; the knowledge workspace is always `<parent>/docnexus/`. For example, `--output-dir workfull` creates `workfull/docnexus/`. Omit it to use the project root as parent and `docnexus/` as workspace. The setting is saved in `.docnexus/project.json` and reused by later commands. `status` returns `workspace_path`, `library_path` and `internal_directory`. Output cannot point outside the project or into internal/agent directories, and cannot be changed after initialization without an explicit reset. Run from the project root, or pass `--project-root <project>` from elsewhere. Update with `npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus@latest`; restore dependencies with `npm ci --prefix ./.docnexus`.
 
 The agent decides from the task when to search project memory; `docnexus/CONCEPTS.md` is a short category map that routes to one concept file per domain under `docnexus/concepts/`. Ask it to remember a decision, explain a project convention or list saved documents.
 
 ## Workspace
 
 ```text
-docnexus/
-  package.json          # DocNexus npm dependencies
-  package-lock.json     # Locked installation
-  node_modules/         # Reinstallable runtime, Git-ignored
-  project.json          # workspace format marker
-  CONCEPTS.md           # generated short category map (≤ 3 KB)
-  concepts/             # generated per-category documents, concepts, aliases and relations
-  skills/               # local packaged skill copies, Git-ignored
-  drafts/<draft_id>/    # source.md, document.md, metadata.json, manifest.json
-  impacts/              # related-page impact checks, status and review history
-  library/              # compiled current knowledge
-  records/<id>/
-    source.md           # latest supplied source material
-    metadata.json       # title, summary, tags, named entities and textual links
-    timeline.md         # dated confirmed updates, summaries and source material
-    record.json         # stable identity, timestamps and content hashes
-  schemas/              # generated metadata schema, Git-ignored
-  .runtime/             # pending text transaction recovery journal, ignored by Git
-  store/                # rebuildable state, ignored by Git
-    brain.pglite/       # documents, chunks, pgvector HNSW, entities, edges and sync state
-    models/             # optional project model overrides
+.docnexus/
+  package.json, package-lock.json  # isolated npm installation
+  node_modules/                   # reinstallable runtime, Git-ignored
+  project.json                    # format 7 + output_dir
+  skills/                         # packaged skills and version, Git-ignored
+  schemas/                        # generated metadata schema, Git-ignored
+  drafts/<draft_id>/              # source, document, metadata, manifest; Git-ignored
+  .runtime/                       # recovery journal and local usage; Git-ignored
+  store/                          # rebuildable PGLite/pgvector index, optional models
+
+docs/knowledge/docnexus/          # --output-dir docs/knowledge; default: docnexus/
+  CONCEPTS.md                     # generated readable category map (≤ 3 KB)
+  concepts/                       # generated readable category navigation
+  impacts/                        # related-page impact history
+  library/                        # current knowledge Markdown
+  records/<id>/                   # source.md, metadata.json, timeline.md, record.json
 ```
+
+Examples below use the default `docnexus/` knowledge path; substitute your configured output. Prefer the actual `library_path`, artifact and timeline paths returned by the CLI. Readable navigation updates when documents are saved. Retrieval indexes under `.docnexus/store/` are generated on the next `recall` or explicit `index sync`, and can be rebuilt from text.
 
 `library/` contains current knowledge; the timeline records how it changed. Before updating a page, the agent reads its existing knowledge and timeline, preserves valid facts, replaces explicitly superseded conclusions and identifies unresolved conflicts. The CLI saves the reviewed author-owned text and fact references, renders fact blocks and appends an event when authored content or metadata changes. View-only refreshes add no event. An identical write adds no event.
 
@@ -58,10 +61,10 @@ Timeline dates are save times, not necessarily the dates of events described in 
 ## Find, read and answer
 
 ```bash
-./docnexus/node_modules/.bin/docnexus search "Refresh token" --limit 5
-./docnexus/node_modules/.bin/docnexus recall "When should refresh tokens rotate?" --limit 5
-./docnexus/node_modules/.bin/docnexus document get --id <id> --include document,metadata
-./docnexus/node_modules/.bin/docnexus document get --id <id> --include document,timeline
+./.docnexus/node_modules/.bin/docnexus search "Refresh token" --limit 5
+./.docnexus/node_modules/.bin/docnexus recall "When should refresh tokens rotate?" --limit 5
+./.docnexus/node_modules/.bin/docnexus document get --id <id> --include document,metadata
+./.docnexus/node_modules/.bin/docnexus document get --id <id> --include document,timeline
 ```
 
 Use `--category codeReview` on `search` or `recall` to search an exact, case-sensitive project category; it also works with `--mode vector` and budgeted evidence. Filtering applies before candidate limits/fusion and to graph supporting documents and relation owners. `--category uncategorized` includes documents with no category; an unknown category returns no results. Referenced facts retain their canonical owners, including across categories. Omit the option to search all categories.
@@ -75,8 +78,8 @@ Chinese literal lookup supplements word segmentation with adjacent Han character
 Optional metadata entity `aliases` resolve alternative names to canonical graph identities. Optional `facts` track stable ids, mandatory provenance and timezone-qualified effective times, explicit `replaces`, expiry and withdrawal. Only active facts generate extra retrieval chunks; historical fact entries remain. Define a fact once in its owner metadata and reference it on a standalone `{{fact:fact_id}}` line in any project document. The CLI generates attributed Markdown blocks and follows effective replacement, expiry and withdrawal. Skills maintain explanations; existing free-prose duplicates need one reviewed conversion to references. See the [fact workflow](skills/docnexus-extract/references/facts.md). `document get --include template,metadata` returns the editable structure; `document render` refreshes all generated blocks. There is no background timer; document reads, search and index sync refresh effective-time changes.
 
 ```bash
-./docnexus/node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
-./docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
+./.docnexus/node_modules/.bin/docnexus facts list --entity "<canonical name or alias>" --include-inactive
+./.docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
 
 ## Local usage observation
@@ -84,26 +87,26 @@ Optional metadata entity `aliases` resolve alternative names to canonical graph 
 Opt into local records, then export one JSON file for optimization analysis. Records include command latency, error codes, pseudonymous query/document identities, retrieval and evidence metrics, index work and embedding calls. Query text, document content, paths and credentials are excluded. Nothing is uploaded; recording is off by default.
 
 ```bash
-./docnexus/node_modules/.bin/docnexus usage enable
-./docnexus/node_modules/.bin/docnexus usage status
+./.docnexus/node_modules/.bin/docnexus usage enable
+./.docnexus/node_modules/.bin/docnexus usage status
 # Optional explicit feedback on the last search/recall:
-./docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
-./docnexus/node_modules/.bin/docnexus usage export > docnexus/.runtime/usage-report.json
-./docnexus/node_modules/.bin/docnexus usage disable
+./.docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
+./.docnexus/node_modules/.bin/docnexus usage export > .docnexus/.runtime/usage-report.json
+./.docnexus/node_modules/.bin/docnexus usage disable
 ```
 
-In a development checkout, build first and replace the executable with `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/project`. Available since 0.18.0. The Git-ignored `docnexus/.runtime/usage.jsonl` stops growing at 10 MiB; recording failures do not fail ordinary commands. Reset deletes the records. Metrics do not establish answer correctness; see the [observation contract](docs/operations/usage-observation.zh-CN.md).
+In a development checkout, build first and replace the executable with `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/project`. Available since 0.18.0. The Git-ignored `.docnexus/.runtime/usage.jsonl` stops growing at 10 MiB; recording failures do not fail ordinary commands. Reset deletes the records. Metrics do not establish answer correctness; see the [observation contract](docs/operations/usage-observation.zh-CN.md).
 
 ## Document viewer query
 
-Run `./docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Pages load on opening, manual refresh, or category/page changes, without automatic polling. Revision changes restart pagination at page one. Each request retains canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
+Run `./.docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Pages load on opening, manual refresh, or category/page changes, without automatic polling. Revision changes restart pagination at page one. Each request retains canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
 
 When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
 
 ```bash
-./docnexus/node_modules/.bin/docnexus document query --all
-./docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
-node docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
+./.docnexus/node_modules/.bin/docnexus document query --all
+./.docnexus/node_modules/.bin/docnexus document query --page 1 --page-size 20 --category architecture
+node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
 The JSON response contains full current Markdown, used-category counts, classification reasons and pagination. Pass the first response's `--revision <hash>` on later pages; writes, reclassification, deletion and effective fact changes invalidate old revisions. Rendered display content is derived in memory, without another stored document source, embedding calls or retrieval-store access. Use `document classify --id <id> --category <name> --reason <basis> [--revision <hash>]` for category-only changes, preserving facts, source and Markdown. The model reviews classifications during orchestration work; query itself stays read-only. See the [query contract](docs/architecture/document-query.zh-CN.md).
@@ -132,17 +135,17 @@ Use `impact list`, `impact list --status pending`, `impact list --status needs_r
 A calling skill can supply an explicit category for this write and skip model classification. For example, after a code-review skill prepares the three draft artifacts:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
+./.docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
   --category codeReview --category-reason "Produced by the code-review skill"
 # Review the document and sealed metadata, then ingest.
-./docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
+./.docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
 The category name is preserved exactly. The basis is optional, defaulting to `Explicit category supplied by caller.` Classification is included in the sealed metadata hash, and ingestion uses that reviewed value. Updates still require the current `--base-version <record_version>` and `--replace`. Category maintenance in the same capture pipeline preserves the caller's choice; a later authorized update can change it.
 
 Updates must pass `--base-version <record_version>` from the `document get` or `document query` read used to compose the draft. If sealing reports a conflict, reread and merge before using the new version. Use `--base-version new` for a new path. Pending manifest versions 1/2 must be resealed after rereading and merging.
 
-Sealing records the target document version. Ingestion rejects newer prose, source or category changes, deleted/recreated targets and newly occupied paths. Reread and merge current knowledge before resealing; `--replace` does not bypass this check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain workspace format 6. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for real-source regression replay and separate model review tasks.
+Sealing records the target document version. Ingestion rejects newer prose, source or category changes, deleted/recreated targets and newly occupied paths. Reread and merge current knowledge before resealing; `--replace` does not bypass this check. Pending format-1/2 draft manifests require rereading, merging and resealing as format 3; stored documents remain workspace format 7. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for real-source regression replay and separate model review tasks.
 
 `init --agent` links project skills into `.agents/skills/` or `.claude/skills/` and adds a marked block to `AGENTS.md` or `CLAUDE.md`. Claude loads the short category map through `@docnexus/CONCEPTS.md`; Codex reads it when useful. The block tells agents to decide from the task whether to recall, never to skip because a topic is missing from the map. Re-run `init --agent` to refresh an older block. Reset removes these links and blocks.
 
@@ -151,7 +154,7 @@ Sealing records the target document version. Ingestion rejects newer prose, sour
 By default, DocNexus creates no separate Git repository, configures no remote and does not require Git. Text can still be committed with the host project. Opt into a separate knowledge repository during initialization or for an existing workspace:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus init --agent codex --git-remote git@example.com:team/project-memory.git
+./.docnexus/node_modules/.bin/docnexus init --agent codex --git-remote git@example.com:team/project-memory.git
 # Repeat with another address to update the knowledge repository's origin.
 git -C docnexus status
 ```
@@ -162,19 +165,19 @@ Separate knowledge repositories use one pinned branch: `main` for new repositori
 
 This is a DocNexus preflight guard. It cannot block direct `git switch/checkout/branch` commands, external Git changes during operations or manual policy removal. It installs no Git hooks and does not inspect or restrict remote branches; configure hosting rules or server-side checks separately for that. The business repository can still change branches normally. Review knowledge before committing to its pinned branch; a single branch does not eliminate concurrent editing conflicts.
 
-Setup is local only: it does not validate remote connectivity, commit, fetch, pull or push. Use standard `git -C docnexus ...` commands after CLI writes and pending recovery finish. To use existing remote knowledge, clone it into a nonexistent `docnexus/` directory, restore npm dependencies and run `init --agent codex --git-remote <url>` (or `claude` / `all`); supplying a remote does not import its contents. This recreates local skills, schema and agent links. Configure submodules and linked worktrees with Git directly; `--git-remote` manages standalone `.git/` directories only.
+Setup is local only: it does not validate remote connectivity, commit, fetch, pull or push. Use standard `git -C docnexus ...` commands after CLI writes and pending recovery finish. To use existing remote knowledge, clone it into the configured output directory, restore `.docnexus/project.json` and npm manifests separately, then restore dependencies and run `init --agent codex --git-remote <url>` (or `claude` / `all`); supplying a remote does not import its contents. This recreates local skills, schema and agent links. Configure submodules and linked worktrees with Git directly; `--git-remote` manages standalone `.git/` directories only.
 
 `reset --force` clears current knowledge and integration while preserving `.git`, remote configuration, Git history and the npm installation. It returns `preserved_git: true` when Git metadata remains; committed knowledge can still be recovered from history. Reset neither commits nor pushes deletions, and initialization can run again afterward. Git setup and initialization are not a cross-file transaction; inspect actual state before retrying an interrupted operation.
 
-Commit knowledge, sources, metadata, timelines, impact records, workspace configuration, `package.json` and `package-lock.json`. Git ignores `node_modules/`, `store/`, `.runtime/`, the six official `skills/` copies and their version stamp, and `schemas/metadata.schema.json`. Other custom skill names remain trackable; keep project customizations outside official copies because upgrades replace them. Initialization, skills sync and ordinary workspace commands add missing ignore rules without changing the Git index; existing tracked copies need an explicit migration (see [steps](docs/architecture/skills-workspace.zh-CN.md#已有仓库迁移)). After cloning, run `npm ci --prefix ./docnexus`, then `./docnexus/node_modules/.bin/docnexus init --agent codex` (or `claude` / `all`; add `--git-remote <url>` for separate knowledge repositories). This restores the locked runtime and generated files without changing knowledge.
+Commit the knowledge output plus `.docnexus/project.json`, `.docnexus/package.json` and `.docnexus/package-lock.json`. Internal runtime, drafts, official skills, generated schema and retrieval stores are Git-ignored. Custom skills with other names remain trackable. After cloning, restore configuration and knowledge together, run `npm ci --prefix ./.docnexus` and `init --agent codex` (or claude/all). A separate knowledge repository requires the configuration and npm manifests to be backed up and restored separately. Format 7 provides no legacy migration.
 
 After setup or a pull, keyword search and document reads use the current text immediately; host-managed knowledge can also follow business branches, while separate knowledge repositories must satisfy the pinned-branch guard; semantic recall automatically synchronizes derived indexes. `index sync` restores PostgreSQL/pgvector projections and the concept directory, processing new, changed or missing documents. It reuses unchanged chunks and vectors, and never rebuilds HNSW during normal writes. It never imports unmanaged files or modifies sources/timelines. A changed embedding-probe output triggers re-embedding of all current documents.
 
 ## Database engines
 
-Retrieval projection schema version 2 is independent of workspace format 6. `index status` / `doctor` expose version compatibility. Known older projections rebuild from canonical text on the next sync or recall, preserving sources, history, drafts and model assets; unknown/newer versions are refused. Keyword/vector matches retain structured source anchors, and evidence delivery reserves compact primary hits before expanding context. See the [retrieval pipeline](docs/architecture/retrieval-pipeline.zh-CN.md).
+Retrieval projection schema version 2 is independent of workspace format 7. `index status` / `doctor` expose version compatibility. Known older projections rebuild from canonical text on the next sync or recall, preserving sources, history, drafts and model assets; unknown/newer versions are refused. Keyword/vector matches retain structured source anchors, and evidence delivery reserves compact primary hits before expanding context. See the [retrieval pipeline](docs/architecture/retrieval-pipeline.zh-CN.md).
 
-The zero-configuration default is PGLite, created lazily at `docnexus/store/brain.pglite` on the first index sync or semantic recall. For an existing Postgres server with pgvector available, set `DOCNEXUS_DATABASE_URL` in the CLI environment and run `docnexus index sync`. Credentials are not written into project files. Both engines use the same schema and SQL; document, chunk and graph projection changes commit in one database transaction. Text remains the canonical source and is reconciled separately.
+The zero-configuration default is PGLite, created lazily at `.docnexus/store/brain.pglite` on the first index sync or semantic recall. For an existing Postgres server with pgvector available, set `DOCNEXUS_DATABASE_URL` in the CLI environment and run `docnexus index sync`. Credentials are not written into project files. Both engines use the same schema and SQL; document, chunk and graph projection changes commit in one database transaction. Text remains the canonical source and is reconciled separately.
 
 External Postgres requires permission to create a project schema and tables. A database administrator can preinstall `vector` in `public` if the runtime role cannot create extensions. Schemas are isolated by the canonical project path; relocating or cloning a project creates a separate projection. This is not a shared multi-machine write protocol or database access control. `reset --force` drops the selected project's remote schema before deleting its local workspace; an unavailable server blocks that reset.
 
@@ -190,17 +193,17 @@ Deletion removes the current document, source, metadata, timeline and derived en
 
 ## CLI
 
-Use `./docnexus/node_modules/.bin/docnexus` from the project root, or prefix a command with `--project-root <path>`.
+Use `./.docnexus/node_modules/.bin/docnexus` from the project root, or prefix a command with `--project-root <path>`.
 
 ```text
-init [--agent claude|codex|all] [--git-remote <url>]
+init [--output-dir <directory>] [--agent claude|codex|all] [--git-remote <url>]
 doctor
 status
 skills sync
 skills link --target claude|codex|all
 
 draft new [--slug auth]
-metadata validate --file docnexus/drafts/<draft_id>/metadata.json
+metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
 draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
 document add --draft <draft_id> [--replace]
 draft list [--status open|ready|ingested|invalid]

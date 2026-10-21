@@ -8,9 +8,9 @@ Run this check for every capture, including calls from another skill and an expl
 2. Search the subject's names, aliases or identifiers, then recall a short description of the new information. Check exact concept names and aliases with `docnexus concepts --query <term>`. Browse the related category file in `docnexus/concepts/` only to disambiguate or when results are weak; use `document list` or paginated `document query` when needed. An absent map or category entry is not proof of a new subject:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus search "<subject or identifier>" --limit 10
-./docnexus/node_modules/.bin/docnexus recall "<subject and proposed knowledge>" --limit 5
-./docnexus/node_modules/.bin/docnexus document get --id <candidate_id> --include source,document,template,metadata,timeline
+./.docnexus/node_modules/.bin/docnexus search "<subject or identifier>" --limit 10
+./.docnexus/node_modules/.bin/docnexus recall "<subject and proposed knowledge>" --limit 5
+./.docnexus/node_modules/.bin/docnexus document get --id <candidate_id> --include source,document,template,metadata,timeline
 ```
 
    If a category is supplied, search it first using `--category <exact name>`. Unless the user explicitly restricts lookup to that category, also check the subject across categories to find shared facts and related pages. Cross-category relevance does not authorize changing another category's page. If lookup is explicitly restricted, report that boundary and keep the decision within it.

@@ -1,6 +1,6 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { WORKSPACE_DIRNAME } from "./layout.js";
+import { workspaceDirectory } from "./layout.js";
 import type { SkillsTarget } from "./skills.js";
 
 const START = "<!-- docnexus:start -->";
@@ -10,19 +10,19 @@ export function agentContextFile(target: SkillsTarget): string {
   return target === "claude" ? "CLAUDE.md" : "AGENTS.md";
 }
 
-function block(target: SkillsTarget): string {
+function block(target: SkillsTarget, projectRoot: string): string {
   // Claude Code expands `@path` imports in CLAUDE.md; the root map is size-capped so loading it stays cheap.
   const conceptMap = target === "claude"
-    ? `@${WORKSPACE_DIRNAME}/CONCEPTS.md`
-    : `\`${WORKSPACE_DIRNAME}/CONCEPTS.md\` (a short map; read it when useful)`;
+    ? `@${workspaceDirectory(projectRoot)}/CONCEPTS.md`
+    : `\`${workspaceDirectory(projectRoot)}/CONCEPTS.md\` (a short map; read it when useful)`;
   return [
     START,
     "## DocNexus project memory",
     "",
-    `This project keeps curated memory in \`${WORKSPACE_DIRNAME}/\`. Category map: ${conceptMap}`,
+    `This project keeps curated memory in \`${workspaceDirectory(projectRoot)}/\`. Category map: ${conceptMap}`,
     "",
     "- Decide from the task itself, not from the map, whether memory matters. Before changing existing modules, behavior, interfaces or conventions, or when the work depends on earlier decisions, use the `docnexus-recall` skill on your own and ground your work in what it returns. A topic missing from the map is not a reason to skip. Skip trivial, self-contained work.",
-    `- Search and recall first. Open a category file under \`${WORKSPACE_DIRNAME}/concepts/\` to list a domain completely, to find canonical names and aliases for a better query, or when results are weak.`,
+    `- Search and recall first. Open a category file under \`${workspaceDirectory(projectRoot)}/concepts/\` to list a domain completely, to find canonical names and aliases for a better query, or when results are weak.`,
     "- When the task produces a decision or knowledge worth keeping, offer to capture it with the `docnexus` skill; never store it without the user's consent.",
     END
   ].join("\n");
@@ -41,8 +41,8 @@ export async function installAgentContext(projectRoot: string, target: SkillsTar
   const start = current.indexOf(START);
   const end = current.indexOf(END);
   const next = start >= 0 && end > start
-    ? `${current.slice(0, start)}${block(target)}${current.slice(end + END.length)}`
-    : `${current}${current.length === 0 || current.endsWith("\n\n") ? "" : current.endsWith("\n") ? "\n" : "\n\n"}${block(target)}\n`;
+    ? `${current.slice(0, start)}${block(target, projectRoot)}${current.slice(end + END.length)}`
+    : `${current}${current.length === 0 || current.endsWith("\n\n") ? "" : current.endsWith("\n") ? "\n" : "\n\n"}${block(target, projectRoot)}\n`;
   if (next !== current) {
     await writeFile(path, next);
   }

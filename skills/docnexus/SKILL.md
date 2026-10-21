@@ -5,24 +5,18 @@ description: Entry point for DocNexus project memory. Use when the user asks Doc
 
 # DocNexus
 
-DocNexus keeps curated project memory in the `docnexus/` folder of this project and finds it through keyword search, local vector recall with graph evidence, and full-document reads. This skill decides which workflow runs; the workflow skills perform the steps.
+DocNexus keeps curated project memory in the configured knowledge output (default `docnexus/`) and finds it through keyword search, local vector recall with graph evidence, and full-document reads. This skill decides which workflow runs; the workflow skills perform the steps.
 
-Run commands from the project root using `./docnexus/node_modules/.bin/docnexus`. For a legacy root installation without that executable, use `./node_modules/.bin/docnexus` instead. Do not change into `docnexus/`; from another directory pass `--project-root <project>`. Never use a global CLI or another repository's build.
+Run commands from the project root using `./.docnexus/node_modules/.bin/docnexus`. Do not change into `.docnexus/`; from another directory pass `--project-root <project>`. Never use a global CLI or another repository's build.
 
 ## Workspace
 
+Run `docnexus status` and use `workspace_path` and `library_path`. Knowledge output is always `<parent>/docnexus/`. Configure the parent once with `init --output-dir <project-relative-parent>` (default: project root); `.docnexus/project.json` persists this parent as `output_dir`. Any `docnexus/` knowledge paths below are default examples; substitute the configured output. Follow CLI-returned paths directly.
+
 ```text
-docnexus/
-  CONCEPTS.md   generated short category map — routes to concepts/; never a reason to skip recall
-  concepts/     generated per-category files: documents, concepts, aliases and relations of one domain
-  package.json, package-lock.json  isolated npm installation manifest and lock
-  node_modules/ npm runtime (git-ignored)
-  skills/       project skills (this file lives in skills/docnexus/)
-  drafts/       extraction drafts; manifest.json marks a sealed draft
-  library/      managed Markdown documents (the curated output)
-  records/<id>/ source.md, metadata.json, timeline.md, record.json — the text source of truth
-  schemas/      metadata.schema.json
-  store/        derived PGLite/pgvector database; optional custom models (git-ignored)
+.docnexus/     package.json, package-lock.json, node_modules/, project.json,
+               skills/, schemas/, drafts/, store/, .runtime/
+<output>/     CONCEPTS.md, concepts/, library/, records/<id>/, impacts/
 ```
 
 Agents write only inside drafts. Users may edit `library/` files by hand; such edits are adopted with `document sync`. Never edit `records/` or `store/`.
@@ -41,11 +35,11 @@ Memory is used proactively, not only on request:
 Run once per conversation before the first DocNexus command:
 
 ```bash
-./docnexus/node_modules/.bin/docnexus status
+./.docnexus/node_modules/.bin/docnexus status
 ```
 
-- Not initialized → tell the user to run `./docnexus/node_modules/.bin/docnexus init --agent claude` (or `codex`) and stop.
-- Unsupported format → tell the user to run `./docnexus/node_modules/.bin/docnexus reset --force` then `init`. Never run reset yourself without explicit confirmation.
+- Not initialized → tell the user to run `./.docnexus/node_modules/.bin/docnexus init --agent claude` (or `codex`) and stop.
+- Unsupported format → report that format 7 requires a fresh project. No legacy data migration is provided; never delete old data or reset without explicit authorization.
 - `records.edited` is not empty → the user edited library files by hand. Offer `docnexus-library` → *Adopt hand edits*.
 - `records.missing_library` or `records.invalid_records` is not empty → use `docnexus-maintain` to diagnose.
 - `index.in_sync` is false → `index sync` rebuilds derived indexes and refreshes `CONCEPTS.md` and `concepts/` from current text. Semantic `recall` also syncs automatically; keyword search and full reads use text directly.

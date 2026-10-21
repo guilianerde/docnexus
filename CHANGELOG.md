@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.24.0 — 2026-10-21
+
+Breaking change: workspace format 7; old workspaces are unsupported and no migration is provided. Draft manifest format 3 and retrieval projection schema 2 are unchanged.
+
+- Add npm postinstall cleanup that forcibly deletes recognized legacy root workspaces, old knowledge/history and obsolete integration, while preserving the new npm runtime and format-7 data. Refuse installation inside the old docnexus/ prefix; skip source checkouts, global installs, npx caches and transitive dependencies.
+- Move the project-local npm installation, packaged skills, schema, drafts, retrieval indexes and recovery/usage state to `.docnexus/`.
+- Add `init --output-dir <project-relative-parent>` for knowledge Markdown, source records, impact history and readable concept navigation. Always create a `docnexus/` child under that parent; default the parent to the project root. Persist the parent in `.docnexus/project.json` and return configured paths from CLI results, search, document queries and status.
+- Generate agent context and navigation using the configured directory, and apply it to durable write recovery, reset and optional knowledge Git setup. Reject output directory changes on initialized projects and unsafe or occupied destinations.
+
 ## 0.23.0 — 2026-10-18
 
 Compatibility: workspace format 6, draft manifest format 3 and retrieval projection schema 2 remain unchanged. Existing format-6 workspaces need no reset. Skills refresh on the next workspace command. Re-run `docnexus init --agent claude|codex|all` to refresh the agent rules block in `AGENTS.md`/`CLAUDE.md` and generate `docnexus/concepts/`; the next memory write also regenerates the concept files.

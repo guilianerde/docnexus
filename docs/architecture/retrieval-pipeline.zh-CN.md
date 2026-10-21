@@ -4,7 +4,7 @@
 
 ## 投影版本与升级
 
-`index_state.projection_schema_version` 独立于工作区格式 6、草稿格式 3、机器协议 1、模型签名和切块签名。当前投影版本为 2，包含文档 `record_version` 和 chunk 的 JSONB `source_anchor`。
+`index_state.projection_schema_version` 独立于工作区格式 7、草稿格式 3、机器协议 1、模型签名和切块签名。当前投影版本为 2，包含文档 `record_version` 和 chunk 的 JSONB `source_anchor`。
 
 `index status` 与 `doctor` 返回 `schema_version`、`expected_schema_version` 和 `schema_status`，区分 missing、legacy、current、unsupported。检查不会升级或重建投影。已知旧投影、缺少版本标记的旧表，以及缺少当前必要字段的投影，在下一次 `index sync` 或 recall 时重建。
 
