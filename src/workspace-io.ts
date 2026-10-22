@@ -1,18 +1,25 @@
 import { lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 
-export async function assertNoSymbolicLinks(root: string, relativePath: string, checkedDirectories?: Set<string>): Promise<void> {
+export async function assertNoSymbolicLinks(root: string, relativePath: string, checkedPaths?: Map<string, Promise<boolean>>): Promise<void> {
+  // Only canonical relative paths may bypass traversal using a verified leaf.
+  const cached = !/(^|[\\/])\.{1,2}([\\/]|$)/.test(relativePath) && checkedPaths?.get(join(root, relativePath));
+  if (cached && await cached) return;
   let current = root;
   for (const segment of relativePath.split(sep).flatMap(segment => segment.split("/"))) {
     current = join(current, segment);
-    if (checkedDirectories?.has(current)) continue;
-    const info = await lstat(current).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (info === undefined) return;
-    if (info.isSymbolicLink()) throw new Error("file_path must not contain symbolic links");
-    if (info.isDirectory()) checkedDirectories?.add(current);
+    let check = checkedPaths?.get(current);
+    if (!check) {
+      check = lstat(current).then(info => {
+        if (info.isSymbolicLink()) throw new Error("file_path must not contain symbolic links");
+        return true;
+      }, (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      });
+      checkedPaths?.set(current, check);
+    }
+    if (!await check) { checkedPaths?.delete(current); return; }
   }
 }
 

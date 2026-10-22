@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.25.0 — 2026-10-22
+
+Compatibility: workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. CLI `document get` now defaults to the current body; use `--include` for metadata, source, template or timeline. Refined ingestion/adoption enforces a 4000-character rendered-body limit, with semantic splitting handled by the agent. Existing long documents remain readable. The legacy format 1–6 installation cleanup policy is unchanged.
+
+Release validation: the maintainer explicitly requested skipping tests for this release. The v0.25.0 release skips CI verification and retains the OIDC version checks and package build; subsequent release tags retain the normal verification workflow.
+
+- Limit refined rendered Markdown to 4000 Unicode characters at sealing, preview, ingestion and hand-edit adoption; report document_too_long and guide agents to split by meaning into independent drafts. Preserve provenance and existing long-document reads. CLI document get now defaults to current Markdown only; other assets require --include.
+
+- Read record lists and current-knowledge snapshots with 24 bounded workers, retaining input order and draining started reads before releasing the lock on failure. Reuse directory entries and pending/completed path checks within a snapshot to avoid repeated lstat calls; metadata and Markdown reads overlap while content hashes remain checked.
+- Filter standalone English filler words in multiword keyword queries while preserving original phrases, negation and literal lookups. Prioritize exact normalized titles, paths and filenames (optionally without .md), and cite matching names through metadata anchors. Hybrid recall uses the updated lexical ranks while retaining the original embedding query and RRF.
+
 ## 0.24.3 — 2026-10-22
 
 - Load only records, metadata and current Markdown in query/index snapshots; retain body and metadata hash validation while moving source/history integrity checks to doctor, explicit reads and writes. Reuse root/output resolution and shared directory checks within each locked snapshot, without mtime or cross-request caches.

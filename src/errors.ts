@@ -18,6 +18,7 @@ export const errorDefinitions = {
   impact_not_found: { retryable: false, kind: "read", message: "List saved impact records and choose an existing identity.", command: ["impact", "list"] },
   impact_changed: { retryable: false, kind: "read", message: "Reread the impact and affected source/documents, then reconsider the status change.", command: ["impact", "list"] },
   draft_invalid: { retryable: false, kind: "review", message: "Inspect the draft and current target; repair, merge and review before sealing again.", command: ["draft", "list"] },
+  document_too_long: { retryable: false, kind: "review", message: "Ask the agent to split the refined document into two self-contained topic drafts of at most 4000 Unicode characters each; repeat if needed. Preserve knowledge, provenance and fact ownership, then seal and ingest each draft." },
   draft_changed: { retryable: false, kind: "review", message: "Review the changed draft and current target before resealing." },
   preview_changed: { retryable: false, kind: "review", message: "Read the current referenced facts, reseal, and review the new preview." },
   text_integrity_error: { retryable: false, kind: "review", message: "Inspect canonical text with doctor; review edits before adopting them or restore damaged files from backup.", command: ["doctor"] },

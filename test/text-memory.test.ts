@@ -162,7 +162,11 @@ describe("plain-text project memory", () => {
     expect(found.results).toHaveLength(1);
     expect(found.results[0].id).toBe(named.id);
     expect(found.results[0].snippet).toContain("rotate_refresh_token");
-    expect(found.results[0].line).toBe(1);
+    expect(found.results[0].source_anchor).toMatchObject({ kind: "metadata", field: "title", value: "rotate_refresh_token" });
+    expect(found.results[0].line).toBeUndefined();
+    const bodyHit = (await searchDocuments(path, { query: "rotate_refresh", limit: 1 })).results[0];
+    expect(bodyHit.line).toBe(1);
+    expect(bodyHit.snippet).toContain("rotate_refresh_token");
     expect((await searchDocuments(path, { query: "!!!" })).results).toEqual([]);
   });
 

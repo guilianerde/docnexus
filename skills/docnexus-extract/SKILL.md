@@ -23,7 +23,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 
    The JSON result gives `draft_id` and the exact `artifacts.source`, `artifacts.document`, and `artifacts.metadata` paths. Write only to those paths.
 4. Write `source.md`: the original material, preserving its meaning. It must not be empty.
-5. Write `document.md`: a refined Markdown document with a `#` title and sections suited to the material. Keep facts faithful to the source.
+5. Write `document.md`: a refined Markdown document with a `#` title and sections suited to the material. Keep facts faithful to the source. Each complete rendered document must fit **4000 Unicode characters**, including code and expanded facts. If it exceeds the limit, follow [semantic splitting](references/document-length.md): create two self-contained topic drafts, splitting again if needed. Preserve all knowledge and provenance; never mechanically cut or truncate the text. Continue the remaining steps independently for each part.
 6. Write `metadata.json` matching `.docnexus/schemas/metadata.schema.json`:
 
 ```json
@@ -67,7 +67,7 @@ Stage 1 of the capture pipeline. The output is a sealed draft; this skill does n
 
 ## Result
 
-End with exactly one outcome. On success:
+End with exactly one outcome per document. For a split capture, return one handoff per part and summarize their topic boundaries and pending dependencies; this is workflow context, not a new CLI or manifest format. On success:
 
 ```text
 result: draft_ready

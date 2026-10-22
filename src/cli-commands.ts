@@ -295,7 +295,7 @@ const documentGet: CommandHandler = async ({ projectRoot, rest }) => {
   if (!options.id) {
     throw new DocNexusError("invalid_params", "document get requires --id");
   }
-  const include = options.include?.split(",");
+  const include = options.include === undefined ? ["document"] : options.include.split(",");
   if (include?.some((item) => !(DOCUMENT_INCLUDES as readonly string[]).includes(item))) {
     throw new DocNexusError("invalid_params", "--include must list source,document,metadata,timeline,template");
   }

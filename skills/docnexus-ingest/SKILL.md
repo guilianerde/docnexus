@@ -11,6 +11,8 @@ Run `docnexus status` to read `workspace_path` and `library_path`; knowledge out
 
 Stage 3 of the capture pipeline. Stores one sealed draft as a managed document in `docnexus/library/` and appends a source-attributed timeline event in a single command.
 
+Refined previews are limited to **4000 Unicode characters**, including expanded facts. On `document_too_long`, return to extraction for [semantic splitting](../docnexus-extract/references/document-length.md), not truncation or a direct library write. For a split capture, ingest each reviewed part independently in dependency order and report completed/pending parts; saving one part does not save the others.
+
 Use the sealed metadata category exactly, including categories selected explicitly by a user or calling skill. Do not run classification or pass a category override to `document add`. To change the category before ingestion, return to `draft seal --category <name>`, then review the updated metadata before saving. Existing version and overwrite checks still apply.
 
 ## Workflow

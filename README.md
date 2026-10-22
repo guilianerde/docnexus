@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively. Every memory write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the default quantized ONNX model ships with the package for offline loading.
 
-> 0.24.3 breaking change: workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation forcibly deletes recognized legacy workspaces, including knowledge, sources and history; no data migration is provided. Draft manifest format 3 and projection schema 2 are unchanged.
+> 0.25.0 breaking change: workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation forcibly deletes recognized legacy workspaces, including knowledge, sources and history; no data migration is provided. Draft manifest format 3 and projection schema 2 are unchanged.
 
 ## Installation cleanup
 
@@ -74,7 +74,7 @@ Search literally matches current bodies, paths, titles, summaries, tags, canonic
 
 The agent reads the complete selected document and cites `docnexus/library/<file_path>` in its answer. Ordinary prose can be read directly; use document get before citing a file with generated fact blocks so effective-time changes are refreshed. It states evidence gaps and conflicts with current code or instructions.
 
-Chinese literal lookup supplements word segmentation with adjacent Han character pairs and removes isolated Han characters from multiword queries; intentional one-character queries remain supported. Ranking prioritizes complete phrases, query coverage and field weights, in that order. Snippets show the strongest evidence; metadata-only or structured-fact matches may omit a body line number. English identifiers and paths retain literal matching. Multiword queries still admit partial evidence, and lexical scores are not confidence.
+Chinese literal lookup supplements word segmentation with adjacent Han character pairs and removes isolated Han characters from multiword queries; intentional one-character queries remain supported. Ranking prioritizes exact normalized titles, relative paths or filenames (optionally without .md), then complete phrases, query coverage and field weights. Snippets show the strongest evidence; metadata-only or structured-fact matches may omit a body line number. Multiword queries filter standalone English filler words while retaining the original phrase for matching; single-word and all-filler queries, negation, and literal path/identifier components remain supported. Exact-name hits cite the matching title or path. English identifiers and paths retain literal matching. Multiword queries still admit partial evidence, and lexical scores are not confidence.
 
 Optional metadata entity `aliases` resolve alternative names to canonical graph identities. Optional `facts` track stable ids, mandatory provenance and timezone-qualified effective times, explicit `replaces`, expiry and withdrawal. Only active facts generate extra retrieval chunks; historical fact entries remain. Define a fact once in its owner metadata and reference it on a standalone `{{fact:fact_id}}` line in any project document. The CLI generates attributed Markdown blocks and follows effective replacement, expiry and withdrawal. Skills maintain explanations; existing free-prose duplicates need one reviewed conversion to references. See the [fact workflow](skills/docnexus-extract/references/facts.md). `document get --include template,metadata` returns the editable structure; `document render` refreshes all generated blocks. There is no background timer; document reads, search and index sync refresh effective-time changes.
 
@@ -111,6 +111,8 @@ node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
 The JSON response contains full current Markdown, used-category counts, classification reasons and pagination. Pass the first response's `--revision <hash>` on later pages; writes, reclassification, deletion and effective fact changes invalidate old revisions. Rendered display content is derived in memory, without another stored document source, embedding calls or retrieval-store access. Use `document classify --id <id> --category <name> --reason <basis> [--revision <hash>]` for category-only changes, preserving facts, source and Markdown. The model reviews classifications during orchestration work; query itself stays read-only. See the [query contract](docs/architecture/document-query.zh-CN.md).
+
+Refined documents are limited to **4000 Unicode characters** of currently rendered Markdown, including headings, code and expanded facts. Draft sealing, preview, ingestion and adoption of hand edits reject oversized bodies with `document_too_long`; the agent splits them into two self-contained topic drafts and repeats if necessary. Sources and timelines remain intact. CLI `document get` defaults to the current document only; use `--include` for other assets. Existing long documents remain readable, and the low-level storage API retains legacy support; this is an ingestion policy, not a workspace format change. See [semantic splitting](skills/docnexus-extract/references/document-length.md).
 
 ## Skills and capture
 

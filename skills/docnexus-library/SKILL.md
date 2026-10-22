@@ -27,6 +27,7 @@ For saved related-page work, follow [impact tracking](references/impacts.md): li
 
 - Present documents as `title` — `docnexus/library/<file_path>` with tags and `updated_at`.
 - `--include` accepts any of `source,document,metadata,timeline,template`. `template` contains author-owned prose and fact placeholders; `document` contains the current generated view. No separate template file is stored.
+- CLI `document get` defaults to the current body only. Request the other assets explicitly when needed, especially for history, source review or updates; they are not covered by the 4000-character refined-body limit.
 - Generated fact blocks are read-only projections of metadata. Changing their text does not change a fact and is repaired on access. Edit the owner's facts through a reviewed draft or metadata sync; references in other pages refresh automatically. Render refreshes derived views without changing source history.
 - Draft status: `open` (not sealed), `ready` (sealed, awaiting ingest), `ingested`, `invalid` (unreadable manifest).
 

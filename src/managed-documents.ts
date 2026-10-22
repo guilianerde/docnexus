@@ -13,6 +13,7 @@ import { resolveKnowledge } from "./knowledge.js";
 import { loadKnowledgeDocuments, validateKnowledgeWrite } from "./knowledge-service.js";
 import { loadWorkspaceSnapshot, DocumentRevisionChangedError, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { factDocumentTemplate, factReferenceIds, renderFactDocument, type RenderedFactReference } from "./fact-renderer.js";
+import { assertRefinedDocumentLength } from "./document-length.js";
 import { assertDocumentId, listRecordFiles, normalizeManagedFilePath, readAssets, readRecordAsset, readRecordFile, readRecordMetadata, recordDirectory, resolveManagedTarget, type RecordFile } from "./workspace-reader.js";
 
 export { assertNoSymbolicLinks } from "./workspace-io.js";
@@ -89,6 +90,10 @@ export async function upsertManagedDocument(
     if (options.ingestion && options.ingestion.documentId !== id) throw new DocNexusError("internal_error", "ingestion document identity mismatch");
     const prospective = await validateKnowledgeWrite(projectRoot, { id, file_path: target.relativePath, metadata: input.metadata, document: template, document_hash: hashes.document_hash });
     const rendered = renderFactDocument(template, prospective.knowledge.facts).document;
+    // Apply the refinement policy at ingestion/adoption, retaining legacy reads
+    // and low-level storage support for existing long documents.
+    const enforceLength = options.ingestion !== undefined || options.acceptLibraryEdit;
+    if (enforceLength) assertRefinedDocumentLength(rendered, target.relativePath);
     if (options.ingestion?.renderedHash !== undefined && options.ingestion.renderedHash !== sha256(rendered)) {
       throw new DocNexusError("preview_changed", "referenced facts changed after preview; seal the draft again and review its new preview");
     }
@@ -116,6 +121,7 @@ export async function upsertManagedDocument(
         if (sha256(factDocumentTemplate(document.document)) !== document.document_hash) {
           throw new DocNexusError("text_integrity_error", `managed target was externally modified: ${document.file_path}; run "docnexus document sync" to adopt the edit`);
         }
+        if (enforceLength) assertRefinedDocumentLength(body, document.file_path);
         files.set((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, body);
       }
     }

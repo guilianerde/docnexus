@@ -74,6 +74,28 @@ describe("document-level hybrid recall", () => {
     expect(distraction!.ranking.source_ranks).not.toHaveProperty("keyword");
   });
 
+  it("uses filtered terms and exact-name keyword ranks while embedding the original question", async () => {
+    const path = await root();
+    const filler = await upsertManagedDocument(path, { file_path: "filler.md", source: "fixture", document: "what appears here; is discussed elsewhere; the examples follow.", metadata });
+    await upsertManagedDocument(path, { file_path: "a.md", source: "fixture", document: "tokenization examples", metadata: { ...metadata, title: "tokenization examples" } });
+    const saved = await upsertManagedDocument(path, { file_path: "token.md", source: "fixture", document: "Refresh token rotation.", metadata });
+    const embedder = new LocalHashEmbedder();
+    const embed = vi.spyOn(embedder, "embed");
+    const query = "what is the refresh token";
+    const question = await recall(path, { query, limit: 3 }, embedder);
+    expect(embed).toHaveBeenCalledWith(query);
+    expect(question.results.find(result => result.document_ref.document_id === saved.id)?.ranking.source_ranks?.keyword).toBe(1);
+    expect(question.results.find(result => result.document_ref.document_id === saved.id)?.keyword_match?.matched_terms).toEqual(["refresh", "token"]);
+    const noise = question.results.find(result => result.document_ref.document_id === filler.id)!;
+    expect(noise).toBeDefined();
+    expect(noise.keyword_match).toBeUndefined();
+    expect(noise.ranking.source_ranks).not.toHaveProperty("keyword");
+    const named = await recall(path, { query: "token", limit: 3 }, embedder);
+    const hit = named.results.find(result => result.document_ref.document_id === saved.id)!;
+    expect(hit.ranking.source_ranks?.keyword).toBe(1);
+    expect(hit.keyword_match?.source_anchor).toMatchObject({ kind: "metadata", field: "path", value: "token.md" });
+  });
+
   it("meets the small bilingual evaluation set using the packaged offline ONNX model", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("evaluation forbids network")));
     const path = await root();

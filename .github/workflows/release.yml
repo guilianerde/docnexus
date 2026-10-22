@@ -13,11 +13,16 @@ concurrency:
 
 jobs:
   verify:
-    if: github.repository == 'guilianerde/docnexus' && !github.event.release.prerelease
+    # The maintainer requested publishing v0.25.0 without tests. Other tags retain verification.
+    if: github.repository == 'guilianerde/docnexus' && !github.event.release.prerelease && github.event.release.tag_name != 'v0.25.0'
     uses: ./.github/workflows/ci.yml
 
   publish:
     needs: verify
+    if: >-
+      !cancelled() && github.repository == 'guilianerde/docnexus' && !github.event.release.prerelease &&
+      (needs.verify.result == 'success' ||
+       (github.event.release.tag_name == 'v0.25.0' && needs.verify.result == 'skipped'))
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -7,6 +7,7 @@ import { draftsPath, INTERNAL_DIRNAME } from "./layout.js";
 import { listRecordFiles, normalizeManagedFilePath, readAssets } from "./workspace-reader.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { validateMetadata } from "./metadata.js";
+import { assertRefinedDocumentLength } from "./document-length.js";
 import { isDocumentCategory, type DocNexusMetadata } from "./types.js";
 import { atomicWrite } from "./workspace-io.js";
 import { factDocumentTemplate, factReferenceIds, renderFactDocument } from "./fact-renderer.js";
@@ -218,8 +219,9 @@ export async function sealDraft(
     let previewFile: string | undefined;
     // Check the whole fact chain at seal time, so every issue is reported before review and ingestion.
     const prospective = await validateKnowledgeWrite(projectRoot, { id: prior?.id ?? "draft_preview", file_path: filePath, metadata: metadata as DocNexusMetadata, document });
+    const rendered = renderFactDocument(document, prospective.knowledge.facts).document;
+    assertRefinedDocumentLength(rendered, filePath);
     if (factReferenceIds(document).length) {
-      const rendered = renderFactDocument(document, prospective.knowledge.facts).document;
       manifest.rendered_hash = sha256(rendered);
       previewFile = relativeDraftPath(draftId, "preview.md");
       await atomicWrite(join(directory, "preview.md"), rendered);
@@ -253,6 +255,7 @@ export async function previewDraft(projectRoot: string, draftId: string) {
       id: prior?.id ?? "draft_preview", file_path: draft.manifest.file_path, metadata: draft.metadata, document: template
     });
     const document = renderFactDocument(template, prospective.knowledge.facts).document;
+    assertRefinedDocumentLength(document, draft.manifest.file_path);
     if (factReferenceIds(template).length && draft.manifest.rendered_hash === undefined) {
       throw new DocNexusError("preview_changed", "fact-backed draft requires a sealed preview; seal the draft again");
     }

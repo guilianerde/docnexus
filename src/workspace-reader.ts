@@ -8,6 +8,7 @@ import type { DocNexusMetadata } from "./types.js";
 import { assertNoSymbolicLinks, readIfExists } from "./workspace-io.js";
 import { withProjectLock } from "./project-lock.js";
 import { factDocumentTemplate } from "./fact-renderer.js";
+import { mapWithConcurrency } from "./concurrency.js";
 
 export interface RecordFile {
   id: string;
@@ -21,10 +22,10 @@ export interface RecordFile {
   timeline_hash: string;
 }
 
-/** Only reuse directory checks inside one locked snapshot, never across requests. */
+/** Reuse pending/completed path checks inside one locked snapshot, never across requests. */
 export async function createWorkspaceReadContext(projectRoot: string) {
   const root = await realpath(projectRoot);
-  return { root, directory: workspaceDirectory(root), checkedDirectories: new Set<string>() };
+  return { root, directory: workspaceDirectory(root), checkedPaths: new Map<string, Promise<boolean>>() };
 }
 
 type WorkspaceReadContext = Awaited<ReturnType<typeof createWorkspaceReadContext>>;
@@ -37,14 +38,14 @@ export async function recordDirectory(projectRoot: string, id: string, context?:
   assertDocumentId(id);
   const root = context?.root ?? await realpath(projectRoot);
   const path = context ? join(context.directory, "records", id) : recordRelativePath(id, root);
-  await assertNoSymbolicLinks(root, path, context?.checkedDirectories);
+  await assertNoSymbolicLinks(root, path, context?.checkedPaths);
   return join(root, path);
 }
 
 export async function readRecordAsset(projectRoot: string, id: string, name: string, context?: WorkspaceReadContext): Promise<string> {
   const directory = await recordDirectory(projectRoot, id, context);
   const root = context?.root ?? await realpath(projectRoot);
-  await assertNoSymbolicLinks(root, relative(root, join(directory, name)), context?.checkedDirectories);
+  await assertNoSymbolicLinks(root, relative(root, join(directory, name)), context?.checkedPaths);
   return readFile(join(directory, name), "utf8");
 }
 
@@ -52,19 +53,33 @@ export async function listRecordFiles(projectRoot: string, context?: WorkspaceRe
   const read = async () => {
     const root = context?.root ?? await realpath(projectRoot);
     const directory = context ? join(root, context.directory, "records") : recordsPath(root);
-    await assertNoSymbolicLinks(root, relative(root, directory), context?.checkedDirectories);
+    await assertNoSymbolicLinks(root, relative(root, directory), context?.checkedPaths);
     const entries = await readdir(directory, { withFileTypes: true });
-    const records: RecordFile[] = [];
-    const paths = new Set<string>();
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const directories = entries.sort((a, b) => a.name.localeCompare(b.name)).filter(entry => {
       if (entry.isSymbolicLink()) throw new DocNexusError("text_integrity_error", "record directory must not contain symbolic links");
-      if (!entry.isDirectory()) continue;
-      const record = await readRecordFile(root, entry.name, context);
+      return entry.isDirectory();
+    });
+    const records = await mapWithConcurrency(directories, 24, async entry => {
+      if (context) {
+        assertDocumentId(entry.name);
+        const recordPath = join(directory, entry.name);
+        context.checkedPaths.set(recordPath, Promise.resolve(true));
+        // The parent Dirent does not describe these children. Inspect the two
+        // query assets once; source/history are not read by snapshots.
+        const assets = await readdir(recordPath, { withFileTypes: true });
+        for (const asset of assets) if (asset.name === "record.json" || asset.name === "metadata.json") {
+          if (asset.isSymbolicLink()) throw new Error("file_path must not contain symbolic links");
+          if (asset.isFile()) context.checkedPaths.set(join(recordPath, asset.name), Promise.resolve(true));
+        }
+      }
+      return readRecordFile(root, entry.name, context);
+    });
+    const paths = new Set<string>();
+    for (const record of records) {
       if (paths.has(record.file_path)) {
         throw new DocNexusError("text_integrity_error", `duplicate record file_path: ${record.file_path}`);
       }
       paths.add(record.file_path);
-      records.push(record);
     }
     return records;
   };
@@ -110,9 +125,14 @@ export async function readAssets(projectRoot: string, record: RecordFile, accept
 
 /** Query dependencies only; source/history integrity belongs to explicit reads, writes and doctor. */
 export async function readCurrentAssets(projectRoot: string, record: RecordFile, context?: WorkspaceReadContext, acceptLibraryEdit = false) {
-  const metadata = await readRecordMetadata(projectRoot, record.id, context);
-  const target = await resolveManagedTarget(projectRoot, record.file_path, context);
-  const document = await readIfExists(target.absolutePath);
+  const [metadataResult, documentResult] = await Promise.allSettled([
+    readRecordMetadata(projectRoot, record.id, context),
+    resolveManagedTarget(projectRoot, record.file_path, context).then(target => readIfExists(target.absolutePath))
+  ]);
+  if (metadataResult.status === "rejected") throw metadataResult.reason;
+  if (documentResult.status === "rejected") throw documentResult.reason;
+  const metadata = metadataResult.value;
+  const document = documentResult.value;
   if (document === undefined) throw new DocNexusError("text_integrity_error", `managed library file is missing: ${record.file_path}`);
   if (!acceptLibraryEdit && sha256(factDocumentTemplate(document)) !== record.document_hash) {
     throw new DocNexusError("text_integrity_error", `managed target was externally modified: ${record.file_path}; run "docnexus document sync" to adopt the edit`);
@@ -129,7 +149,7 @@ export async function resolveManagedTarget(projectRoot: string, filePath: string
   const absolutePath = resolve(managedRoot, filePath);
   const relativePath = relative(managedRoot, absolutePath);
   if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new DocNexusError("invalid_params", `file_path must remain inside the ${workspaceDirectory(projectRoot)}/library directory`);
-  await assertNoSymbolicLinks(root, relative(root, absolutePath), context?.checkedDirectories);
+  await assertNoSymbolicLinks(root, relative(root, absolutePath), context?.checkedPaths);
   return { absolutePath, relativePath: relativePath.split(sep).join("/") };
 }
 

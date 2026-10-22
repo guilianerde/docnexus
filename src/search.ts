@@ -7,6 +7,13 @@ import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snaps
 import { factsForDocuments, type ResolvedFact } from "./knowledge.js";
 import { documentAnchor, factAnchor, recordVersion, type SourceAnchor } from "./source-anchor.js";
 
+const ENGLISH_QUERY_STOP_WORDS = new Set([
+  "a", "an", "the", "what", "which", "where", "when", "why", "how",
+  "is", "are", "was", "were", "be", "been", "being", "do", "does", "did",
+  "have", "has", "had", "it", "its", "this", "that", "these", "those",
+  "of", "to", "for", "in", "on", "at", "by", "with", "from"
+]);
+
 export interface SearchInput {
   query: string;
   limit?: number;
@@ -44,8 +51,13 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput):
   const { query, limit, category } = validateSearchInput(input);
   const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
   const normalizedQuery = normalize(query);
+  // Filter standalone words, never components of paths or identifiers. Keep the
+  // original phrase for matching, and retain single-word/all-filler lookups.
+  const parts = normalizedQuery.split(/\s+/);
+  const significant = parts.filter(part => !ENGLISH_QUERY_STOP_WORDS.has(part.replace(/^["'“”‘’]+|[?!.,;:"'“”‘’]+$/gu, ""))).join(" ");
+  const tokenQuery = parts.length > 1 && /[\p{L}\p{N}]/u.test(significant) ? significant : normalizedQuery;
   const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
-  const words = [...segmenter.segment(normalizedQuery)].filter((part) => part.isWordLike).map((part) => part.segment);
+  const words = [...segmenter.segment(tokenQuery)].filter((part) => part.isWordLike).map((part) => part.segment);
   // ICU can split a short term such as 长文 into single characters. Adjacent Han
   // pairs retain literal evidence without admitting every document containing 文.
   const pairs = [...normalizedQuery.matchAll(/\p{Script=Han}{2,}/gu)].flatMap(([run]) => {
@@ -70,6 +82,10 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput):
       ...metadata.entities.flatMap((entity) => [entity.name, ...(entity.aliases ?? [])].map(text => ({ text, field: "entity" as const }))),
       ...metadata.tags.map(text => ({ text, field: "tag" as const }))
     ];
+    const path = normalize(document.file_path);
+    const filename = path.slice(path.lastIndexOf("/") + 1);
+    const exactNameField = [path, path.replace(/\.md$/, ""), filename, filename.replace(/\.md$/, "")].includes(normalizedQuery)
+      ? "path" : normalize(document.title) === normalizedQuery ? "title" : undefined;
     const names = named.map(value => value.text);
     const headings = normalize(names.join("\n"));
     const summary = normalize(metadata.summary);
@@ -91,7 +107,9 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput):
     let evidenceScore = -1;
     for (const candidate of candidates) {
       const value = normalize(candidate.text);
-      const strength = (value.includes(normalizedQuery) ? terms.length + 1 : 0) + matched.filter((term) => value.includes(term)).length;
+      const tier = candidate.source_anchor?.kind === "metadata" && candidate.source_anchor.field === exactNameField
+        ? 2 : value.includes(normalizedQuery) ? 1 : 0;
+      const strength = tier * (terms.length + 1) + matched.filter((term) => value.includes(term)).length;
       if (strength > evidenceScore) { evidence = candidate; evidenceScore = strength; }
     }
     let snippet = evidence.text;
@@ -108,9 +126,10 @@ export function searchSnapshot(snapshot: WorkspaceSnapshot, input: SearchInput):
       + (summary.includes(term) ? 2 : 0)
       + (text.includes(term) ? 1 : 0), 0);
     const exact = [...names, metadata.summary, body, factText].some((value) => normalize(value).includes(normalizedQuery));
-    // Complete phrases outrank partial evidence, then coverage outranks field
-    // weights. The fractional field term cannot overturn either ordering.
-    const score = (exact ? terms.length + 1 : 0) + matched.length + fieldScore / (8 * (terms.length + 1));
+    // Exact names outrank phrases, then coverage outranks field weights.
+    // Each tier is wider than all coverage and fractional field contributions.
+    const tier = exactNameField ? 2 : exact ? 1 : 0;
+    const score = tier * (terms.length + 1) + matched.length + fieldScore / (8 * (terms.length + 1));
     const facts = factsForDocuments(knowledge.facts, [document.id], knowledgeDocuments);
     results.push({
       id: document.id,

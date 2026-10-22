@@ -1,0 +1,17 @@
+# Bounded documents and semantic splitting
+
+Each refined document must contain at most **4000 Unicode characters**, counting the complete currently rendered Markdown: title, headings, code, links and expanded fact blocks. This is a character limit, not a model-token estimate. Source material, metadata and timelines are separate evidence; do not truncate them to meet the body limit.
+
+When a proposed document exceeds the limit, split it into **two coherent topic documents** based on the material's meaning. For example, design/constraints and configuration/operations may answer different questions; choose dimensions supported by this source, not a fixed taxonomy. Each part needs a descriptive title, enough local context and intact conditions, exceptions and rationale. Do not cut at a character offset, break a code block/table, drop knowledge, or produce arbitrary “part 1/part 2” fragments. Use concise cross-links for shared context.
+
+For each part:
+
+1. Follow capture resolution for that topic, comparing existing pages and stating whether this is a new page or a reviewed update. Allocate its own draft, target path, source, complete document, metadata and impact attachment. Keep the caller's explicitly supplied category on all parts unless the caller specifies otherwise.
+2. Preserve source attribution and observation timestamps. Define each fact once, retain existing fact ids/history and use references on other pages. Seal fact owners before drafts that reference newly introduced facts; do not duplicate definitions to bypass dependency checks.
+3. Seal and read the full preview. The CLI returns `document_too_long` with the measured count and path when the current rendered body exceeds 4000 characters. Split an oversized part into two again until every part fits. Do not bypass the check by editing hashes/manifests or writing directly to library/records.
+4. Review the parts together for complete knowledge coverage and correct cross-references. Existing authorization to save the selected material covers its necessary topic parts; it does not authorize unrelated page changes. Use the normal review/replace rules, without adding a new approval gate solely because there are multiple parts.
+5. Ingest each sealed draft separately and register its impact attachment. Report each saved id/path and any pending or failed part; this is not an atomic batch, and an already ingested part must not be ingested again.
+
+When splitting an existing page, retain its path/id for one bounded part and keep its existing fact definitions/history with that owner. Create new paths for the other topics and check affected links and explanations. Prefer saving new parts before shrinking the original, subject to fact dependencies. If this cannot be ordered without unresolved references or discarding valid knowledge, keep the drafts and report the blocking dependency instead of forcing the write. Never delete the original records or rewrite its timeline to make the split appear historical.
+
+The limit applies to refinement sealing, preview, ingestion and adoption of hand edits. Existing long stored documents remain readable; later refinement must split them. Automatic time-based fact rendering can change length after storage, so recheck the expanded preview whenever saving. A CLI `document get` without `--include` returns only the current body; request source, metadata, template or timeline explicitly when the task needs them.
