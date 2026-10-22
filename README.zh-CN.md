@@ -2,34 +2,32 @@
 
 [English README](./README.md)
 
-DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具。借鉴 [GBrain](https://github.com/garrytan/gbrain) 的当前知识、时间线与 skills 编排思路：Markdown 保存当前知识与来源时间线，skills 负责提炼和回答，CLI 管理文本及可重建的 PostgreSQL＋pgvector 检索投影，默认使用嵌入式 PGLite，也支持连接独立 Postgres。
+DocNexus 是面向 Codex、Claude 等编码智能体的本地项目记忆工具。受 [GBrain](https://github.com/garrytan/gbrain) 启发，它用 Markdown 保存当前知识，并维护带来源的时间线。skills 负责提炼、查找和引用知识；轻量 CLI 管理文本及可重建的 PostgreSQL＋pgvector 投影，默认使用嵌入式 PGLite，也支持连接独立 Postgres。
 
-智能体按需读取已记录的项目约定；写入始终经用户确认。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并提供一跳图谱上下文。不在 CLI 内调用外部 LLM，默认模型随包发布并离线加载。
+智能体按需读取项目记忆，所有写入都需要用户授权。关键词查找直接读取文本；默认 recall 融合关键词与本地向量排名，并补充一跳图谱证据。CLI 不调用外部 LLM，随包发布的量化 ONNX 模型可离线加载。
 
-> 0.25.0 破坏性更新：工作区格式升级为 7，`.docnexus/` 保存程序文件，知识输出目录可配置。安装时自动强制清除识别出的旧工作区及其知识、来源和历史，不提供存量数据迁移；草稿格式 3、投影 schema 2 不变。
+> **0.25.0 破坏性更新**：工作区格式 7 将 `.docnexus/` 程序文件与可配置的知识输出目录分开。安装时会清除识别出的旧工作区及其知识、来源和历史，不提供迁移；草稿格式 3、投影 schema 2 不变。
 
 ## 安装时清理旧版本
 
-本次破坏性更新通过 npm `postinstall` 自动清理项目根目录中识别出的旧版 `docnexus/`（含其中的知识、来源、依赖及 `.git` 历史），以及旧格式 `.docnexus/` 中的数据。识别依据是格式 1–6 的 DocNexus `project.json`；尚未初始化的旧 `docnexus/` 安装目录须只包含 npm 安装文件，并由清单中的 DocNexus 依赖识别。清理无需额外参数或确认，不迁移、不备份。旧 skills 链接和标记指引一并清理。
-
-请使用 `npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus`；旧 `--prefix ./docnexus` 安装位置会报错，避免删除正在安装的新版本。清理旧隐藏数据时保留 `.docnexus/package.json`、锁文件和 `node_modules/`；重复安装保留格式 7 的数据和集成。不删除无法识别的同名目录，不跟随符号链接清理外部数据。全局安装、临时 npx 环境、传递依赖和源码仓库安装不执行此项目清理。禁用 npm 生命周期脚本（如 `--ignore-scripts`）时清理不会执行，旧工作区仍会被 init 拒绝。
+npm `postinstall` 会删除项目根目录中识别出的旧版 `docnexus/`（格式 1–6）以及 `.docnexus/` 下的旧数据，包括知识、来源和 Git 历史。npm 清单、锁文件和 `node_modules/` 会保留；无法识别的目录、外部符号链接目标、全局/npx 安装和源码仓库不受影响。该过程没有确认、迁移或备份。使用 `--ignore-scripts` 可跳过清理，但初始化仍会拒绝旧工作区。
 
 ## 快速开始
 
-需要 Node.js 22.13.0 或更高版本及 npm。在目标项目根目录执行：
+需要 Node.js 22.13.0 或更高版本及 npm。在目标项目中执行：
 
 ```bash
 mkdir -p .docnexus
 npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus
-./.docnexus/node_modules/.bin/docnexus init --output-dir docs/knowledge --agent codex   # 或 claude / all
+./.docnexus/node_modules/.bin/docnexus init --output-dir docs/knowledge --agent codex  # 或 claude / all
 ./.docnexus/node_modules/.bin/docnexus doctor
 ```
 
-安装清单、锁文件、运行依赖、skills、schema、草稿和检索索引统一保存在 `.docnexus/`。`init --output-dir <父目录>` 指定项目内的输出父目录，知识工作区固定创建在 `<父目录>/docnexus/` 下；例如 `--output-dir workfull` 生成 `workfull/docnexus/`。省略时父目录为项目根目录，工作区为 `docnexus/`；配置保存在 `.docnexus/project.json`，后续命令自动读取。`status` 返回 `workspace_path`、`library_path` 和 `internal_directory`。输出目录不能在项目外或与内部、智能体目录重叠；初始化后不能直接改换目录，需要明确 reset 后重新初始化。命令从项目根目录执行，其他位置使用 `--project-root <project>`。升级使用 `npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus@latest`，恢复依赖使用 `npm ci --prefix ./.docnexus`。
+`init --output-dir <父目录>` 会在 `<父目录>/docnexus/` 创建工作区；省略时使用 `docnexus/`。配置保存在 `.docnexus/project.json`，初始化后需显式 reset 才能更换。程序文件、skills、schema、草稿和检索索引都放在 `.docnexus/`。命令从项目根目录执行，其他位置使用 `--project-root <path>`；`status` 返回实际路径。升级使用 `...@latest`，恢复依赖使用 `npm ci --prefix ./.docnexus`。
 
-然后正常工作。智能体根据任务本身判断何时查找项目记忆；`docnexus/CONCEPTS.md` 只是一张简短的分类路由表，指向 `docnexus/concepts/` 下按领域划分的概念文件。也可以说“记住这段设计说明”“鉴权为什么这样设计”“列出 DocNexus 文档”。
+让智能体记住一条决策、解释项目约定或列出已保存文档即可。`docnexus/CONCEPTS.md` 是一张简短的分类路由表，指向 `docnexus/concepts/` 下按领域划分的概念文件。
 
-## 工作区与知识更新
+## 工作区
 
 ```text
 .docnexus/
@@ -52,63 +50,35 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; 默认 docnexus
   records/<id>/                   # source.md, metadata.json, timeline.md, record.json
 ```
 
-下文 `docnexus/` 知识路径均为默认值示例；使用自定义目录时替换为配置路径，优先使用 CLI 返回的 `library_path`、草稿和时间线路径。保存文档时更新可阅读导航；`.docnexus/store/` 下的检索索引由下次 `recall` 或显式 `index sync` 生成，可从文本重建。
+`library/` 保存当前知识；`records/<id>/` 保存每份文档的来源、metadata 和时间线。时间线日期是入库时间，不是事件发生时间；关键词和向量索引都不包含来源与历史正文。生成的导航有大小上限：`CONCEPTS.md` 不超过 3 KB，每个分类文件不超过 32 KB，超限时按实体类型分页。`categories.md` 是可编辑的建议清单，不是分类枚举，CLI 不会读取它。
 
-`library/` 保存当前知识；`timeline.md` 保存来源与更新轨迹。更新文档时，智能体先阅读已有知识与时间线，再合并新材料，保留仍有效的约定、替换明确失效的结论，并说明未解决的冲突。CLI 不推断自然语言矛盾；可选 facts 字段显式记录来源、生效、到期、替代和撤回，由代码计算有效状态。解释正文由智能体维护，结构化事实通过 ID 引用自动生成；人工正文或 metadata 变化时追加时间线，纯视图刷新不追加事件。重复提交相同内容不会新增事件。
-
-每次沉淀前，智能体必须检索已有知识并阅读全文，判断更新旧页、新建独立文档、重复无增量跳过或未决冲突，并将理由与读取版本一起交接审阅。不同提交的评审报告/独立事件分别保留；关联的长期知识页需单独提炼并在授权范围内更新。直接保存已有草稿也需补齐这一判断。该环节由 skill 编排，不是 CLI 自动语义去重或相似度阈值覆盖。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
-
-时间线中的日期是入库时间，不等同于来源所描述事件的发生时间。关键词查找和向量索引都不包含原始材料或历史时间线，历史问题可通过 `document get --include timeline` 查看。
-
-实体用于概念目录并投影为图节点，关系投影为带声明文档和描述的图边；两个数组允许为空，没有实体的文档仍可语义召回。没有实体的文档也会列在所属分类的概念文件中。根目录路由表不超过 3 KB；每个分类文件都不超过 32 KB：超出时保留一个索引文件，概念按实体类型分页（`concepts/<分类>/<类型>.md`、`<类型>-2.md`……）。完整信息通过 `document list` 与 `concepts` 查看。
+每次捕获前，智能体先检索并完整阅读候选文档，再判断更新、新建、跳过或冲突，并把理由和读取版本带入审阅。这是 skill 工作流，不是 CLI 强制语义去重。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
 
 ## 查找与回答
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus search "Refresh token" --limit 5
 ./.docnexus/node_modules/.bin/docnexus recall "刷新令牌在什么情况下需要轮换" --limit 5
-./.docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,metadata
-./.docnexus/node_modules/.bin/docnexus document get --id <document_id> --include document,timeline
+./.docnexus/node_modules/.bin/docnexus document get --id <id> --include document,metadata
+./.docnexus/node_modules/.bin/docnexus document get --id <id> --include document,timeline
 ```
 
-`search` 对当前正文、路径、标题、摘要、标签、实体名称及别名、有效事实进行字面匹配，支持中英文和代码标识符。`recall` 使用本地 `BAAI/bge-small-zh-v1.5` q8 ONNX 模型生成 512 维向量，以文档级 RRF 融合关键词与向量名次，每份文档返回一个代表片段，并补充相邻片段和一跳图谱证据。`ranking.rrf_score` 排序，`source_ranks` 和 `keyword_match` 解释命中；`matched_chunk.score` 仅为向量相似度，关键词独有候选为 0。`--mode vector` 可单独查看原有向量结果。图谱不参与主排序，所有分数都不是事实置信度。关系引用使用实际声明文档 `source_path`。
+`search` 对当前正文、路径、标题、摘要、标签、实体名称/别名和有效事实做字面匹配。`recall` 使用本地 `BAAI/bge-small-zh-v1.5` 生成 512 维向量并融合文档排名，返回代表片段、相邻片段和一跳图谱证据。`--category` 精确、区分大小写过滤；`uncategorized` 覆盖未分类文档。分数不是事实置信度。
 
-智能体找到文件后阅读完整 Markdown，基于文档回答并引用 `docnexus/library/<file_path>`。普通正文可直接读取；含生成事实块时先使用 document get 刷新有效时间变化，再读取并引用。证据不足、记忆冲突或与代码不一致时，应明确说明。
+回答前应阅读完整文档，并引用 `docnexus/library/<file_path>`。含生成事实块的文件先使用 `document get` 刷新有效时间变化；证据不足或与代码冲突时应明确说明。
 
-`search` 和 `recall` 均支持 `--category codeReview`，按项目分类名精确、区分大小写过滤；可与 `--mode vector`、`--return-unit` 和 `--context-budget` 组合。过滤先于候选限额和融合，并约束图谱支持文档及关系声明者；`uncategorized` 包含未设置分类的文档，未知分类返回空结果。文内跨分类事实引用仍保留定义者出处。不传参数时检索所有分类，重新分类后下一次查询立即使用当前值。
-
-中文关键词查找在通用分词之外补充连续汉字对，多词查询不再仅凭孤立单字命中；单独查询一个汉字仍可使用。排序依次优先归一化后的标题、相对路径或文件名等值匹配（可省略 .md），再比较完整短语、查询覆盖度和字段权重，摘录选择最强证据；只命中名称、别名或结构化事实时可能没有正文行号。多词查询过滤独立英文虚词，保留原始短语、单词及全虚词查询、否定词和路径/标识符内部成分。名称等值命中引用对应标题或路径；英文、代码标识符和路径继续保留字面匹配。多词查询仍允许部分匹配，语义改写通过 recall 的向量路补充；词法分数不是置信度。
-
-长文和有效事实使用实际本地 tokenizer 切块，每片最多 256 tokens（包含标题上下文和特殊 token），优先按行、句子或词边界拆分，保留少量重叠；超长段落和代码也会拆开。embedding 前再次检查模型上限，超限查询会报错并提示缩短输入。升级后，下一次 `recall` 或 `index sync` 自动重建旧切块策略的派生索引，正文和时间线保持不变。真实离线模型验证及限制见 [长文检索回归](docs/operations/retrieval-evaluation.md#long-document-regression)。
-
-可选实体别名与事实生命周期保存在 metadata 中。事实使用稳定 id、来源和带时区的 `valid_from`；通过 `replaces` 显式替代旧事实，通过 `valid_until` 或 `withdrawn_at` 到期或撤回。仅 active 事实生成额外检索片段，历史记录保留。每个事实只在所属 metadata 中定义一次，正文用独立一行 `{{fact:fact_id}}` 引用，CLI 生成带来源与状态的内容。其他页面可引用同一 id；有效替代、到期或撤回会刷新派生内容，无需手工改写多个页面。自由叙述中的重复值仍需一次性换为引用。示例见 [事实工作流](skills/docnexus-extract/references/facts.md)。`document get --include template,metadata` 返回可编辑结构；`document render` 刷新所有生成块。没有后台刷新定时器；正文读取、搜索和索引同步会刷新时间变化。
+事实只在所属 metadata 中定义一次，带稳定 id、来源和生效时间，正文用独立一行 `{{fact:fact_id}}` 引用。CLI 生成带来源的块，并跟随替代、到期和撤回；`document render` 刷新生成内容，没有后台定时器。
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus facts list --entity "<规范名或别名>" --include-inactive
 ./.docnexus/node_modules/.bin/docnexus facts list --at "2026-10-14T12:00:00+08:00" --include-inactive
 ```
 
-## 本地使用记录
+生命周期细节见[事实工作流](skills/docnexus-extract/references/facts.md)。
 
-可选启用本地记录，使用一段时间后导出单个 JSON 文件用于优化分析。记录命令耗时、错误码、匿名查询/文档标识、召回与证据预算、索引增量和模型调用指标；不记录原始问题、正文、文件路径或凭据，不上传网络，默认关闭。
+## 文档浏览与查询
 
-```bash
-./.docnexus/node_modules/.bin/docnexus usage enable
-./.docnexus/node_modules/.bin/docnexus usage status
-# 正常使用；如最近一次查询确实需要跨关系查找，可显式反馈：
-./.docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
-# 使用一段时间后，分享这一份导出文件：
-./.docnexus/node_modules/.bin/docnexus usage export > .docnexus/.runtime/usage-report.json
-./.docnexus/node_modules/.bin/docnexus usage disable
-```
-
-开发仓库先运行 `npm run build`，将上述可执行文件替换为 `node /path/to/docnexus/dist/src/cli.js --project-root /path/to/project`。该能力从 0.18.0 起可用。原始记录位于 Git 忽略的 `.docnexus/.runtime/usage.jsonl`，上限 10 MiB；满后停止记录，正常命令继续运行。重置项目会删除记录。指标不能自动证明回答正确；详见[字段、反馈和分析边界](docs/operations/usage-observation.zh-CN.md)。
-
-## 文档展示接口
-
-在已初始化的项目中运行 `./.docnexus/node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页首次打开、手动刷新或切换分类/分页时读取数据，不自动轮询；数据版本变化后回到第一页。每次读取仍校验真源与事实时间。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
-
-未提供显式分类时，运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类；选择顺序为已有分类、建议清单、新建分类。`init` 会生成可编辑的 `docnexus/categories.md` 建议清单（例如 `pitfalls`、`templates`），智能体只把它当作参考，不是枚举白名单；修改它不会影响校验、分类计数或已有文档。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
+运行 `./.docnexus/node_modules/.bin/docnexus view`，打开输出的本机 URL，即可按分类、分页浏览文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页只读，在打开、手动刷新或切换分类时加载，每次请求都校验真源与事实时间。
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus document query --all
@@ -116,143 +86,110 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; 默认 docnexus
 node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 ```
 
-接口返回完整当前 Markdown、实际使用的分类计数、判断依据和分页信息。后续页携带首次查询的 `--revision <hash>`；写入、重新分类、删除或事实有效状态变化后，旧版本会被拒绝，应重新加载第一页。展示正文在内存中生成，不另存展示文档库，不依赖向量模型或检索数据库。分类维护使用 `document classify --id <id> --category "接口契约" --reason "基于项目 API 规范与相关端点文档" [--revision <hash>]`，只改分类、依据和审计历史，保留事实与正文。分类工作在编排流程运行时完成；查询本身不触发模型重分类。详见 [查询接口](docs/architecture/document-query.zh-CN.md)。
+`document query` 返回完整当前 Markdown、分类计数、判断依据和分页信息。后续页传 `--revision <hash>`；写入、重新分类、删除或事实状态变化会使旧版本失效。`document classify --id <id> --category <name> --reason <basis>` 只更新分类和审计历史。
 
-精炼正文上限为 **4000 个 Unicode 字符**，包括标题、代码和当前展开的事实内容。草稿封存、预览、入库及手改采纳会以 `document_too_long` 拒绝超限正文，由 Agent 按语义维度拆成两篇独立草稿，仍超限就继续拆分，不截断知识、来源或历史。CLI `document get` 默认只返回当前正文，其他材料通过 `--include` 显式读取。存量长文仍可读取，底层存储 API 保留兼容；这是入库策略，不改变工作区格式。详见[语义拆分规则](skills/docnexus-extract/references/document-length.md)。
+分类优先级为：调用方显式指定、已有分类、建议清单、新建分类。`init` 会生成 `docnexus/categories.md`（例如 `pitfalls`、`templates`）；智能体只把它当作参考，不是白名单，修改它不会重分类已有文档。
+
+精炼正文上限为 **4000 个 Unicode 字符**（含标题、代码和展开事实）。封存、预览、入库和手改采纳会以 `document_too_long` 拒绝超限正文，应按语义拆分而不是截断。`document get` 默认只返回当前正文，其他材料通过 `--include` 读取。详见[语义拆分规则](skills/docnexus-extract/references/document-length.md)。
 
 ## 捕获与 skills
 
-封存草稿会记录目标文档版本。封存后若正文、来源、分类等发生更新，或路径被占用、删除或重建，旧草稿入库会被拒绝；先读取并合并当前知识，再重新封存和审阅，`--replace` 不绕过检查。旧格式 1/2 的待入库草稿需复读合并后重新封存为格式 3，已存文档仍为工作区格式 7。真实文档程序回放与独立模型审阅任务见 [知识维护评估](docs/operations/knowledge-evaluation.zh-CN.md)。
-
 | Skill | 职责 |
 | --- | --- |
-| `docnexus` | 预检、意图路由、捕获流水线 |
-| `docnexus-extract` | 提炼或合并当前知识，写入并封存草稿 |
-| `docnexus-ingest` | 保存已确认的封存草稿，追加时间线 |
-| `docnexus-recall` | 主动查找、阅读全文、回答和引用 |
-| `docnexus-library` | 浏览、查看历史、采纳人工编辑、删除和草稿管理 |
-| `docnexus-maintain` | 诊断文本完整性、刷新目录和 skills、重置 |
+| `docnexus` | 预检、路由与捕获编排 |
+| `docnexus-extract` | 提炼或合并知识，写入并封存草稿 |
+| `docnexus-ingest` | 保存已授权的封存草稿并追加时间线 |
+| `docnexus-recall` | 查找、阅读全文、回答与引用 |
+| `docnexus-library` | 浏览、查看历史、采纳编辑、删除和草稿管理 |
+| `docnexus-maintain` | 诊断文本完整性、刷新目录与 skills、重置 |
 
-捕获流程：`draft new` → 智能体写入三份产物 → `draft seal` → `draft preview --id <id>` → 用户审阅 → `document add --draft <id>`。预览返回封存正文、`document_hash` 和 `sealed_version`，普通正文和事实展开正文使用同一入口；seal 与入库结果也返回该封存版本。引用事实、目标或产物变化后需重新合并、封存与读取预览。预览交付、智能体声明审阅和用户授权分别记录，CLI 不新增必须读取才能入库的门禁。已有路径需要显式授权并使用 `--replace`。
+捕获流程：`draft new` → 写入三份产物 → `draft seal` → `draft preview --id <id>` → 用户审阅 → `document add --draft <id>`。预览返回封存正文、`document_hash` 和 `sealed_version`；事实、目标或产物变化后需合并、重新封存并重新预览。替换已有路径需要显式授权和 `--replace`。
 
-提炼时，`observed_at` 只取当前来源明确提供且带时区的观察/陈述时间；新来源未知时移除旧值，不用事件日期或保存时间补齐，历史事实的生效时间与出处独立保留。创建/更新还需交接跨页影响清单：列出实际全文读取的版本、更新/无需修改/冲突/未核对的判断及依据。事实引用继续自动联动，智能体检查周围解释和操作步骤；相关页各自走草稿、版本与授权流程，不承诺多页原子提交。详见[写入前判定](skills/docnexus-extract/references/capture-resolution.md)。
+更新草稿使用提炼读取时的 `--base-version <record_version>`；封存冲突后先复读合并再重新封存。封存会固定目标版本，入库会拒绝更新的正文、来源或分类变化。回归回放见[知识维护评估](docs/operations/knowledge-evaluation.zh-CN.md)。
 
-0.21.0 支持将清单持久化到 `docnexus/impacts/<impact_id>.json`。提炼时先在草稿目录保存 `impact.json` 附件；主文档确认入库后，补入其实际 ID/版本，使用 `impact save --file <附件路径>` 登记。两次保存独立执行；清单保存失败时保留附件并报告待登记，不重复入库主文档。重复提交相同输入会返回已有记录，不清空进度。详情及输入示例见[影响清单续办](skills/docnexus-library/references/impacts.md)。
+`observed_at` 只取当前来源明确给出且带时区的观察时间，不继承旧值，也不用事件日期或保存时间代替。跨页影响清单随草稿交接，可持久化到 `docnexus/impacts/`：主文档入库后用 `impact save --file <输入文件>` 登记，通过 `impact list/get/set` 续办。两次操作相互独立，也不授权修改相关页。详见[影响清单](skills/docnexus-library/references/impacts.md)。
 
-```bash
-./.docnexus/node_modules/.bin/docnexus impact list
-./.docnexus/node_modules/.bin/docnexus impact list --status pending
-./.docnexus/node_modules/.bin/docnexus impact list --status needs_review
-./.docnexus/node_modules/.bin/docnexus impact get --id <impact_id>
-./.docnexus/node_modules/.bin/docnexus impact set --id <impact_id> --document <document_id> \
-  --status done --reason "已复读并核对相关页面" --revision <impact_revision>
-```
-
-`pending` 为待办，`done` 为已核对，`dismissed` 为有理由不再推进；`no_change` 判断初始为 done。来源或相关页的身份、版本、生成正文发生变化后，查询显示 `needs_review`，包括事实随时间到期而 record_version 不变的情况。使用 `impact get` 的最新 revision 确认状态，旧 revision 被拒绝；缺失页面不能标为 done。状态更新保留原判断和追加历史，不改知识正文，也不证明判断正确。清单随文本备份和 Git 克隆，不进入检索索引，reset 会清除它们。该能力不迁移旧聊天清单，旧材料需要复读后登记；工作区、草稿和投影格式不变。
-
-其他 skill 可为本次写入显式指定分类，跳过 DocNexus 的智能体分类。例如 code-review skill 准备好三份草稿产物后：
+调用方可以显式指定分类，跳过模型分类：
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file reviews/report.md --base-version new \
   --category codeReview --category-reason "Produced by the code-review skill"
-# 审阅文档及封存后的 metadata，再入库
 ./.docnexus/node_modules/.bin/docnexus document add --draft <draft_id>
 ```
 
-分类名按原样采用，分类依据可省略，默认记录 `Explicit category supplied by caller.`。显式分类包含在封存哈希中，入库时使用已审阅值；更新已有文档仍需读取当前版本并提供 `--base-version <record_version>`，入库使用 `--replace`。同次分类维护不覆盖调用方选择，后续仍可显式调整。
+`init --agent` 会把 skills 链接到 `.agents/skills/` 或 `.claude/skills/`，并在 `AGENTS.md` 或 `CLAUDE.md` 写入带标记的指引区块；旧区块需重新运行以刷新。
 
-更新草稿须传入提炼所依据的 `document get` 或 `document query` 返回的 `--base-version <record_version>`。封存冲突后须复读合并，再使用该次读取的版本；新路径可用 `--base-version new`。旧 manifest 格式 1/2 的待入库草稿需复读合并后重新封存。
+## Git 与手动编辑
 
-`init --agent` 将 `.agents/skills/` 或 `.claude/skills/` 链接到项目 skills，并在 `AGENTS.md` 或 `CLAUDE.md` 写入带标记的指引区块。Claude 通过 `@docnexus/CONCEPTS.md` 加载简短路由表，Codex 需要时读取。区块要求智能体根据任务判断是否检索，不因路由表未列出某主题而跳过。旧区块需重新运行 `init --agent` 刷新。`reset` 清理这些链接和区块。
-
-## Git、手动编辑与完整性
-
-默认不创建独立 Git 仓库、不配置远程，也不要求安装 Git；文本仍可选择随宿主项目提交。可在首次初始化或已有工作区中显式启用独立知识仓库：
+默认不创建 Git 仓库。可显式启用独立知识仓库：
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus init --agent codex --git-remote git@example.com:team/project-memory.git
-# 后续可用同一参数更新知识仓库的 origin 地址
 git -C docnexus status
 ```
 
-该选项在 `docnexus/.git/` 初始化独立仓库并配置 `origin`，不修改宿主仓库的远程或暂存区。检测到宿主 Git 仓库时，在业务项目的 `.gitignore` 追加 `/docnexus/`；若宿主已跟踪该目录的文件，则在变更前拒绝，需先评审并从宿主索引移除这些文件、保留本地副本。成功输出增加可选 `git: { repository, remote, branch }`，地址保存在本地 `.git/config`，工作区格式不变。不传该选项时保留已有仓库配置。
+该命令初始化 `docnexus/.git/` 并固定一个分支；分支不符、detached HEAD 或存在额外本地分支时会阻止读取、写入和 reset。它不验证远程连通性，也不提交、拉取或推送。`reset --force` 保留 `.git`、远程配置和历史。
 
-独立知识仓库采用单分支使用策略：新仓库固定 `main`，已有仓库固定配置时的当前分支，不自动重命名或删除其他分支；已有多个本地分支或 detached HEAD 会拒绝配置。分支约束保存在 `docnexus/.git/docnexus-branch.json`，每次顶层 CLI/服务操作在事务恢复之前检查；当前分支不符、处于 detached HEAD 或存在其他本地分支时返回 `git_branch_mismatch`，停止读取、写入和 reset。约束在重置及外部切换分支后保留；启用后日常操作需要 Git。克隆不会复制 `.git` 内的本地约束，每位成员应重新运行 `init --git-remote <url>` 安装检查；早先配置过的独立仓库也通过此命令启用。
+用户可以直接编辑 `library/` 中的人工正文和事实引用；生成的 `<!-- docnexus:fact ... -->` 块只读。`document sync` 会采纳编辑，保留原始 source，并把编辑内容追加到时间线。托管路径拒绝符号链接；写入共享项目锁并支持中断恢复，写入期间不要执行 Git 操作。
 
-这是 DocNexus 的操作前检查，不能阻止终端中的 `git switch/checkout/branch`，不安装 Git hooks，也不能防止外部 Git 在操作过程中切换分支或人为删除本地约束。需要远程也只允许一个分支时，应另外配置托管平台规则或服务端检查；本命令不检查或修改远程分支。业务项目仍可正常切换自己的分支。团队在固定分支提交前完成内容审阅；单分支不消除多人修改同一文档的冲突。
-
-配置只进行本地操作，不验证远程连通性，也不自动提交、拉取或推送；这些操作使用标准 `git -C docnexus ...` 命令，并在 CLI 写入和事务恢复结束后执行。已有远程知识应先克隆到尚不存在的 `docnexus/` 目录，并单独恢复项目根目录的 `.docnexus/project.json` 和 npm 清单，再恢复依赖并运行 `init --agent codex --git-remote <url>`（或 `claude` / `all`），重建本地 skills、schema 和 agent 链接；指定地址不会自动导入远程内容。子模块或 linked worktree 的 `.git` 文件需直接通过 Git 配置，`--git-remote` 只管理独立 `.git/` 目录。
-
-`reset --force` 继续清空当前知识和集成，但保留 `.git`、远程配置、Git 历史及 npm 安装；存在 `.git` 时返回 `preserved_git: true`。历史中已提交的知识仍可恢复，reset 不会提交或推送删除。重置后可再次 `init`。Git 配置与初始化不是跨文件事务，操作中途失败时应检查实际状态后重试。
-
-提交知识输出目录，以及 `.docnexus/project.json`、`.docnexus/package.json`、`.docnexus/package-lock.json`。运行依赖、草稿、官方 skills 副本、生成 schema 和检索索引由 `.docnexus/.gitignore` 忽略，其他名称的自定义 skill 仍可提交。克隆后先恢复配置与知识目录，再运行 `npm ci --prefix ./.docnexus` 和 `init --agent codex`（或 claude/all）。使用独立知识仓库时，配置和安装清单位于该仓库之外，必须单独备份、恢复。不提供旧工作区迁移。
-
-完成恢复或拉取后，关键词查找和全文读取直接使用当前文本；默认随宿主仓库管理的知识也可跟随业务分支变化，独立知识仓库需满足固定分支检查；`recall` 自动同步派生索引。`index sync` 根据当前文档恢复 PostgreSQL/pgvector 与概念路由表、分类概念文件，只处理新增、变化或缺失的投影，复用未变化的 chunks 和向量；普通写入不会重建 HNSW。不导入未托管文件，不修改 source 或时间线。模型探针输出变化时会重新嵌入所有当前文档。
-
-search、recall、浏览页及 index sync 的查询快照每篇只读取记录、metadata 和当前正文，保留正文与 metadata 哈希校验，不再读取、哈希来源和时间线。来源与历史完整性通过 doctor、显式文档读取和文档写入检查。同一次持锁快照复用根路径、输出目录解析及共享目录检查，不使用 mtime 或跨请求校验缓存；当前知识扫描仍为 O(N)。
+提交知识输出目录以及 `.docnexus/project.json` 和 npm 清单。草稿、运行时状态、skills、schema 和检索索引由 Git 忽略。恢复时先运行 `npm ci --prefix ./.docnexus` 和 `init --agent`，再执行 `recall` 或 `index sync`。
 
 ## 数据库引擎
 
-检索投影现在单独记录 schema 版本 2，独立于工作区格式 7。`index status` / `doctor` 可查看版本与兼容状态；已知旧投影在下次同步或召回时从文本重建，保留来源、时间线、草稿和模型资产。更新或未知版本会明确拒绝，不静默按旧结构使用。两路召回保留结构化出处，预算交付先保留各候选的命中证据，再扩展正文，详见 [检索链路](docs/architecture/retrieval-pipeline.zh-CN.md)。
+PGLite 是零配置默认引擎，首次索引同步或语义召回时创建 `.docnexus/store/brain.pglite`。已有 Postgres＋pgvector 服务时，设置 `DOCNEXUS_DATABASE_URL` 后运行 `index sync`；凭据不写入项目文件。两种引擎共用 schema 和 SQL，文本仍是真源。投影可从文本重建，移动或克隆项目会得到独立 schema；`reset --force` 会先删除远程 schema。
 
-默认零配置使用 PGLite，在首次 `index sync` 或语义召回时创建 `.docnexus/store/brain.pglite`。使用已有 Postgres＋pgvector 服务时，在 CLI 环境设置 `DOCNEXUS_DATABASE_URL` 后执行 `docnexus index sync`。连接凭据不写入项目文件。两种引擎共用 schema 和 SQL，每份文档的文档、chunk 与关系投影在同一个数据库事务中提交；文本仍是真源，通过同步与数据库协调。
+## 本地使用记录
 
-远程角色需要创建项目 schema 和表的权限；无扩展安装权限时，由管理员预先在 `public` 安装 `vector`。各项目按规范化真实路径隔离 schema，移动或克隆会建立独立投影；这不是跨机器共同写入协议或数据库权限隔离。`reset --force` 先删除当前项目的远程 schema 再删除本地工作区，服务不可用时 reset 会停止。
+可选功能，默认关闭。记录命令耗时、错误码、匿名查询/文档标识、召回指标和 embedding 调用；不记录原始问题、正文、路径或凭据，也不上传网络。
 
-关键词检索与文档浏览仍直接读文本，不要求数据库或模型。本轮对齐 GBrain 的 PGLite/Postgres 双引擎与 pgvector 增量维护，保留本项目的文本检索、本地 embedding 和一跳图谱召回。PGLite 在进程内运行，大规模数据或服务端并发应使用 Postgres。本机进程锁仍使用系统临时目录中的 SQLite 文件，仅用于协调。
+```bash
+./.docnexus/node_modules/.bin/docnexus usage enable
+./.docnexus/node_modules/.bin/docnexus usage status
+./.docnexus/node_modules/.bin/docnexus usage feedback --rating miss --reason needs_multihop
+./.docnexus/node_modules/.bin/docnexus usage export > .docnexus/.runtime/usage-report.json
+./.docnexus/node_modules/.bin/docnexus usage disable
+```
 
-旧 `index.sqlite`、`graph.lbug` 缓存不再读取。确认新索引正常后可删除这些旧缓存；自定义 `store/models/` 资产需保留。
-
-写入文档先保存文本，向量与图谱在下次召回或显式 `index sync` 时建立。可以删除派生数据库后重建；`store/models/` 中的自定义模型需要另行保存，新机器没有覆盖时使用随包模型。操作只影响当前项目，不修改其他工作树。
-
-用户可以编辑 `library/` 的人工正文和事实引用。生成的 `<!-- docnexus:fact ... -->` 块内容只读，应修改所属 metadata 的事实而非派生文字。`status` 的 `records.edited` 列出未采纳的编辑；关键词查找、语义召回和 CLI 文档读取会报告这些差异。审阅后执行 `document sync` 采纳编辑，保留原始 source，并将编辑内容追加到时间线。缺失或损坏的文本可从 Git 或备份恢复，`doctor` 不会自动改写它们。
-
-写入、删除和 reset 需要用户授权。删除同时移除当前文档及其来源、metadata、时间线和派生数据库记录；若会留下悬空事实引用则拒绝。正常完成后不保留恢复副本。托管路径和记录文件拒绝符号链接，并限制在项目工作区内。写入采用逐文件原子替换及持久化失败补偿；本机进程共享项目锁；持久化恢复日志在中断后完成保存/删除或回滚，并覆盖草稿入库收据。下一次 CLI 访问先恢复再读取。Git、外部编辑器和其他机器不参与锁；操作未完成时不要编辑或切换分支。Windows 跳过目录 fsync，目前验证了进程中断，没有模拟硬件断电。
+详见[观测契约](docs/operations/usage-observation.zh-CN.md)。指标不能证明回答正确。
 
 ## CLI
 
-所有命令均使用项目内 `./.docnexus/node_modules/.bin/docnexus`。也支持在命令前指定 `--project-root <path>`。
+所有命令均使用项目内 `./.docnexus/node_modules/.bin/docnexus`，也可在命令前指定 `--project-root <path>`。
 
-```bash
-# 设置与诊断
-./.docnexus/node_modules/.bin/docnexus init [--output-dir <directory>] [--agent claude|codex|all] [--git-remote <url>]
-./.docnexus/node_modules/.bin/docnexus doctor
-./.docnexus/node_modules/.bin/docnexus status
-./.docnexus/node_modules/.bin/docnexus skills sync
-./.docnexus/node_modules/.bin/docnexus skills link --target claude|codex|all
+```text
+init [--output-dir <directory>] [--agent claude|codex|all] [--git-remote <url>]
+doctor
+status
+skills sync
+skills link --target claude|codex|all
 
-# 捕获
-./.docnexus/node_modules/.bin/docnexus draft new --slug auth
-./.docnexus/node_modules/.bin/docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
-./.docnexus/node_modules/.bin/docnexus draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
-./.docnexus/node_modules/.bin/docnexus document add --draft <draft_id> [--replace]
-./.docnexus/node_modules/.bin/docnexus draft list [--status open|ready|ingested|invalid]
-./.docnexus/node_modules/.bin/docnexus draft discard --id <draft_id> --force
+draft new [--slug auth]
+metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
+draft seal --id <draft_id> --file auth/rotation.md [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
+document add --draft <draft_id> [--replace]
+draft list [--status open|ready|ingested|invalid]
+draft discard --id <draft_id> --force
 
-# 查找与阅读
-./.docnexus/node_modules/.bin/docnexus search "令牌轮换" --limit 5
-./.docnexus/node_modules/.bin/docnexus concepts [--type component] [--query auth] [--format json|md]
-./.docnexus/node_modules/.bin/docnexus document list [--limit 50] [--tag auth]
-./.docnexus/node_modules/.bin/docnexus document get --id <id> [--include source,document,metadata,timeline,template]
-./.docnexus/node_modules/.bin/docnexus document render
-./.docnexus/node_modules/.bin/docnexus facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
-
-# 维护
-./.docnexus/node_modules/.bin/docnexus document sync --id <id> [--metadata-file <path>]
-./.docnexus/node_modules/.bin/docnexus document delete --id <id> --force
-./.docnexus/node_modules/.bin/docnexus document delete --file auth/rotation.md --force
-./.docnexus/node_modules/.bin/docnexus index status
-./.docnexus/node_modules/.bin/docnexus index sync
-./.docnexus/node_modules/.bin/docnexus index rebuild --force
-./.docnexus/node_modules/.bin/docnexus graph audit
-./.docnexus/node_modules/.bin/docnexus graph repair --force
-./.docnexus/node_modules/.bin/docnexus embeddings install --from <model_dir> [--replace]
-./.docnexus/node_modules/.bin/docnexus reset --force
+search "Refresh token" [--limit 5] [--category codeReview]
+recall "Refresh token" [--limit 5] [--category codeReview]
+concepts [--type component] [--query auth] [--category <name>] [--format json|md]
+document list [--limit 50] [--tag auth]
+document get --id <id> [--include source,document,metadata,timeline,template]
+document render
+facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
+document sync --id <id> [--metadata-file <path>]
+document delete --id <id> --force
+document delete --file auth/rotation.md --force
+index status
+index sync
+index rebuild --force
+graph audit
+graph repair --force
+embeddings install --from <model_dir> [--replace]
+reset --force
 ```
 
-工作区命令会按包版本刷新 skills；`doctor` 只报告版本偏差。`file_path` 相对于 `docnexus/library/`，CLI 输入文件必须在项目内。
-
-智能体可用 `--json` 获取稳定错误码，用 `docnexus protocol` 查看契约；doctor 增加结构化 `issues[]`。`docnexus recall "问题" --return-unit section --context-budget 4000` 返回独立证据包，包含来源版本、事实状态和观察时间，并明确按保守 UTF-8 字节估算约束预算。参见[证据交付](./docs/architecture/evidence-delivery.zh-CN.md)与[真实智能体验收](./docs/operations/agent-evaluation.zh-CN.md)。验收需另行授权的独立新上下文实际运行；仅准备样例不能衡量模型质量。
+工作区命令会在包版本变化时刷新 skills；`doctor` 只报告偏差。`file_path` 相对 `docnexus/library/`。写入需要用户授权；`--force` 和 `--replace` 记录已获得的授权。`--json` 提供稳定错误码，`docnexus protocol` 查看契约。需要受限证据时使用 `recall "问题" --return-unit section --context-budget 4000`，详见[证据交付](docs/architecture/evidence-delivery.zh-CN.md)。
 
 ## 开发
 
@@ -262,12 +199,10 @@ npm test
 npm run typecheck
 npm run build
 npm run eval:retrieval
-npm run eval:retrieval:quality   # 默认仅开发集；保留集对照命令见检索评估文档
+npm run eval:retrieval:quality
 npm run eval:knowledge
-npm run eval:agent -- prepare   # 维护任务；加 --scenario retrieval 检查逐题主动检索
+npm run eval:agent -- prepare
 node scripts/tarball-smoke.mjs
 ```
 
-普通测试使用确定性 hash embedding；`real-runtime-e2e.test.ts` 单独启用真实随包 ONNX 模型并禁止网络请求。安装包检查使用锁文件中的依赖版本；离线执行前需有相应 npm 缓存，在线准备可先运行 `npm ci`。
-
-[文档中心](./docs/README.md)提供当前架构、skills 编排、产品说明与发布检查。
+普通测试使用确定性 hash embedding；real-runtime E2E 启用随包 ONNX 模型并禁止网络请求。安装包检查使用锁文件中的依赖版本。架构、skills、产品范围与发布检查见[文档中心](./docs/README.md)。
