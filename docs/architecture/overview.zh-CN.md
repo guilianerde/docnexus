@@ -15,6 +15,7 @@ DocNexus 0.24.2 采用分层项目记忆：Markdown 当前知识与来源时间�
 ## 模块职责
 
 - `drafts.ts` 校验 `draft seal` 的可选调用方分类 `--category` 与依据 `--category-reason`，优先于编排模型分类。最终分类写入草稿 metadata 并封存哈希，审阅后由入库链路原样保存；不创建单独分类真源或永久分类锁。接口见 [显式分类契约](../operations/agent-protocol.zh-CN.md#调用方显式分类)。
+- `category-guide.ts` 在 `init` 时写入可编辑的 `categories.md` 建议清单；CLI 不读取它，它也不参与校验、查询或计数，仅作为编排模型的分类参考。
 - `workspace-reader.ts` 负责路径边界、record/asset 读取和完整性校验。
 - `knowledge.ts` 仅处理实体、事实生命周期、替代链与投影规则，不访问文件或项目锁；`knowledge-service.ts` 负责加载工作区并调用这些规则。
 - `workspace-snapshot.ts` 在一次操作内复用 records、资产、事实解析及时间。正文和知识投影按需计算并缓存；快照 revision 由完整 records 与有效事实状态生成，分页只渲染实际返回的正文，不维持跨请求缓存。
@@ -34,6 +35,7 @@ DocNexus 0.24.2 采用分层项目记忆：Markdown 当前知识与来源时间�
 | `records/<id>/record.json` | 稳定身份、时间戳、source/正文模板/metadata/时间线哈希 | 文本真源；正文哈希不包含生成块内容 |
 | `CONCEPTS.md` | 简短分类路由表（≤ 3 KB） | 由 metadata 再生成 |
 | `concepts/<分类>.md` | 按分类的文档、概念、别名与关系；每个文件不超过 32 KB，过大时按实体类型分页 | 由 metadata 再生成 |
+| `categories.md` | 可编辑的建议分类清单，供编排模型参考 | 人工维护的项目材料；不参与校验、查询或计数 |
 | `.docnexus/drafts/<id>/` | 待审阅产物与封存 manifest | 草稿文本 |
 | `.docnexus/skills/`、`.docnexus/schemas/` | 工作流与格式说明 | 官方副本与生成 schema 仅本地，Git 忽略 |
 | `.docnexus/store/brain.pglite/` 或远程项目 schema | 文档投影、chunks、embedding、HNSW、实体、关系与同步签名 | 派生，本地 Git 忽略 |
@@ -144,7 +146,7 @@ CLI 在现有 Markdown 内生成 `<!-- docnexus:fact fact_id -->` 与 `<!-- /doc
 
 ## 可视化查询与粗分类
 
-运行编排层 skills 的大模型阅读项目说明、已有分类和相关文档后，自主填写 metadata.category 与 category_reason，按项目变化复核相关文档。名称由项目定义，可复用、新建、重命名、合并或拆分分类；CLI 只校验名称格式，不设置固定分类枚举。分类仍只存于各文档 metadata，目录从实际使用的名称聚合，没有另一份分类数据库。旧文档缺少分类时显示未分类，跨主题关联使用 tags。
+运行编排层 skills 的大模型阅读项目说明、已有分类和相关文档后，自主填写 metadata.category 与 category_reason，按项目变化复核相关文档。名称由项目定义，可复用、新建、重命名、合并或拆分分类；CLI 只校验名称格式，不设置固定分类枚举。`init` 生成可编辑的 `categories.md` 建议清单，只作编排参考，不参与校验或计数；选择顺序为已有分类、建议清单、新建分类。分类仍只存于各文档 metadata，目录从实际使用的名称聚合，没有另一份分类数据库。旧文档缺少分类时显示未分类，跨主题关联使用 tags。
 
 `document classify --id <id> --category <name> --reason <basis> [--revision <snapshot>]` 仅更新分类 metadata、记录哈希/时间和审计历史，保留正文、来源、事实与关系。普通提炼更新也将分类新旧值和依据追加到时间线。分类名可为 1–80 个字符，去除首尾空白且不含控制字符；依据最多 2000 字符。旧分类 id 的中文显示名仅作兼容，不是允许列表。
 

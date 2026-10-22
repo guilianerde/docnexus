@@ -46,6 +46,7 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; default: docnex
   .gitattributes                  # preserve LF canonical text across Git clones
   CONCEPTS.md                     # generated readable category map (≤ 3 KB)
   concepts/                       # generated readable category navigation
+  categories.md                   # editable starter category suggestions
   impacts/                        # related-page impact history
   library/                        # current knowledge Markdown
   records/<id>/                   # source.md, metadata.json, timeline.md, record.json
@@ -102,7 +103,7 @@ In a development checkout, build first and replace the executable with `node /pa
 
 Run `./.docnexus/node_modules/.bin/docnexus view` in an initialized project and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. Pages load on opening, manual refresh, or category/page changes, without automatic polling. Revision changes restart pagination at page one. Each request retains canonical integrity and fact-time checks. The read-only viewer derives content from the same canonical text without storing another document copy. See the [local viewer](docs/architecture/document-query.zh-CN.md#本地只读浏览页).
 
-When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It may reuse, create or adjust categories; there is no fixed seven-category taxonomy. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
+When no explicit category is supplied, the model running orchestration skills chooses project-defined `metadata.category` names and `category_reason` from project context, existing categories and related documents. It reuses an existing name first, then a fitting starter suggestion, and only then creates a new name; there is no fixed seven-category taxonomy. `init` writes an editable `docnexus/categories.md` starter list (for example `pitfalls`, `templates`); agents read it as suggestions, not an allow-list, and editing it never changes validation, query counts or existing documents. Legacy documents without a category remain uncategorized until reviewed; tags cover cross-cutting subjects.
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus document query --all

@@ -93,6 +93,8 @@ Node 异常的 code 为 `document_revision_changed`，current_revision 给出新
 
 例如，项目可以使用“接口契约”“部署与运维”“用户研究”等分类。旧的 architecture、guide 等 id 仍保留中文显示名，仅为兼容；它们不是枚举约束。未设分类的文档显示 uncategorized。空项目的 categories 为空，分类计数只展示实际使用的名称。
 
+`init` 会在工作区写入可编辑的 `categories.md`，列出建议分类及用途（例如 `pitfalls`、`templates`）。它只供编排模型参考：CLI 不读取、不参与校验，也不构成分类枚举；`categories[]` 仍只统计文档 metadata 实际使用的名称。模型选择分类的顺序是：调用方显式指定 → 已有分类 → 建议清单 → 新建分类。改名、增删条目不会移动或重分类已有文档，分类维护仍通过 `document classify` 完成。
+
 项目方向、新知识或文档用途变化时，模型可以复核相关文档。分类重命名、合并或拆分通过修改受影响文档的 category 实现，文件和事实不必移动、复制或删除：
 
 ```bash

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Write an editable `docnexus/categories.md` starter list during initialization with suggested project categories such as `pitfalls` and `templates`. Extraction reads it as guidance only: the CLI never reads it, it is not an allow-list, and category counts still derive from document metadata. Re-init preserves existing edits and rejects symlinked guide paths.
+
 ## 0.25.0 — 2026-10-22
 
 Compatibility: workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. CLI `document get` now defaults to the current body; use `--include` for metadata, source, template or timeline. Refined ingestion/adoption enforces a 4000-character rendered-body limit, with semantic splitting handled by the agent. Existing long documents remain readable. The legacy format 1–6 installation cleanup policy is unchanged.

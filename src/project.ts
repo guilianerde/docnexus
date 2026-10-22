@@ -3,6 +3,7 @@ import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { writeConceptIndex } from "./concepts.js";
+import { ensureCategoryGuide } from "./category-guide.js";
 import { draftsPath, PROJECT_FORMAT_VERSION, internalPath, INTERNAL_DIRNAME, libraryPath, normalizeOutputDirectory, projectMarkerPath, WORKSPACE_DIRNAME, WORKSPACE_INSTALLATION_ENTRIES, workspaceDirectory, workspacePath, withOutputDirectory } from "./layout.js";
 import { atomicWrite, ensureIgnoredEntries, readIfExists } from "./workspace-io.js";
 import { assertNoSymbolicLinks, ensureManagedWorkspace } from "./managed-documents.js";
@@ -103,6 +104,7 @@ export async function initializeProject(projectRoot: string, input: InitializePr
       await mkdir(draftsPath(root), { recursive: true });
       await mkdir(libraryPath(root), { recursive: true });
       await ensureManagedWorkspace(root);
+      await ensureCategoryGuide(root);
       await writeFile(join(workspacePath(root), "README.md"), WORKSPACE_README);
       // Keep canonical text and hashes stable when cloning knowledge on Windows.
       await assertNoSymbolicLinks(root, join(workspaceDirectory(root), ".gitattributes"));
@@ -133,7 +135,7 @@ async function isInstallationOnly(root: string, entries: string[]): Promise<bool
 
 const WORKSPACE_README = `# DocNexus knowledge workspace
 
-The knowledge workspace is always <output_dir>/docnexus/; output_dir defaults to the project root. This workspace contains library/ (current Markdown), records/ (sources, metadata and timelines), impacts/ (related-page review records), CONCEPTS.md and concepts/ (generated readable navigation). Commit and back up these files together with .docnexus/project.json at the project root.
+The knowledge workspace is always <output_dir>/docnexus/; output_dir defaults to the project root. This workspace contains library/ (current Markdown), records/ (sources, metadata and timelines), impacts/ (related-page review records), categories.md (editable starter category suggestions) and CONCEPTS.md plus concepts/ (generated readable navigation). Commit and back up these files together with .docnexus/project.json at the project root.
 
 The project's .docnexus/ directory holds its npm installation, skills/, schemas/, drafts/, store/ and .runtime/. Install with npm install --prefix ./.docnexus --save-exact @rowansenne/docnexus. Run ./.docnexus/node_modules/.bin/docnexus from the project root; use --project-root when working elsewhere. After cloning, run npm ci --prefix ./.docnexus and init --agent codex (or claude/all) to restore skills and schema. Retrieval indexes are rebuilt by recall or index sync.
 

@@ -17,7 +17,7 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 这是破坏性更新，不兼容旧工作区，不迁移旧数据；npm postinstall 强制删除识别出的旧版目录及其中知识、来源和历史。程序安装清单、依赖、skills、schema、草稿、检索索引和恢复日志统一放在项目根目录的 `.docnexus/`。
 
-`docnexus init --output-dir docs/knowledge --agent codex` 将知识工作区创建在 `docs/knowledge/docnexus/`；`--output-dir` 指定父目录，固定追加 `docnexus/`。省略时父目录为项目根目录，工作区为 `docnexus/`。工作区保存 `library/`、`records/`、`impacts/`、`CONCEPTS.md` 与 `concepts/`。配置存于 `.docnexus/project.json`（`format_version: 7`、`output_dir`（父目录，默认为 `.`）、`initialized_at`）。不支持项目外目录、符号链接及内部或智能体目录；初始化后拒绝直接改换目录，需明确 reset 或换新项目。
+`docnexus init --output-dir docs/knowledge --agent codex` 将知识工作区创建在 `docs/knowledge/docnexus/`；`--output-dir` 指定父目录，固定追加 `docnexus/`。省略时父目录为项目根目录，工作区为 `docnexus/`。工作区保存 `library/`、`records/`、`impacts/`、`CONCEPTS.md`、`concepts/` 与可编辑的建议分类清单 `categories.md`。配置存于 `.docnexus/project.json`（`format_version: 7`、`output_dir`（父目录，默认为 `.`）、`initialized_at`）。不支持项目外目录、符号链接及内部或智能体目录；初始化后拒绝直接改换目录，需明确 reset 或换新项目。
 
 `status` 提供实际 `workspace_path`、`library_path` 和 `internal_directory`。以下 `docnexus/` 知识路径均为默认值示例，智能体使用实际返回的路径。Claude 导入和 Codex 指引、导航文件、检索引用、影响记录和事务恢复均读取同一配置。保存知识时更新可读导航；下次 recall 或显式 index sync 才更新 `.docnexus/store/` 下的派生检索数据。
 

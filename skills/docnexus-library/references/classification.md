@@ -1,6 +1,6 @@
 # Contextual classification
 
-Categories are project-defined names, not a fixed list. An explicit category supplied by the user or calling skill takes precedence for that write; otherwise the model running the project skills owns classification judgment. The CLI validates and persists the decision; read/query commands never invoke a model or silently reorganize documents.
+Categories are project-defined names, not a fixed list. An explicit category supplied by the user or calling skill takes precedence for that write; otherwise the model running the project skills owns classification judgment. When the model chooses, prefer an existing category id, then a fitting starter-guide suggestion, then a new project-defined name. The CLI validates and persists the decision; read/query commands never invoke a model or silently reorganize documents.
 
 ## Caller-selected category
 
@@ -14,16 +14,22 @@ When a calling skill already knows its output type, such as `codeReview`, skip m
 
 `--category-reason` is optional and requires `--category`. Without a basis the CLI records `Explicit category supplied by caller.` instead of reusing the previous model's rationale. Sealing includes the final category and basis in the metadata hash. Ingestion consumes that reviewed artifact; changing either field afterward requires resealing and review. This selection governs the current write and must not be overridden by category maintenance in the same capture pipeline. A later authorized `document classify` or new draft can change it; there is no permanent lock or separate taxonomy registry.
 
+## Starter guide
+
+`init` writes an editable `docnexus/categories.md` with suggested names and their intended use. Check existing categories first, then use a suggestion when none of them fits.
+
+The guide is project guidance, not an allow-list, a fixed taxonomy or a registry: the CLI never reads it, `document query` counts only categories stored in document metadata, and editing the file does not reclassify existing documents. Rename, delete or add entries freely; an existing category id outranks a suggestion, and when no suggestion fits, choose a new name and record the reason. Keep names flat: one primary category per document, with sub-topics in `tags`.
+
 ## When to review
 
 Review classification while extracting/updating knowledge, when a project direction or document purpose changes, when related pages reveal duplicate category meanings, or when the user asks to organize knowledge. Focus on affected documents; an unrelated small coding task does not justify reorganizing the whole library.
 
 ## Ground the decision
 
-1. Read the project's README and relevant project instructions to understand its purpose and vocabulary.
+1. Read the project's README, relevant project instructions and the editable `docnexus/categories.md` starter suggestions to understand its purpose and vocabulary.
 2. Run `docnexus document query --page 1 --page-size 20`. Inspect global `categories[]`, document summaries and existing `category_reason`; retain the revision for changes based on this context. Read more pages or use search/recall to select related documents rather than loading every full document by default.
 3. Read the candidate's current document/template and relevant neighboring documents. Compare actual purpose and content with how the project already groups similar material.
-4. Prefer an existing category **id** when its meaning fits. Display labels may differ from legacy ids; do not create a synonymous category just because the label looks different. If no existing category fits, choose a short meaningful domain name in the project's working language, such as `接口契约`, `部署与运维`, or `用户研究`. Group by domain rather than by document genre: entity types already capture genre, and each category becomes one generated concept file in `docnexus/concepts/` that agents browse by domain. Avoid a new category for each file, cosmetic renaming and classification based only on filenames.
+4. Prefer an existing category **id**, then a fitting starter-guide suggestion. Display labels may differ from legacy ids; do not create a synonymous category just because the label looks different. If no existing category fits, choose a short meaningful domain name in the project's working language, such as `接口契约`, `部署与运维`, or `用户研究`. Group by domain rather than by document genre: entity types already capture genre, and each category becomes one generated concept file in `docnexus/concepts/` that agents browse by domain. Avoid a new category for each file, cosmetic renaming and classification based only on filenames.
 5. Record one primary `category` plus a concise `category_reason` grounded in the project and documents actually read. Use tags for cross-cutting topics. Explicit user corrections take priority. Use `uncategorized` only when the available context cannot support a useful grouping.
 
 ## Apply and evolve

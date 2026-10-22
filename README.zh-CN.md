@@ -46,6 +46,7 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; 默认 docnexus
   .gitattributes                  # preserve LF canonical text across Git clones
   CONCEPTS.md                     # generated readable category map (≤ 3 KB)
   concepts/                       # generated readable category navigation
+  categories.md                   # editable starter category suggestions
   impacts/                        # related-page impact history
   library/                        # current knowledge Markdown
   records/<id>/                   # source.md, metadata.json, timeline.md, record.json
@@ -107,7 +108,7 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; 默认 docnexus
 
 在已初始化的项目中运行 `./.docnexus/node_modules/.bin/docnexus view`，打开终端输出的本机 URL，即可按分类、分页阅读文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页首次打开、手动刷新或切换分类/分页时读取数据，不自动轮询；数据版本变化后回到第一页。每次读取仍校验真源与事实时间。页面只读，直接从同一文本源派生展示，不产生文档副本。详见 [本地浏览页](docs/architecture/document-query.zh-CN.md#本地只读浏览页)。
 
-未提供显式分类时，运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
+未提供显式分类时，运行 skills 的大模型结合项目说明、已有分类与相关文档，自主选择 `metadata.category` 并记录 `category_reason`。分类名称由项目需要决定，可复用、新建或调整，不限制为固定七类；选择顺序为已有分类、建议清单、新建分类。`init` 会生成可编辑的 `docnexus/categories.md` 建议清单（例如 `pitfalls`、`templates`），智能体只把它当作参考，不是枚举白名单；修改它不会影响校验、分类计数或已有文档。旧文档缺少分类时归入未分类，模型阅读后可补齐；标签继续用于跨主题关联。
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus document query --all
