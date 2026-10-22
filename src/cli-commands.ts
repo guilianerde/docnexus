@@ -14,6 +14,7 @@ import {
   syncManagedDocument
 } from "./managed-documents.js";
 import { ingestDraft } from "./document-service.js";
+import { manageGitHooks, runGitHook } from "./git-hooks.js";
 import { libraryRelativePath } from "./layout.js";
 import { validateMetadata } from "./metadata.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
@@ -327,6 +328,7 @@ const documentDelete: CommandHandler = async ({ projectRoot, rest }) => {
 };
 
 const documentSync: CommandHandler = async ({ projectRoot, rest }) => {
+  requireKnownOptions(rest, ["--id", "--file", "--metadata-file"], option => `unknown document sync option: ${option}`);
   const options = parseOptions(rest);
   const metadata = options["metadata-file"]
     ? (JSON.parse(await readProjectFile(projectRoot, options["metadata-file"])) as DocNexusMetadata)
@@ -365,6 +367,11 @@ const embeddingsInstall: CommandHandler = async ({ projectRoot, rest }) => {
 };
 
 export const commands: Record<string, CommandDefinition> = {
+  git: { workspace: false, run: async ({ projectRoot, args }) => {
+    if (args[0] === "hooks" && args.length === 2) return json(await manageGitHooks(projectRoot, args[1]));
+    if (args[0] === "hook" && args.length === 2) return json(await runGitHook(projectRoot, args[1]));
+    throw new DocNexusError("invalid_params", "Usage: docnexus git hooks install|status|uninstall");
+  } },
   protocol: { workspace: false, run: protocol },
   usage: { workspace: false, run: usage },
   init: { workspace: false, run: init },

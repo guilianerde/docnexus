@@ -19,7 +19,7 @@ Run `docnexus status` and use `workspace_path` and `library_path`. Knowledge out
 <output>/     CONCEPTS.md, concepts/, library/, records/<id>/, impacts/
 ```
 
-Agents write only inside drafts. Users may edit `library/` files by hand; such edits are adopted with `document sync`. Never edit `records/` or `store/`.
+During normal capture, agents write only inside drafts. Users may edit `library/` files by hand; such edits are adopted with `document sync`. An authorized Git conflict recovery may also merge source, metadata and timeline under `records/` following `docnexus-library`'s [Git merge workflow](../docnexus-library/references/git-merge.md); let the CLI rebuild `record.json`. Never edit `store/`.
 
 ## Working with memory
 
@@ -32,7 +32,9 @@ Memory is used proactively, not only on request:
 
 ## Preflight
 
-Run once per conversation before the first DocNexus command:
+For a known Git merge conflict, follow the library Git merge workflow directly before ordinary preflight. Enable the Git hooks, resolve and stage content, then wait for automatic record repair before committing. Normal reads may fail on conflicted records. Preserve and inspect any pending transaction before proceeding.
+
+Otherwise, run once per conversation before the first DocNexus command:
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus status
@@ -53,7 +55,7 @@ Run once per conversation before the first DocNexus command:
 | Only extract or refine material, without saving yet | `docnexus-extract` |
 | Save an existing sealed draft | `docnexus-ingest` |
 | Ask a question from memory, recall, search; or a task touches a known concept | `docnexus-recall` |
-| Classify/organize documents, list/query/show documents, resume saved impact work, adopt hand edits, delete a document or discard a draft | `docnexus-library` |
+| Classify/organize documents, list/query/show documents, resume saved impact work, adopt hand edits or Git conflict resolutions, delete a document or discard a draft | `docnexus-library` |
 | Health check, damaged text records, refresh concepts after git pull, local usage recording/export, reset | `docnexus-maintain` |
 
 When the intent is unclear, ask one short question instead of guessing.

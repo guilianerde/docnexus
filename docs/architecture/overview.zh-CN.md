@@ -160,6 +160,10 @@ Git 默认不参与初始化或同步。显式 `init --git-remote <url>` 预检 
 
 可选 Git 配置同时固定单一本地分支：新建时为 `main`，已有时为当前分支。`.git/docnexus-branch.json` 在工作树之外保存约束，避免旧提交或 reset 移除检查。顶层项目锁内先校验分支及本地分支集合，再恢复文本事务；分支不符、detached HEAD 或额外本地分支时拒绝 DocNexus 操作。默认无 Git 模式不启动 Git 子进程。克隆需重新配置以安装本地约束；检查不能阻止外部 Git 命令、并发切换或人工移除约束，不限制远程分支。
 
+可选 `docnexus git hooks install` 接入原生 Git 或编辑器的普通 merge 流程：索引钩子记录未解决阶段与 resolve-undo 信息，用户解决并暂存内容后，自动校验和重建 record、事实视图及导航，再暂存生成文件。`pre-commit` 跳过未修改知识的提交；普通知识提交只读取变更单元的 record 并核对受影响文档的资产哈希，只有 library-only 变更才回退读取全量 record；事实/实体及增删变更仍做必要的跨文档依赖校验。已自动修复的 merge 通过双方提交和暂存 Git 对象签名复用已验证快照，不重复读取全库正文。普通未采纳正文报告 `text_integrity_error` 并指向 `document sync --id`；rebase、am、cherry-pick、revert 会立即报告 `git_merge_unsupported`，不排队 worker。普通 merge 在发布 `MERGE_HEAD` 前的短暂窗口单独处理，等待超时会明确报告缺少合并上下文。
+
+钩子按当前 Git 工作树的相对布局寻找项目和本地 CLI，并从 PATH 选择 Node。运行时缺失不阻塞普通代码提交；涉及知识的提交会明确提示恢复 Node 和项目依赖，索引钩子只警告并跳过自动修复。旧版绝对路径钩子需重新执行一次 install 更新；原生旧钩子仍保留，uninstall 可恢复。排队 worker 的日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`，失败原因不会因文件无限增长而丢失。详细步骤与限制见 [Git 合并工作流](../../skills/docnexus-library/references/git-merge.md) 和 [Skills/Git 编排](./skills-workspace.zh-CN.md#分发与-git)。
+
 Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及版本标记、`schemas/metadata.schema.json`；其他名称的自定义 skill 仍可提交。克隆后安装锁定依赖并运行 `init --agent <target>`，恢复 skills、schema 和链接；独立知识仓库同时传入 `--git-remote <url>`。已跟踪副本需显式取消跟踪，详见[恢复与迁移](./skills-workspace.zh-CN.md#已有仓库迁移)。之后关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
 
 `doctor` 在恢复未完成事务后检查文本、索引、数据库、本地模型和 skills，不修复缺失投影。新建空工作区尚无检索库是正常状态。`graph audit` 检查已存在的文档/关系投影、孤立概念与 HNSW；缺失存储先运行同步。
@@ -171,6 +175,9 @@ Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `no
 - `src/managed-documents.ts`：当前知识、时间线、哈希与文件管理。
 - `src/project-lock.ts`、`src/text-transaction.ts`、`src/workspace-io.ts`：项目锁、持久化事务与原子落盘。
 - `src/workspace-git.ts`：可选独立知识仓库预检、远程配置与宿主忽略规则。
+- `src/git-hooks.ts`：原生钩子安装、冲突清单、自动修复调度及按提交范围校验。
+- `src/git-index.ts`：暂存条目、合并上下文和 Git blob 快照读取。
+- `src/git-merge-sync.ts`：从暂存快照校验双方身份与事实历史，准备 record、时间线和事实视图的修复产物。
 - `src/knowledge.ts`：实体别名、事实生命周期、引用依赖与投影签名。
 - `src/fact-renderer.ts`：事实引用、受控生成块、有效状态与模板规范化。
 - `src/hybrid-recall.ts`：文档去重与 RRF 融合。

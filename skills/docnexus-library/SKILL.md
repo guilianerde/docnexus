@@ -1,6 +1,6 @@
 ---
 name: docnexus-library
-description: Browse DocNexus documents and saved related-page impact work, resume pending checks, classify documents, adopt reviewed edits, delete managed documents, or discard drafts.
+description: Browse DocNexus documents and saved related-page impact work, resume pending checks, classify documents, adopt reviewed edits or Git conflict resolutions, delete managed documents, or discard drafts.
 ---
 
 # DocNexus Library
@@ -64,6 +64,10 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 ```
 
 4. Report `id`, `library_path`, and `metadata_updated`. The original `source.md` is kept unchanged.
+
+## Resolve Git merge conflicts
+
+For Git pull conflicts, use the [Git merge recovery workflow](references/git-merge.md). Enable `docnexus git hooks install` once, resolve and stage content using Git or the editor, then wait for automatic record repair before committing. Ordinary hand-edit sync cannot repair conflicted records.
 
 ## Delete a document
 

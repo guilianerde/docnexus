@@ -1,10 +1,10 @@
 # DocNexus 当前状态与路线图
 
-更新日期：2026-10-18。本页只记录当前状态与下一步；各轮测试数字、智能体验收过程和结论边界见[验收记录](../operations/validation-history.zh-CN.md)，版本变更见 [Changelog](../../CHANGELOG.md)。
+更新日期：2026-10-22。本页只记录当前状态与下一步；各轮测试数字、智能体验收过程和结论边界见[验收记录](../operations/validation-history.zh-CN.md)，版本变更见 [Changelog](../../CHANGELOG.md)。
 
 ## 当前定位
 
-0.25.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
+0.26.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
 
 ## 已实现
 
@@ -28,6 +28,7 @@
 
 - 工作区格式 7，完整知识与安装版本随 Git 保存；官方 skills、生成 schema 与运行依赖仅本地，克隆后安装并初始化恢复。自定义 skills 可独立提交，不提供旧工作区迁移。可选独立知识仓库，固定单一本地分支。
 - 本机项目锁、持久化文本事务、中断后的保存/删除/回滚恢复；模型与 embedding 在锁外准备、锁内校验提交。
+- 可选原生 Git 合并恢复：索引钩子记录双方提交与 resolve-undo 冲突，内容暂存后重建 record、时间线、事实视图与导航；`pre-commit` 按范围校验，代码提交跳过；rebase/cherry-pick/revert 明确拒绝；排队 worker 日志带时间戳并轮转。
 - 机器错误协议、`--json` 失败输出、`protocol` 发现与 doctor 结构化 issues。
 - 本地只读文档浏览页与全量/分页文档查询接口。
 - 本地使用记录、匿名指标、显式反馈与单文件导出。

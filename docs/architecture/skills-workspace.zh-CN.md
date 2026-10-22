@@ -92,6 +92,12 @@ skills 源文件随包分发，初始化复制到 `.docnexus/skills/`，再从 `
 
 知识输出目录与 `.docnexus/project.json`、npm manifest/lockfile 一同提交、备份。恢复时保持项目相对结构，从项目根目录运行 `npm ci --prefix ./.docnexus` 和 `init --agent codex|claude|all`；检索索引由 recall 或 index sync 重建。
 
+普通双亲 Git merge 的冲突由人工或获得授权的 Agent 合并 `library/`、metadata、source 和 timeline。可通过 `docnexus git hooks install` 一次启用本地原生钩子，之后继续使用 Git 命令或编辑器暂存内容：`post-index-change` 采集未解决阶段与匹配双方父提交的 resolve-undo 条目，持久保存 `.docnexus/.runtime/git-merge.json`，内容冲突全部暂存后自动 sync。记录本身可以仍有冲突，无需人工计算哈希。自动流程读取暂存快照，确认双方是相同 ID、路径及创建时间的文档，保留双方不可改写的事实历史，校验全库与 4000 字符正文限制，再通过文本事务重建 record、事实视图、合并时间线事件与导航。修复前拒绝覆盖未暂存知识和未跟踪记录/导航；仅修复产物、依赖视图和生成导航进入私有 Git 索引，通过校验后原子替换正式索引，其他暂存内容保留。
+
+索引忙时排队短时工作进程，等待期间不持项目锁；带 ISO 时间戳的输出写入 `.docnexus/.runtime/git-merge.log`，超过 64 KiB 轮转为单份 `.log.1`。`pre-commit` 跳过普通代码提交，普通知识编辑只读取变更单元的 record 并核对受影响单元的哈希，只有 library-only 变更才回退全量 record；事实/实体或文档增删仍进行必要的跨文档依赖校验；已修复 merge 复用绑定双方提交的暂存对象签名，拒绝尚未修复或已变更的版本，不重复读取全库正文；record 仍未解决时 Git 可能先于该钩子拒绝提交，因此需先完成内容暂存并等待就绪。内部 Git 操作屏蔽递归回调，重复通知不追加相同的采纳事件。已有原生钩子备份后先执行，`docnexus git hooks uninstall` 恢复；自定义 hooksPath 管理器需显式接入，克隆后安装，旧版绝对路径脚本需重装更新。新脚本按当前 Git 工作树的相对布局寻找项目、本地 CLI 和 PATH 中的 Node，不把操作重定向到其他工作树；运行时缺失时警告并跳过采集，仅拦截需要知识校验的提交并提示恢复依赖，普通代码提交不受影响；Git 提交和远程操作仍由用户执行。合并冲突恢复统一由钩子读取暂存快照执行，见 [操作说明](../../skills/docnexus-library/references/git-merge.md)。
+
+同路径不同 ID 新建、改名、删除和不兼容的不可变事实历史需按文档单元人工恢复。rebase/am、cherry-pick、revert 立即返回 git_merge_unsupported，不排队也不遗留无 theirs 的清单；普通 merge 的 MERGE_HEAD 发布窗口保留短暂等待，超时会准确报告缺失上下文。干净拉取无需采纳。钩子被绕过且索引历史已清理时，不能承诺事后还原原冲突集合。存在未完成事务时，在重放之前拒绝恢复模式，需先保全现场并检查中断写入。
+
 默认不要求 Git。`init --git-remote <url>` 仅为配置的知识输出目录创建独立仓库、设置 origin 和单分支约束；不提交或访问远程。配置和安装清单位于知识仓库之外，需单独备份恢复。宿主仓库已跟踪输出内容时拒绝配置，命令不更改宿主索引；成功配置后在宿主 `.gitignore` 排除实际输出路径。分支约束在恢复事务前检查，reset 保留知识仓库 `.git` 与历史；克隆后需重新执行带远程参数的 init 安装本机分支约束。
 
 reset 删除配置的知识输出和 `.docnexus/` 内部数据，保留 npm 安装及输出目录的 Git 元数据。源码项目原有 npm 文件和其他项目目录不受影响。没有旧格式自动迁移、存量搬运或兼容路径。

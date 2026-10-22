@@ -8,6 +8,14 @@ import { assertNoSymbolicLinks, atomicWrite, readIfExists } from "./workspace-io
 
 const execute = promisify(execFile);
 
+interface GitOptions { indexFile?: string; input?: string }
+
+function gitEnvironment(indexFile?: string) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+  return { ...env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", DOCNEXUS_GIT_INTERNAL: "1",
+    ...(indexFile ? { GIT_INDEX_FILE: indexFile } : {}) };
+}
+
 export interface WorkspaceGitPlan {
   root: string;
   remote: string;
@@ -16,12 +24,14 @@ export interface WorkspaceGitPlan {
   existingRepository: boolean;
 }
 
-async function git(root: string, args: string[], allow?: "no_repository" | "detached"): Promise<string | undefined> {
+async function git(root: string, args: string[], allow?: "no_repository" | "detached", raw = false, options: GitOptions = {}): Promise<string | undefined> {
   // Inherited Git routing must not redirect an operation into the business repository.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
   try {
-    const { stdout } = await execute("git", ["-C", root, ...args], { env: { ...env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0" }, timeout: 10_000 });
-    return stdout.trim();
+    const execution = execute("git", ["-C", root, ...args], { env: gitEnvironment(options.indexFile), timeout: 10_000, maxBuffer: 16 * 1024 * 1024 });
+    execution.child.stdin?.on("error", () => {}); // execFile reports a failed child through its promise.
+    execution.child.stdin?.end(options.input);
+    const { stdout } = await execution;
+    return raw ? stdout : stdout.trim();
   } catch (error) {
     const failure = error as { code?: string | number; stderr?: string };
     if (failure.code === "ENOENT") throw new DocNexusError("git_unavailable", "Install Git to configure or use a Git-managed workspace; workspaces without Git setup do not require it.");
@@ -30,6 +40,38 @@ async function git(root: string, args: string[], allow?: "no_repository" | "deta
     // Native driver messages can contain credentials from the remote or local config.
     throw new DocNexusError("git_operation_failed", `Git ${args[0]} failed; inspect repository permissions and configuration before retrying.`);
   }
+}
+
+/** Run Git without inherited routing, hook recursion, trimming or pathspec interpretation. */
+export async function runWorkspaceGit(root: string, args: string[], options: GitOptions = {}): Promise<string> {
+  return (await git(root, ["--literal-pathspecs", ...args], undefined, true, options))!;
+}
+
+/** One Git process for a staged snapshot; byte lengths are parsed before UTF-8 decoding. */
+export async function readGitBlobs(root: string, objects: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(objects)];
+  if (!ids.length) return new Map();
+  if (ids.some(id => !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(id))) throw new DocNexusError("git_operation_failed", "invalid Git blob identity");
+  const execution = execute("git", ["-C", root, "cat-file", "--batch"], {
+    env: gitEnvironment(), encoding: "buffer", timeout: 30_000, maxBuffer: 256 * 1024 * 1024
+  });
+  execution.child.stdin?.on("error", () => {});
+  execution.child.stdin?.end(`${ids.join("\n")}\n`);
+  const { stdout } = await execution.catch(() => { throw new DocNexusError("git_operation_failed", "Cannot read staged Git blobs; inspect repository objects and snapshot size."); });
+  const result = new Map<string, string>();
+  let offset = 0;
+  for (const id of ids) {
+    const end = stdout.indexOf(10, offset);
+    const header = stdout.subarray(offset, end).toString("ascii");
+    const match = /^([a-f0-9]+) blob (\d+)$/.exec(header);
+    if (!match || match[1] !== id) throw new DocNexusError("git_operation_failed", "Missing or invalid staged Git blob");
+    const length = Number(match[2]);
+    offset = end + 1;
+    if (!Number.isSafeInteger(length) || offset + length >= stdout.length || stdout[offset + length] !== 10) throw new DocNexusError("git_operation_failed", "Truncated staged Git blob");
+    result.set(id, stdout.subarray(offset, offset + length).toString("utf8"));
+    offset += length + 1;
+  }
+  return result;
 }
 
 export async function assertWorkspaceRepository(root: string): Promise<void> {

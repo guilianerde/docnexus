@@ -132,6 +132,8 @@ git -C docnexus status
 
 用户可以直接编辑 `library/` 中的人工正文和事实引用；生成的 `<!-- docnexus:fact ... -->` 块只读。`document sync` 会采纳编辑，保留原始 source，并把编辑内容追加到时间线。托管路径拒绝符号链接；写入共享项目锁并支持中断恢复，写入期间不要执行 Git 操作。
 
+要启用兼容原生 Git 和编辑器的自动冲突恢复，先执行一次 `./.docnexus/node_modules/.bin/docnexus git hooks install`。之后**正常解决并暂存内容**，索引钩子记录冲突（含已解决条目），内容准备好后自动修复并暂存生成文件，提交前钩子统一校验暂存知识。等待就绪提示、审阅暂存 diff 后再提交。未暂存的知识编辑会被拒绝覆盖；已有原生钩子会保留并先执行，自定义 `core.hooksPath` 需显式接入。用 `docnexus git hooks status` 查看状态，`docnexus git hooks uninstall` 恢复原钩子；排队工作进程的带时间戳输出在 `.docnexus/.runtime/git-merge.log`，达到 64 KiB 时轮转为 `.log.1`。钩子只在本地生效，克隆后安装；新脚本按项目相对路径和 PATH 中的 Node 定位运行时，旧版绝对路径脚本需重装一次更新。普通代码提交跳过知识校验，普通知识编辑只核对受影响文档，语义变更保留依赖校验。运行时缺失时仅警告并跳过自动采集，只拦截涉及知识或待修复知识合并的提交，提示恢复 Node 和本地依赖；Git 提交和远程操作仍由用户执行。干净拉取无需采纳；rebase、同路径新建、改名和删除冲突需按文档单元人工恢复，详见 [Git 合并流程](skills/docnexus-library/references/git-merge.md)。
+
 提交知识输出目录以及 `.docnexus/project.json` 和 npm 清单。草稿、运行时状态、skills、schema 和检索索引由 Git 忽略。恢复时先运行 `npm ci --prefix ./.docnexus` 和 `init --agent`，再执行 `recall` 或 `index sync`。
 
 ## 数据库引擎
@@ -178,6 +180,7 @@ document get --id <id> [--include source,document,metadata,timeline,template]
 document render
 facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
 document sync --id <id> [--metadata-file <path>]
+git hooks install|status|uninstall
 document delete --id <id> --force
 document delete --file auth/rotation.md --force
 index status

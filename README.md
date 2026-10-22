@@ -132,6 +132,8 @@ This initializes `docnexus/.git/` and pins one branch; wrong branch, detached HE
 
 Users may edit library prose and fact references; generated fact blocks are read-only. `document sync` adopts an edit, keeps the original source and appends the edited content to the timeline. Managed paths reject symlinks, writes share a project lock and recover after interruption; avoid Git operations during writes.
 
+For automatic conflict recovery with native Git or an editor, enable `./.docnexus/node_modules/.bin/docnexus git hooks install` once. Resolve and **stage content normally**; the index hook records conflicts (including resolved stages), automatically repairs and stages generated assets when content is ready, and a pre-commit hook validates staged knowledge. Wait for the ready message, review the staged diff, then commit. Unstaged knowledge edits are refused, existing native hooks are chained, and custom `core.hooksPath` managers require explicit integration. Use `docnexus git hooks status` or `docnexus git hooks uninstall` to inspect/restore hooks; timestamped queued-worker details are in `.docnexus/.runtime/git-merge.log`, which rotates once to `.log.1` at 64 KiB. Hooks are local and need installation after cloning; current scripts use project-relative paths and Node from PATH. Reinstall once to replace older absolute-path scripts. Code-only commits skip knowledge checks; ordinary knowledge edits hash only affected units, while semantic changes retain dependency checks. Missing runtimes warn and skip automatic capture, and block only knowledge commits or pending knowledge merges until Node and local dependencies are restored. Git commits and remote operations remain user-controlled. Clean pulls need no adoption; rebase, same-path creates, renames and deletes require manual document-level recovery. See the [Git merge workflow](skills/docnexus-library/references/git-merge.md).
+
 Commit the knowledge output plus `.docnexus/project.json` and npm manifests. Drafts, runtime state, skills, schema and retrieval stores are Git-ignored. Restore with `npm ci --prefix ./.docnexus`, `init --agent`, then `recall` or `index sync`.
 
 ## Database engines
@@ -178,6 +180,7 @@ document get --id <id> [--include source,document,metadata,timeline,template]
 document render
 facts list [--entity name] [--at ISO-timestamp] [--include-inactive]
 document sync --id <id> [--metadata-file <path>]
+git hooks install|status|uninstall
 document delete --id <id> --force
 document delete --file auth/rotation.md --force
 index status

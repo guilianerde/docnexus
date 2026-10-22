@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.26.0 — 2026-10-22
+
+- Add opt-in native Git hooks: persist unresolved/resolve-undo conflicts tied to merge parents, automatically sync reviewed staged contents and atomically stage generated records/views/navigation, then validate the staged knowledge before commit. Preserve existing native hooks, support uninstall, refuse unstaged knowledge overwrites and custom hook-manager rewrites, and guard index locks, worktrees and recursion. Semantic conflict resolution and Git commits remain user-owned.
+
+- Skip knowledge validation for code-only commits, hash only affected document units for ordinary knowledge edits (reading only changed records, with a full-catalog fallback for library-only changes), and reuse verified Git-object checkpoints for repaired merges. Preserve necessary cross-document fact/reference checks, give unadopted prose a document-sync recovery action, reject rebase/cherry-pick/revert immediately, and resolve native hook runtimes through project-relative paths and PATH. Missing runtimes no longer block code-only commits; existing hook installations need one reinstall to update their scripts.
+
+- Timestamp every queued merge-repair log line with ISO 8601 and rotate the log at 64 KiB into one `git-merge.log.1` backup. Worker start, outcome and failure entries stay attributable without unbounded file growth.
 
 - Write an editable `docnexus/categories.md` starter list during initialization with suggested project categories such as `pitfalls` and `templates`. Extraction reads it as guidance only: the CLI never reads it, it is not an allow-list, and category counts still derive from document metadata. Re-init preserves existing edits and rejects symlinked guide paths.
+
+Compatibility: workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. Git hooks stay opt-in; installations created by an earlier build need one `docnexus git hooks install` to replace absolute-path scripts. No new migration is required.
 
 ## 0.25.0 — 2026-10-22
 

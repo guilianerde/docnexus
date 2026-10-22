@@ -91,6 +91,12 @@ export async function readRecordFile(projectRoot: string, id: string, context?: 
     if (error.code === "ENOENT") throw new DocNexusError("document_not_found", `Unknown document id: ${id}`);
     throw error;
   });
+  return parseRecordFile(projectRoot, id, content, context);
+}
+
+/** Apply the same identity/path validation to a committed Git record and a workspace record. */
+export async function parseRecordFile(projectRoot: string, id: string, content: string, context?: WorkspaceReadContext): Promise<RecordFile> {
+  assertDocumentId(id);
   const record = JSON.parse(content) as RecordFile;
   if (record.id !== id) throw new DocNexusError("text_integrity_error", `record ${id} has a mismatched id`);
   if ((await resolveManagedTarget(projectRoot, record.file_path, context)).relativePath !== record.file_path) {

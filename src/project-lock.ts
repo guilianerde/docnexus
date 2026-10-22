@@ -13,7 +13,7 @@ import { assertWorkspaceBranch } from "./workspace-git.js";
 const leases = new AsyncLocalStorage<ReadonlySet<string>>();
 
 /** Serialize local processes; the OS releases SQLite's lock even after SIGKILL. */
-export async function withProjectLock<T>(projectRoot: string, operation: () => Promise<T>, waitMs = 30_000): Promise<T> {
+export async function withProjectLock<T>(projectRoot: string, operation: () => Promise<T>, waitMs = 30_000, options: { rejectPendingTransaction?: boolean } = {}): Promise<T> {
   const root = await realpath(projectRoot).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") throw new DocNexusError("project_not_found", `project root does not exist: ${projectRoot}`);
     throw error;
@@ -45,8 +45,9 @@ export async function withProjectLock<T>(projectRoot: string, operation: () => P
     addUsageMetric("project_lock_wait_ms", performance.now() - waitStart);
     return await leases.run(new Set([...(leases.getStore() ?? []), root]), async () => {
       await assertNoSymbolicLinks(root, ".docnexus/project.json");
-      const { recoverTextTransaction } = await import("./text-transaction.js");
+      const { recoverTextTransaction, assertNoPendingTextTransaction } = await import("./text-transaction.js");
       await assertWorkspaceBranch(root);
+      if (options.rejectPendingTransaction) await assertNoPendingTextTransaction(root);
       await recoverTextTransaction(root);
       return operation();
     });

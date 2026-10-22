@@ -29,6 +29,9 @@ export async function runCli(
   try {
     const invocation = parseInvocation(argv, cwd);
     const [command, subcommand] = invocation.argv;
+    // Hook callbacks must capture state without preflight writes or recovery;
+    // their handlers own the project/index lock ordering.
+    if (command === "git") return await runCliUnlocked(argv, cwd, dependencies);
     const computesEmbeddings = command === "recall"
       || (command === "index" && ["sync", "rebuild"].includes(subcommand))
       || (command === "graph" && subcommand === "repair");
@@ -112,6 +115,7 @@ Library
   docnexus document delete --id doc_0000000000000000 --force
 
 Maintenance
+  docnexus git hooks install|status|uninstall
   docnexus usage enable|disable|status
   docnexus usage export   # Redirect JSON to a file to share for analysis
   docnexus usage feedback --rating useful|partial|miss [--reason needs_multihop|missing_document|irrelevant|truncated|stale|slow|other] [--event <event_id>]

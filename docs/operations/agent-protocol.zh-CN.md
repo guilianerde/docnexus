@@ -54,6 +54,8 @@ CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表
 
 新独立仓库固定 `main`，已有仓库固定配置时的当前分支；多本地分支或 detached HEAD 会拒绝配置。约束保存在 `.git/docnexus-branch.json`，每次顶层项目锁内先检查再恢复文本事务。分支不符、detached HEAD 或额外本地分支返回 `git_branch_mismatch`，`details` 包含 `allowed_branch`、`actual_branch`（detached 为 null）、`local_branches`；不自动切换、删除或重新固定分支。约束保留于 reset，克隆后需在本机重新执行 `init --git-remote`。这不是 Git 命令拦截或远程分支保护，不能替代服务端规则，也不协调外部 Git 的并发操作。
 
+`docnexus git hooks install|status|uninstall` 管理可选本地索引/提交钩子，返回 `installed`、`repository` 和 `hooks`；原生旧钩子保留并先执行，卸载时恢复。自定义 `core.hooksPath` 管理器不会被改写，需显式接入 `docnexus git hook index`、`docnexus git hook check` 并保留内部递归保护。普通 merge 中，用户或编辑器解决并暂存内容后，自动流程从暂存快照校验、修复并暂存派生产物；不执行提交或网络操作。冲突清单及排队日志分别在 `.docnexus/.runtime/git-merge.json`、`git-merge.log`；日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`。未准备好、非法事实历史、未暂存覆盖风险返回 `git_merge_not_ready`；rebase/am、cherry-pick、revert 立即返回 `git_merge_unsupported`，清理临时清单且不排队 worker。暂存内容未准备好时检查文件/日志并修正后再次暂存；不支持的 Git 操作改走文档单元人工恢复，不要反复 add 等待自动修复。`pre-commit` 对无知识变更的提交返回 skipped；普通知识提交仅核对受影响单元哈希，并按语义变更做必要的依赖校验，未采纳正文使用 text_integrity_error 和 document sync --id 的恢复命令；已修复 merge 仅比较已验证 Git 对象签名。钩子脚本使用相对布局和 PATH 中的 Node；缺少运行时时不阻塞代码提交，知识提交提示恢复依赖。可带冲突的 record 根据双方身份重建，内容资产仍需先人工解决并暂存。冲突恢复统一通过钩子执行，并在事务重放前拒绝未完成的文本 journal。普通 `document sync --id|--file` 仅用于采纳手动编辑。
+
 ## 调用方显式分类
 
 用户或调用方 skill 已确定文档类型时，可在封存阶段指定分类，跳过本次写入的模型分类。例如 code-review skill 已准备好三份草稿产物：

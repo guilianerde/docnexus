@@ -2,6 +2,7 @@ import { mkdir, realpath, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { workspaceDirectory } from "./layout.js";
 import { withProjectLock } from "./project-lock.js";
+import { DocNexusError } from "./errors.js";
 import { assertNoSymbolicLinks, atomicWrite, ensureIgnoredEntries, readIfExists, syncDirectory } from "./workspace-io.js";
 
 interface Journal {
@@ -11,6 +12,7 @@ interface Journal {
   remove_directories: string[];
   rollback_directories: string[];
   remove_indexed_document?: string;
+  git_merge?: true;
 }
 
 const JOURNAL = ".docnexus/.runtime/transaction.json";
@@ -37,6 +39,7 @@ async function journalPath(root: string): Promise<string> {
 async function applyJournal(root: string, journal: Journal): Promise<void> {
   if (journal.version !== 1 || !["apply", "rollback"].includes(journal.phase) || !Array.isArray(journal.entries)
     || !Array.isArray(journal.remove_directories) || !Array.isArray(journal.rollback_directories)
+    || (journal.git_merge !== undefined && journal.git_merge !== true)
     || (journal.remove_indexed_document !== undefined && !/^doc_[a-f0-9]{16}$/.test(journal.remove_indexed_document))) {
     throw new Error("invalid text transaction journal; inspect .docnexus/.runtime/transaction.json");
   }
@@ -75,8 +78,18 @@ async function applyJournal(root: string, journal: Journal): Promise<void> {
     const { removeIndexedDocument } = await import("./retrieval-index.js");
     await removeIndexedDocument(root, journal.remove_indexed_document);
   }
-  const { writeConceptIndex } = await import("./concepts.js");
-  await writeConceptIndex(root);
+  // A Git repair's before-images can contain unresolved records. Restore them
+  // even though a derived navigation index cannot be rebuilt from that state.
+  if (!(journal.git_merge && journal.phase === "rollback")) {
+    const { writeConceptIndex } = await import("./concepts.js");
+    await writeConceptIndex(root);
+  }
+}
+
+export async function assertNoPendingTextTransaction(root: string): Promise<void> {
+  if (await readIfExists(await journalPath(root)) !== undefined) {
+    throw new DocNexusError("text_integrity_error", "Git merge repair refuses a pending .docnexus/.runtime/transaction.json; preserve the checkout and inspect the interrupted write before proceeding. Do not delete the journal or replay it over merged files blindly.");
+  }
 }
 
 export async function recoverTextTransaction(root: string): Promise<void> {
@@ -92,7 +105,7 @@ export async function recoverTextTransaction(root: string): Promise<void> {
 export async function commitTextTransaction(
   projectRoot: string,
   files: Map<string, string | null>,
-  options: { removeDirectories?: string[]; rollbackDirectories?: string[]; removeIndexedDocument?: string } = {}
+  options: { removeDirectories?: string[]; rollbackDirectories?: string[]; removeIndexedDocument?: string; gitMerge?: boolean } = {}
 ): Promise<void> {
   return withProjectLock(projectRoot, async () => {
     const root = await realpath(projectRoot);
@@ -107,7 +120,8 @@ export async function commitTextTransaction(
       version: 1, phase: "apply", entries,
       remove_directories: (options.removeDirectories ?? []).map((path) => relative(root, path).split(sep).join("/")),
       rollback_directories: (options.rollbackDirectories ?? []).map((path) => relative(root, path).split(sep).join("/")),
-      remove_indexed_document: options.removeIndexedDocument
+      remove_indexed_document: options.removeIndexedDocument,
+      ...(options.gitMerge ? { git_merge: true as const } : {})
     };
     const path = await journalPath(root);
     await mkdir(dirname(path), { recursive: true });
