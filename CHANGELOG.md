@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.1 — 2026-10-22
+
+- Update the knowledge-evaluation README evidence excerpt after the documentation rewrite so release verification can replay the fixture; runtime behavior is unchanged. 0.26.0 was not published to npm because verification stopped at this fixture.
+
 ## 0.26.0 — 2026-10-22
 
 - Add opt-in native Git hooks: persist unresolved/resolve-undo conflicts tied to merge parents, automatically sync reviewed staged contents and atomically stage generated records/views/navigation, then validate the staged knowledge before commit. Preserve existing native hooks, support uninstall, refuse unstaged knowledge overwrites and custom hook-manager rewrites, and guard index locks, worktrees and recursion. Semantic conflict resolution and Git commits remain user-owned.
