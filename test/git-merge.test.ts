@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import { writeConceptIndex } from "../src/concepts.js";
 import { factDocumentTemplate } from "../src/fact-renderer.js";
+import { runCli } from "../src/cli.js";
+import { installProjectGitHooks } from "../src/git-hook-setup.js";
 import { manageGitHooks, runGitHook } from "../src/git-hooks.js";
 import { sha256, stableJson } from "../src/hash.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
@@ -216,6 +218,26 @@ it("rejects an unadopted library edit with a document sync action", async () => 
   });
 });
 
+it("rejects a new record claiming the path of an unchanged document", async () => {
+  const root = await makeRoot();
+  const id = await initRepo(root);
+  const duplicateId = id === "doc_0000000000000000" ? "doc_1111111111111111" : "doc_0000000000000000";
+  const directory = join(root, `docnexus/records/${duplicateId}`);
+  await mkdir(directory);
+  for (const asset of ["source.md", "metadata.json", "timeline.md", "record.json"]) {
+    const content = await readFile(join(root, `docnexus/records/${id}/${asset}`), "utf8");
+    await writeFile(join(directory, asset), asset === "record.json"
+      ? `${JSON.stringify({ ...JSON.parse(content), id: duplicateId }, null, 2)}\n` : content);
+  }
+  // The shared body is identical to HEAD, so only the new record unit is changed.
+  await stage(root, `docnexus/records/${duplicateId}`);
+
+  await expect(runGitHook(root, "check")).rejects.toMatchObject({
+    code: "text_integrity_error",
+    message: expect.stringContaining("duplicate staged document path auth/rotation.md")
+  });
+});
+
 it("repairs a library-only conflict by falling back to the record catalog", async () => {
   const root = await makeRoot();
   const id = await initRepo(root);
@@ -308,6 +330,46 @@ it("rotates an oversized merge log and keeps one previous file", async () => {
   expect(Buffer.byteLength(log)).toBeLessThan(70 * 1024);
 });
 
+it("installs hooks during CLI init and refreshes an existing installation", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await runCli(["init"], root);
+  expect(await manageGitHooks(root, "status")).toMatchObject({ installed: true });
+  const hookDirectory = join(root, ".git", "hooks");
+  await rm(join(hookDirectory, "pre-merge-commit"));
+  await writeFile(join(hookDirectory, "pre-commit"), '#!/bin/sh\n# DocNexus Git hooks v1\n# Project: "."\nold-runtime\n');
+
+  await installProjectGitHooks(root);
+
+  expect(await manageGitHooks(root, "status")).toMatchObject({ installed: true });
+  expect(await readFile(join(hookDirectory, "pre-commit"), "utf8")).not.toContain("old-runtime");
+  expect(await readFile(join(hookDirectory, "pre-merge-commit"), "utf8")).toContain("git hook check");
+});
+
+it("skips automatic hook installation until initialization and Git are available", async () => {
+  const root = await makeRoot();
+  await installProjectGitHooks(root);
+  await expect(readFile(join(root, ".docnexus/project.json"))).rejects.toThrow();
+  await runCli(["init"], root);
+  await expect(readFile(join(root, ".git/hooks/pre-commit"))).rejects.toThrow();
+});
+
+it("leaves a custom hook manager unchanged during automatic installation", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await initializeProject(root);
+  const directory = join(root, "custom-hooks");
+  await mkdir(directory);
+  const custom = "#!/bin/sh\necho custom-check\n";
+  await writeFile(join(directory, "pre-commit"), custom);
+  await git(root, "config", "core.hooksPath", "custom-hooks");
+
+  await expect(installProjectGitHooks(root)).resolves.toBeUndefined();
+
+  expect(await readFile(join(directory, "pre-commit"), "utf8")).toBe(custom);
+  await expect(readFile(join(root, ".git/hooks/pre-commit"))).rejects.toThrow();
+});
+
 it("installs native hooks with backup and restores originals on uninstall", async () => {
   const root = await makeRoot();
   await git(root, "init");
@@ -316,6 +378,7 @@ it("installs native hooks with backup and restores originals on uninstall", asyn
   await mkdir(hookDirectory, { recursive: true });
   const custom = "#!/bin/sh\necho custom-check\n";
   await writeFile(join(hookDirectory, "pre-commit"), custom, { mode: 0o755 });
+  await writeFile(join(hookDirectory, "pre-merge-commit"), custom, { mode: 0o755 });
 
   expect(await manageGitHooks(root, "install")).toMatchObject({ installed: true });
   const script = await readFile(join(hookDirectory, "pre-commit"), "utf8");
@@ -325,9 +388,12 @@ it("installs native hooks with backup and restores originals on uninstall", asyn
   expect(script).toContain("git hook check");
   expect(await readFile(join(hookDirectory, "pre-commit.docnexus-original"), "utf8")).toBe(custom);
   expect(await readFile(join(hookDirectory, "post-index-change"), "utf8")).toContain("git hook index");
+  expect(await readFile(join(hookDirectory, "pre-merge-commit"), "utf8")).toContain("git hook check");
+  expect(await readFile(join(hookDirectory, "pre-merge-commit.docnexus-original"), "utf8")).toBe(custom);
   expect(await manageGitHooks(root, "status")).toMatchObject({ installed: true });
 
   await manageGitHooks(root, "uninstall");
   expect(await readFile(join(hookDirectory, "pre-commit"), "utf8")).toBe(custom);
+  expect(await readFile(join(hookDirectory, "pre-merge-commit"), "utf8")).toBe(custom);
   await expect(readFile(join(hookDirectory, "post-index-change"), "utf8")).rejects.toThrow();
 });

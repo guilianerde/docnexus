@@ -139,7 +139,7 @@ it("runs destructive cleanup through the real npm installation hook and preserve
   await writeFile(join(fixture, "package.json"), JSON.stringify({ name: manifest.name, version: manifest.version, type: "module",
     files: ["dist/src", "scripts/postinstall.mjs"], scripts: { postinstall: manifest.scripts.postinstall } }));
   await cp(resolve("scripts/postinstall.mjs"), join(fixture, "scripts", "postinstall.mjs"));
-  for (const name of ["legacy-cleanup", "skills", "agent-context", "layout", "errors", "workspace-io"]) {
+  for (const name of ["legacy-cleanup", "git-hook-setup", "skills", "agent-context", "layout", "errors", "workspace-io"]) {
     const code = ts.transpileModule(await readFile(resolve("src", `${name}.ts`), "utf8"), {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 }
     }).outputText;

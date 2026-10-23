@@ -15,6 +15,7 @@ import {
 } from "./managed-documents.js";
 import { ingestDraft } from "./document-service.js";
 import { manageGitHooks, runGitHook } from "./git-hooks.js";
+import { installProjectGitHooks } from "./git-hook-setup.js";
 import { libraryRelativePath } from "./layout.js";
 import { validateMetadata } from "./metadata.js";
 import { initializeProject, requireInitializedProject } from "./project.js";
@@ -87,7 +88,9 @@ const usage: CommandHandler = async ({ projectRoot, subcommand, rest }) => {
 const init: CommandHandler = async ({ projectRoot, args }) => {
   const options = parseOptions(args);
   const agents = options.agent === undefined || options.agent === "none" ? [] : parseSkillsTargets(options.agent);
-  return json(await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"], outputDir: options["output-dir"] }));
+  const result = await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"], outputDir: options["output-dir"] });
+  await installProjectGitHooks(projectRoot);
+  return json(result);
 };
 
 const reset: CommandHandler = async ({ projectRoot, args }) =>

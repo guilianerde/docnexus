@@ -32,7 +32,7 @@ Memory is used proactively, not only on request:
 
 ## Preflight
 
-For a known Git merge conflict, follow the library Git merge workflow directly before ordinary preflight. Enable the Git hooks, resolve and stage content, then wait for automatic record repair before committing. Normal reads may fail on conflicted records. Preserve and inspect any pending transaction before proceeding.
+For a known Git merge conflict, follow the library Git merge workflow directly before ordinary preflight. Git hooks are installed/updated by the normal npm installation and CLI init; resolve and stage content, then wait for automatic record repair before committing. Normal reads may fail on conflicted records. Preserve and inspect any pending transaction before proceeding.
 
 Otherwise, run once per conversation before the first DocNexus command:
 

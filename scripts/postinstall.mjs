@@ -10,5 +10,7 @@ if (process.env.npm_config_global !== "true" && basename(dirname(dirname(package
     for (const directory of await cleanupLegacyProject(project)) {
       process.stderr.write(`docnexus: removed legacy ${directory}/ data during installation (no migration).\n`);
     }
+    const { installProjectGitHooks } = await import("../dist/src/git-hook-setup.js");
+    await installProjectGitHooks(project);
   }
 }

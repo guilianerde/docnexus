@@ -67,7 +67,7 @@ Users may edit `docnexus/library/<file_path>` directly. Until adopted, search an
 
 ## Resolve Git merge conflicts
 
-For Git pull conflicts, use the [Git merge recovery workflow](references/git-merge.md). Enable `docnexus git hooks install` once, resolve and stage content using Git or the editor, then wait for automatic record repair before committing. Ordinary hand-edit sync cannot repair conflicted records.
+For Git pull conflicts, use the [Git merge recovery workflow](references/git-merge.md). The normal npm installation and CLI init install/update Git hooks automatically; resolve and stage content using Git or the editor, then wait for automatic record repair before committing. Ordinary hand-edit sync cannot repair conflicted records.
 
 ## Delete a document
 

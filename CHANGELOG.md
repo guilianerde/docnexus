@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.27.0 — 2026-10-23
+
+- Check catalog-wide document-path uniqueness when staged records change, without hashing unrelated document assets. Install `pre-merge-commit` alongside `pre-commit` so conflict-free automatic merge commits also validate staged knowledge. npm installation/upgrades and CLI init automatically install/update hooks in initialized Git projects, including older scripts and the new hook. Projects without Git skip setup; failures warn without aborting package installation or initialization.
+
+Compatibility: workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. Hook setup is automatic; existing installations are updated in place and `docnexus git hooks install|uninstall` remain available for manual maintenance.
+
 ## 0.26.1 — 2026-10-22
 
 - Update the knowledge-evaluation README evidence excerpt after the documentation rewrite so release verification can replay the fixture; runtime behavior is unchanged. 0.26.0 was not published to npm because verification stopped at this fixture.

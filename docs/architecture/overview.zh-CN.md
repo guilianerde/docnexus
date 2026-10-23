@@ -156,13 +156,13 @@ CLI 在现有 Markdown 内生成 `<!-- docnexus:fact fact_id -->` 与 `<!-- /doc
 
 ## Git、诊断与维护
 
-Git 默认不参与初始化或同步。显式 `init --git-remote <url>` 预检 Git 可用性、独立仓库边界及宿主跟踪状态，再初始化 `docnexus/.git/`、设置 `origin` 并在有宿主仓库时追加项目内的 `/docnexus/` 忽略规则。已有宿主跟踪会被拒绝，不自动改动暂存区；不执行网络访问或提交。普通 init 保留配置。初始化允许只含有效 Git 元数据及可选安装文件的目录，不接管无关正文。reset 保留 `.git`、配置和历史，返回可选 `preserved_git: true`；当前知识仍会清空。独立仓库配置不改变文本真源或检索投影模型，也不提供跨机器写入协调。
+默认不创建 Git 仓库或同步远程；已有仓库中的钩子由 npm 安装/升级和 CLI init 自动设置。显式 `init --git-remote <url>` 预检 Git 可用性、独立仓库边界及宿主跟踪状态，再初始化 `docnexus/.git/`、设置 `origin` 并在有宿主仓库时追加项目内的 `/docnexus/` 忽略规则。已有宿主跟踪会被拒绝，不自动改动暂存区；不执行网络访问或提交。普通 init 保留配置。初始化允许只含有效 Git 元数据及可选安装文件的目录，不接管无关正文。reset 保留 `.git`、配置和历史，返回可选 `preserved_git: true`；当前知识仍会清空。独立仓库配置不改变文本真源或检索投影模型，也不提供跨机器写入协调。
 
 可选 Git 配置同时固定单一本地分支：新建时为 `main`，已有时为当前分支。`.git/docnexus-branch.json` 在工作树之外保存约束，避免旧提交或 reset 移除检查。顶层项目锁内先校验分支及本地分支集合，再恢复文本事务；分支不符、detached HEAD 或额外本地分支时拒绝 DocNexus 操作。默认无 Git 模式不启动 Git 子进程。克隆需重新配置以安装本地约束；检查不能阻止外部 Git 命令、并发切换或人工移除约束，不限制远程分支。
 
-可选 `docnexus git hooks install` 接入原生 Git 或编辑器的普通 merge 流程：索引钩子记录未解决阶段与 resolve-undo 信息，用户解决并暂存内容后，自动校验和重建 record、事实视图及导航，再暂存生成文件。`pre-commit` 跳过未修改知识的提交；普通知识提交只读取变更单元的 record 并核对受影响文档的资产哈希，只有 library-only 变更才回退读取全量 record；事实/实体及增删变更仍做必要的跨文档依赖校验。已自动修复的 merge 通过双方提交和暂存 Git 对象签名复用已验证快照，不重复读取全库正文。普通未采纳正文报告 `text_integrity_error` 并指向 `document sync --id`；rebase、am、cherry-pick、revert 会立即报告 `git_merge_unsupported`，不排队 worker。普通 merge 在发布 `MERGE_HEAD` 前的短暂窗口单独处理，等待超时会明确报告缺少合并上下文。
+npm 安装/升级及 CLI `init` 自动安装或更新本地钩子，接入原生 Git 或编辑器的普通 merge 流程；首次 npm 安装尚无项目标记时延后到 CLI `init`，无 Git 仓库时跳过：索引钩子记录未解决阶段与 resolve-undo 信息，用户解决并暂存内容后，自动校验和重建 record、事实视图及导航，再暂存生成文件。`pre-commit` 和 `pre-merge-commit` 共同覆盖普通提交及无冲突的自动合并提交，跳过未修改知识的提交；普通知识提交只核对受影响文档的资产哈希，record 变更或 library-only 变更会读取全量 record 核对路径唯一性；事实/实体及增删变更仍做必要的跨文档依赖校验。已自动修复的 merge 通过双方提交和暂存 Git 对象签名复用已验证快照，不重复读取全库正文。普通未采纳正文报告 `text_integrity_error` 并指向 `document sync --id`；rebase、am、cherry-pick、revert 会立即报告 `git_merge_unsupported`，不排队 worker。普通 merge 在发布 `MERGE_HEAD` 前的短暂窗口单独处理，等待超时会明确报告缺少合并上下文。
 
-钩子按当前 Git 工作树的相对布局寻找项目和本地 CLI，并从 PATH 选择 Node。运行时缺失不阻塞普通代码提交；涉及知识的提交会明确提示恢复 Node 和项目依赖，索引钩子只警告并跳过自动修复。旧版绝对路径钩子需重新执行一次 install 更新；原生旧钩子仍保留，uninstall 可恢复。排队 worker 的日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`，失败原因不会因文件无限增长而丢失。详细步骤与限制见 [Git 合并工作流](../../skills/docnexus-library/references/git-merge.md) 和 [Skills/Git 编排](./skills-workspace.zh-CN.md#分发与-git)。
+钩子按当前 Git 工作树的相对布局寻找项目和本地 CLI，并从 PATH 选择 Node。运行时缺失不阻塞普通代码提交；涉及知识的提交会明确提示恢复 Node 和项目依赖，索引钩子只警告并跳过自动修复。旧版绝对路径钩子及新增钩子随正常安装/升级自动更新；设置失败只警告，不阻断安装或初始化；原生旧钩子仍保留，uninstall 可恢复。排队 worker 的日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`，失败原因不会因文件无限增长而丢失。详细步骤与限制见 [Git 合并工作流](../../skills/docnexus-library/references/git-merge.md) 和 [Skills/Git 编排](./skills-workspace.zh-CN.md#分发与-git)。
 
 Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及版本标记、`schemas/metadata.schema.json`；其他名称的自定义 skill 仍可提交。克隆后安装锁定依赖并运行 `init --agent <target>`，恢复 skills、schema 和链接；独立知识仓库同时传入 `--git-remote <url>`。已跟踪副本需显式取消跟踪，详见[恢复与迁移](./skills-workspace.zh-CN.md#已有仓库迁移)。之后关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
 
@@ -176,6 +176,7 @@ Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `no
 - `src/managed-documents.ts`：当前知识、时间线、哈希与文件管理。
 - `src/project-lock.ts`、`src/text-transaction.ts`、`src/workspace-io.ts`：项目锁、持久化事务与原子落盘。
 - `src/workspace-git.ts`：可选独立知识仓库预检、远程配置与宿主忽略规则。
+- `src/git-hook-setup.ts`：npm 安装/升级与 CLI init 的自动钩子设置，无 Git 时跳过，设置失败仅警告。
 - `src/git-hooks.ts`：原生钩子安装、冲突清单、自动修复调度及按提交范围校验。
 - `src/git-index.ts`：暂存条目、合并上下文和 Git blob 快照读取。
 - `src/git-merge-sync.ts`：从暂存快照校验双方身份与事实历史，准备 record、时间线和事实视图的修复产物。
