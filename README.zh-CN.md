@@ -105,6 +105,8 @@ node .docnexus/skills/docnexus-library/scripts/query-documents.mjs --all
 
 捕获流程：`draft new` → 写入三份产物 → `draft seal` → `draft preview --id <id>` → 用户审阅 → `document add --draft <id>`。预览返回封存正文、`document_hash` 和 `sealed_version`；事实、目标或产物变化后需合并、重新封存并重新预览。替换已有路径需要显式授权和 `--replace`。
 
+`draft seal --file` 只接收相对 library 根目录的路径，如 `dev/a.md`。封存和预览同时返回 `file_path` 及最终的项目相对路径 `library_path`，供审阅落点；不要把 `library_path` 传回 `--file`。封存会拦截当前配置的 library 前缀，给出保留版本和分类参数的修正命令。已有重复前缀的记录仍可读取。
+
 更新草稿使用提炼读取时的 `--base-version <record_version>`；封存冲突后先复读合并再重新封存。封存会固定目标版本，入库会拒绝更新的正文、来源或分类变化。回归回放见[知识维护评估](docs/operations/knowledge-evaluation.zh-CN.md)。
 
 `observed_at` 只取当前来源明确给出且带时区的观察时间，不继承旧值，也不用事件日期或保存时间代替。跨页影响清单随草稿交接，可持久化到 `docnexus/impacts/`：主文档入库后用 `impact save --file <输入文件>` 登记，通过 `impact list/get/set` 续办。两次操作相互独立，也不授权修改相关页。详见[影响清单](skills/docnexus-library/references/impacts.md)。

@@ -83,11 +83,13 @@ const USAGE = `Setup
 Capture (extract -> seal -> ingest)
   docnexus draft new [--slug auth]
   docnexus metadata validate --file .docnexus/drafts/<draft_id>/metadata.json
-  docnexus draft seal --id <draft_id> --file <library_path.md> [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
+  docnexus draft seal --id <draft_id> --file <library-relative.md> [--base-version <record_version|new>] [--category <name> [--category-reason <basis>]]
   docnexus draft preview --id <draft_id>
   docnexus document add --draft <draft_id> [--replace]
   docnexus draft list [--status open|ready|ingested|invalid]
   docnexus draft discard --id <draft_id> --force
+  Managed document --file paths are relative to the configured library root, e.g. auth/rotation.md.
+  Seal and preview return library_path as the final project-relative destination; do not pass it to --file.
 
 Related-page impact tracking
   docnexus impact save --file <project-relative-input.json>
@@ -110,8 +112,8 @@ Library
   docnexus document render
   docnexus document classify --id <document_id> --category <project-category> --reason <basis> [--revision <snapshot>]
   docnexus document sync --id <document_id> [--metadata-file <path>]
-  docnexus document sync --file <library_path.md> [--metadata-file <path>]
-  docnexus document delete --file <library_path.md> --force
+  docnexus document sync --file <library-relative.md> [--metadata-file <path>]
+  docnexus document delete --file <library-relative.md> --force
   docnexus document delete --id doc_0000000000000000 --force
 
 Maintenance

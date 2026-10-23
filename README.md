@@ -105,6 +105,8 @@ Refined documents are limited to **4000 Unicode characters** of rendered Markdow
 
 Capture: `draft new` → write three artifacts → `draft seal` → `draft preview --id <id>` → user review → `document add --draft <id>`. Preview returns sealed Markdown, `document_hash` and `sealed_version`; changed facts, targets or artifacts require merging/resealing and a new preview. Replacing an existing path needs explicit authorization and `--replace`.
 
+Pass a library-relative path such as `dev/a.md` to `draft seal --file`. Seal and preview return `file_path` plus the final project-relative `library_path` for review; do not pass `library_path` back to `--file`. Seal rejects the configured library prefix and provides a corrected retry command preserving version and category arguments. Existing records with duplicated prefixes remain readable.
+
 Updates pass `--base-version <record_version>` from the read used to compose the draft; conflicts require rereading and merging before resealing. Sealing pins the target version, and ingestion rejects newer prose, source or category changes. See [knowledge maintenance evaluation](docs/operations/knowledge-evaluation.zh-CN.md) for regression replays.
 
 `observed_at` comes only from an explicit timezone-qualified observation in the current source; never inherit it or substitute an event/save date. Related-page impact checks are handed off with the draft and can be persisted under `docnexus/impacts/`. Register them after primary ingestion with `impact save --file <input.json>`; resume with `impact list/get/set`. They are separate operations and never authorize related writes. See [impact tracking](skills/docnexus-library/references/impacts.md).

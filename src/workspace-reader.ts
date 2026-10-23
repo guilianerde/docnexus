@@ -149,7 +149,7 @@ export async function readCurrentAssets(projectRoot: string, record: RecordFile,
 
 export async function resolveManagedTarget(projectRoot: string, filePath: string, context?: WorkspaceReadContext): Promise<{ absolutePath: string; relativePath: string }> {
   if (typeof filePath !== "string" || !filePath.trim()) throw new DocNexusError("invalid_params", "file_path is required");
-  if (isAbsolute(filePath) || extname(filePath).toLowerCase() !== ".md") throw new DocNexusError("invalid_params", "file_path must be a project-relative Markdown path");
+  if (isAbsolute(filePath) || extname(filePath).toLowerCase() !== ".md") throw new DocNexusError("invalid_params", "file_path must be a library-relative Markdown path");
   const root = context?.root ?? await realpath(resolve(projectRoot));
   const managedRoot = context ? join(root, context.directory, "library") : libraryPath(root);
   const absolutePath = resolve(managedRoot, filePath);

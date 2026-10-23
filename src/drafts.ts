@@ -3,7 +3,7 @@ import { withProjectLock } from "./project-lock.js";
 import { mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256, stableJson } from "./hash.js";
-import { draftsPath, INTERNAL_DIRNAME } from "./layout.js";
+import { draftsPath, INTERNAL_DIRNAME, libraryRelativePath } from "./layout.js";
 import { listRecordFiles, normalizeManagedFilePath, readAssets } from "./workspace-reader.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { validateMetadata } from "./metadata.js";
@@ -50,6 +50,7 @@ export interface SealDraftOutput {
   draft_id: string;
   manifest_file: string;
   file_path: string;
+  library_path: string;
   artifacts: Record<ArtifactName, string>;
   metadata_validation: "passed";
   replaces_managed_document: boolean;
@@ -176,6 +177,18 @@ export async function sealDraft(
       throw new DocNexusError("draft_invalid", `draft ${draftId} was already ingested; create a new draft for further changes`);
     }
     const filePath = await normalizeManagedFilePath(projectRoot, input.filePath);
+    const libraryPrefix = libraryRelativePath("", projectRoot);
+    if (filePath.startsWith(libraryPrefix)) {
+      const suggestedPath = filePath.slice(libraryPrefix.length);
+      const command = ["draft", "seal", "--id", draftId, "--file", suggestedPath];
+      if (input.baseRecordHash !== undefined) command.push("--base-version", input.baseRecordHash ?? "new");
+      if (input.category !== undefined) command.push("--category", input.category);
+      if (input.categoryReason !== undefined) command.push("--category-reason", input.categoryReason);
+      throw new DocNexusError("invalid_params",
+        `--file must be a library-relative Markdown path, without the project-relative library prefix ${libraryPrefix}; use ${suggestedPath}`,
+        { supplied_file_path: input.filePath, suggested_file_path: suggestedPath, library_root: libraryPrefix.slice(0, -1) },
+        { command });
+    }
     const source = await readArtifact(directory, "source");
     const document = await readArtifact(directory, "document");
     let metadataText = await readArtifact(directory, "metadata");
@@ -234,6 +247,7 @@ export async function sealDraft(
       draft_id: draftId,
       manifest_file: relativeDraftPath(draftId, "manifest.json"),
       file_path: filePath,
+      library_path: libraryRelativePath(filePath, projectRoot),
       artifacts: manifest.artifacts,
       metadata_validation: "passed",
       replaces_managed_document: prior !== undefined,
@@ -263,6 +277,7 @@ export async function previewDraft(projectRoot: string, draftId: string) {
       throw new DocNexusError("preview_changed", "referenced facts changed after preview; seal the draft again and review its new preview");
     }
     return { result: "draft_preview" as const, draft_id: draft.manifest.draft_id, file_path: draft.manifest.file_path,
+      library_path: libraryRelativePath(draft.manifest.file_path, projectRoot),
       sealed_version: sha256(stableJson(draft.manifest)), document_hash: sha256(document), document };
   });
 }

@@ -31,6 +31,8 @@ DocNexus 通过六个项目 skills 与编码智能体协作。需要理解和判
 
 `draft preview --id <id>` 校验封存产物、目标版本和当前事实展开结果，返回完整正文、正文哈希与封存 manifest 的规范 JSON 哈希 `sealed_version`；seal 和入库结果返回相同版本以供关联。事实草稿仍生成 `preview.md`，普通草稿直接返回封存正文。预览不改 manifest、不写审阅收据、不增加入库门禁。观测器可证明哪个版本正文被交付，不能证明理解或用户批准；重新封存后需重新读取。
 
+`draft seal --file` 使用相对配置的 library 根目录的 `file_path`；封存和预览另返回最终项目相对路径 `library_path`，用于展示落点。封存入口拒绝误传的完整项目相对 library 前缀，错误包含建议路径及保留草稿 id、版本、分类参数的重试命令，且不写封存结果或修改 metadata。读取路径不增加此限制，已有重复前缀的记录仍可读取，不自动搬迁。
+
 `document get` 与 `document query` 返回各文档的 `record_version`。更新草稿使用提炼读取时的 `--base-version <record_version>` 封存；新路径可使用 `--base-version new`。封存与入库各校验一次，冲突后必须复读合并，不能只刷新版本。`draft seal` 写入产物哈希。审阅展示目标路径、标题、摘要、实体及实际内容，授权覆盖该版本后再入库。产物变化须重新封存，并判断既有授权是否仍覆盖新内容。
 
 `document add --draft <id>` 在项目锁内通过持久化恢复日志保存文本、追加时间线、标记草稿 ingested 并刷新目录。中断后下一次 CLI 访问先完成保存或回滚。派生向量和图谱由下一次 `recall` 或显式 `index sync` 建立，不追加额外时间线事件。已有路径需要 `--replace`。入库返回 `id`、`library_path`、`operation` 和 `timeline_path`。

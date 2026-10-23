@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.1 — 2026-10-23
+
+- Reject project-relative library prefixes in `draft seal --file` before writing the seal or changing metadata. Return a corrected library-relative path and retry command preserving the draft id, base version and category arguments. Match only the configured library prefix, preserving legitimate nested paths and existing record reads.
+- Return the final project-relative `library_path` from draft sealing and preview alongside the library-relative `file_path`. Align CLI help, validation errors and extraction guidance with these path meanings.
+
+Compatibility: workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. Existing records with duplicated library prefixes remain readable; this release does not relocate them.
+
 ## 0.27.0 — 2026-10-23
 
 - Check catalog-wide document-path uniqueness when staged records change, without hashing unrelated document assets. Install `pre-merge-commit` alongside `pre-commit` so conflict-free automatic merge commits also validate staged knowledge. npm installation/upgrades and CLI init automatically install/update hooks in initialized Git projects, including older scripts and the new hook. Projects without Git skip setup; failures warn without aborting package installation or initialization.
