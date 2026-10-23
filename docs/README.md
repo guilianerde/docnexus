@@ -1,6 +1,6 @@
 # DocNexus 文档中心
 
-当前文档描述 0.23.0 的文本知识、持久化恢复、混合检索、事实生命周期与 skills 架构，以及可选独立知识 Git 仓库与单分支检查、独立 npm 安装目录、写入前相似知识判定、跨页影响清单持久化与续办、调用方显式分类、分类搜索/召回、投影版本、结构化出处、预算规划、手动刷新浏览页和扩展检索评估；0.22.1 将官方 skills 和生成 schema 副本保留本地，Git 保存完整知识与安装版本，自定义 skills 仍可提交；0.23.0 把 `CONCEPTS.md` 拆为短分类映射和每个不超过 32 KB 的分类文件，智能体按任务决定是否检索，封存时一次报出全部事实链问题。版本变更见 [Changelog](../CHANGELOG.md#0230--2026-10-18)。检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。
+当前文档描述工作区格式 7 的架构：`.docnexus/` 程序文件与可配置的知识输出目录分离，`init --output-dir` 指定知识工作区，npm postinstall 清理识别出的旧格式安装；精炼正文限 4000 Unicode 字符并由智能体语义拆分；可选原生 Git hooks 接入普通 merge，持久化冲突、自动重建受影响记录并按提交范围校验知识；`CONCEPTS.md` 为不超过 3 KB 的分类路由表，分类文件不超过 32 KB，另有可编辑的 `categories.md` 建议清单。文本知识、持久化恢复、混合检索、事实生命周期、可选独立知识 Git 仓库与 skills 编排等既有设计不变；检索投影采用 PGLite/Postgres＋pgvector，保留本地 embedding。版本变更见 [Changelog](../CHANGELOG.md#0260--2026-10-22)。
 
 | 主题 | 文档 |
 | --- | --- |
@@ -19,6 +19,7 @@
 | 智能体验收 | [独立上下文、调用观测与结果审阅](./operations/agent-evaluation.zh-CN.md) |
 | 验收记录 | [各轮回归、实测数字与结论边界](./operations/validation-history.zh-CN.md) |
 | 影响清单 | [持久化、待办续办与复核状态](../skills/docnexus-library/references/impacts.md) |
+| Git 合并 | [原生钩子、冲突持久化与自动修复](../skills/docnexus-library/references/git-merge.md) |
 | 使用观察 | [本地记录、匿名指标、显式反馈与单文件导出](./operations/usage-observation.zh-CN.md) |
 | 展示接口 | [全量/分页文档查询、分类与本地浏览页](./architecture/document-query.zh-CN.md) |
 

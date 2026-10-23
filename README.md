@@ -6,7 +6,7 @@ DocNexus is local project memory for coding agents such as Codex and Claude. Ins
 
 Agents consult memory proactively, and every write requires user authorization. Keyword lookup reads text directly; default recall fuses keyword and local vector ranks with one-hop graph evidence. The CLI makes no external LLM calls, and the bundled quantized ONNX model loads offline.
 
-> **0.25.0 breaking change:** workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation deletes recognized legacy workspaces, including knowledge, sources and history; no migration is provided. Draft manifest 3 and projection schema 2 are unchanged.
+> **0.24.2 breaking change:** workspace format 7 separates `.docnexus/` program files from configurable knowledge output. Installation deletes recognized legacy workspaces, including knowledge, sources and history; no migration is provided. Draft manifest 3 and projection schema 2 are unchanged. 0.25.0 additionally defaults `document get` to the current body only and enforces the 4000-character refined-body limit.
 
 ## Installation cleanup
 

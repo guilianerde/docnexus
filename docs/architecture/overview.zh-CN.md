@@ -1,6 +1,6 @@
 # DocNexus 当前架构
 
-DocNexus 0.24.2 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
+DocNexus 采用分层项目记忆：Markdown 当前知识与来源时间线是文本真源，PostgreSQL＋pgvector 是可重建的检索投影，skills 负责提炼、更新与综合回答。本地模型负责 embedding，CLI 不调用外部 LLM。对齐 GBrain 的双引擎模式，默认零配置 PGLite，设置 `DOCNEXUS_DATABASE_URL` 后使用独立 Postgres；两者共用 SQL。
 
 ```text
 智能体与项目 skills
@@ -172,6 +172,7 @@ Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `no
 
 ## 主要代码
 
+- `src/cli.ts`、`src/cli-commands.ts`、`src/cli-options.ts`：CLI 入口、命令分发表与共享参数解析。
 - `src/managed-documents.ts`：当前知识、时间线、哈希与文件管理。
 - `src/project-lock.ts`、`src/text-transaction.ts`、`src/workspace-io.ts`：项目锁、持久化事务与原子落盘。
 - `src/workspace-git.ts`：可选独立知识仓库预检、远程配置与宿主忽略规则。
@@ -182,12 +183,15 @@ Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `no
 - `src/fact-renderer.ts`：事实引用、受控生成块、有效状态与模板规范化。
 - `src/hybrid-recall.ts`：文档去重与 RRF 融合。
 - `src/document-query.ts`：供文档可视化使用的全量/分页快照、分类计数与版本校验。
+- `src/impacts.ts`：相关页影响清单的登记、状态核对与续办。
+- `src/usage.ts`、`src/usage-metrics.ts`：可选本地使用观察、匿名指标与查询反馈。
 - `src/retrieval-index.ts`：片段复用、增量同步与模型/切块签名。
 - `src/postgres-engine.ts`：PGLite 与 Postgres 连接、项目 schema 与数据库事务适配。
 - `src/postgres-store.ts`、`src/graph-mapping.ts`：统一 SQL、pgvector 与关系投影。
 - `src/search.ts`、`src/recall.ts`、`src/recall-groups.ts`：关键词和向量/图谱召回。
 - `src/embedder-real.ts`、`src/embedding-models.ts`：离线 ONNX 模型与覆盖管理。
 - `src/drafts.ts`、`src/concepts.ts`、`src/skills.ts`：草稿、目录与工作流分发。
+- `src/document-length.ts`：精炼正文的 4000 Unicode 字符上限校验。
 
 小型检索基线见 [检索评估](../operations/retrieval-evaluation.md)。
 
