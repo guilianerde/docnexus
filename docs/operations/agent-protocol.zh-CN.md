@@ -56,6 +56,10 @@ CLI 访问仍会执行既有的未完成事务恢复；“诊断/读取”不表
 
 npm 安装/升级与 CLI `init` 自动安装或更新已初始化 Git 项目的本地钩子，无 Git 仓库时跳过，设置失败只警告；`docnexus git hooks install|status|uninstall` 保留作手动维护入口，返回 `installed`、`repository` 和 `hooks`；原生旧钩子保留并先执行，卸载时恢复。自定义 `core.hooksPath` 管理器不会被改写，需显式接入 `docnexus git hook index`、`docnexus git hook check` 并保留内部递归保护。普通 merge 中，用户或编辑器解决并暂存内容后，自动流程从暂存快照校验、修复并暂存派生产物；不执行提交或网络操作。冲突清单及排队日志分别在 `.docnexus/.runtime/git-merge.json`、`git-merge.log`；日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`。未准备好、非法事实历史、未暂存覆盖风险返回 `git_merge_not_ready`；rebase/am、cherry-pick、revert 立即返回 `git_merge_unsupported`，清理临时清单且不排队 worker。暂存内容未准备好时检查文件/日志并修正后再次暂存；不支持的 Git 操作改走文档单元人工恢复，不要反复 add 等待自动修复。`pre-commit` 和 `pre-merge-commit` 共用提交校验，覆盖无冲突的自动合并提交；对无知识变更的提交返回 skipped；普通知识提交仅核对受影响单元的资产哈希，record 变更额外读取全目录 record 核对路径唯一性，并按语义变更做必要的依赖校验，未采纳正文使用 text_integrity_error 和 document sync --id 的恢复命令；已修复 merge 仅比较已验证 Git 对象签名。钩子脚本使用相对布局和 PATH 中的 Node；缺少运行时时不阻塞代码提交，知识提交提示恢复依赖。可带冲突的 record 根据双方身份重建，内容资产仍需先人工解决并暂存。冲突恢复统一通过钩子执行，并在事务重放前拒绝未完成的文本 journal。普通 `document sync --id|--file` 仅用于采纳手动编辑。
 
+CLI `init` 的 `git_hooks`、`doctor` 的 `checks.git_hooks` 和 `git hooks status` 显示钩子健康情况：`ok`、`status`（`ready|missing|outdated|unavailable|skipped`）、`installed`、可选 `reason/message/repository`、逐钩子的 `installed/executable/current`，以及 `runtime` 中的 `ok/cli_path/node_path/node_version/message`。`installed` 仅表示脚本带有 DocNexus 标记，不保证可执行或运行时可用。`current` 与当前配置生成的脚本全文比对，运行时核对 CLI 文件及当前 PATH 中的 Node >=22.13；不运行知识操作。无 Git 时 `ok: true`、`status: skipped`，不影响 doctor；不健康时 doctor 返回 `git_hooks_unavailable`，初始化仍成功并返回具体问题，检查不自动安装或覆盖钩子。自定义钩子管理器标记为不可自动验证，保留原文件。
+
+每个 Git 索引最多一个活动 worker，独立 SQLite 租约在进程退出/崩溃后释放；只记录请求的触发方不持长期租约。新请求在工作进程处理和退出时重新检查，不会随已处理批次清除；失败批次不自行无限重试，需新的暂存事件。Git 元数据目录内的 `docnexus-worker.sqlite` 和 `docnexus-worker-requests/` 为本机调度状态，不进入知识真源。竞争启动的进程若未取得租约，返回 `already_running`，不进入轮询或修复。
+
 ## 调用方显式分类
 
 用户或调用方 skill 已确定文档类型时，可在封存阶段指定分类，跳过本次写入的模型分类。例如 code-review skill 已准备好三份草稿产物：

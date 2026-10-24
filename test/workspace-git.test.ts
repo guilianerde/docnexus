@@ -9,6 +9,7 @@ import { getManagedRecord, upsertManagedDocument } from "../src/managed-document
 import { initializeProject } from "../src/project.js";
 import { resetProjectData } from "../src/reset.js";
 import { SKILL_NAMES } from "../src/skills.js";
+import { readGitBlobs, readGitTree } from "../src/workspace-git.js";
 
 const execute = promisify(execFile);
 const roots: string[] = [];
@@ -23,6 +24,31 @@ async function git(root: string, ...args: string[]) {
 afterEach(async () => {
   vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+});
+
+it("reads literal parent paths and exact Unicode blob contents in batches", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await git(root, "config", "user.email", "git-tree@example.com");
+  await git(root, "config", "user.name", "Git Tree");
+  await git(root, "config", "core.autocrlf", "false");
+  await mkdir(join(root, "nested"));
+  const paths = ["nested/文 件.md", "literal[1].md", "literal1.md"];
+  for (const path of paths) await writeFile(join(root, path), `${path}\r\n中文与 emoji 🧭\r\n`);
+  await git(root, "add", "--", ...paths);
+  await git(root, "commit", "-m", "parent assets");
+  const commit = await git(root, "rev-parse", "HEAD");
+  const tree = await readGitTree(root, commit, [paths[0], paths[1], paths[1], "missing.md"]);
+
+  expect([...tree.keys()].sort()).toEqual(paths.slice(0, 2).sort());
+  const blobs = await readGitBlobs(root, [...tree.values()].map(entry => entry.oid));
+  for (const path of paths.slice(0, 2)) {
+    expect(tree.get(path)).toMatchObject({ mode: "100644", type: "blob" });
+    expect(blobs.get(tree.get(path)!.oid)).toBe(`${path}\r\n中文与 emoji 🧭\r\n`);
+  }
+  const missing = Array.from({ length: 250 }, (_, index) => `missing-${index}-${"x".repeat(150)}.md`);
+  const chunked = await readGitTree(root, commit, [...missing, paths[0]]);
+  expect([...chunked]).toEqual([[paths[0], tree.get(paths[0])]]);
 });
 
 it("keeps default initialization independent of Git, including when Git is unavailable", async () => {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.0 — 2026-10-25
+
+- Coalesce merge-worker requests behind one crash-released lease per Git index, retaining events received during processing and shutdown. Report Git hook health in CLI init and doctor, checking script contents, executable permissions, the CLI file and Node on PATH; automatic setup failures remain nonfatal and non-Git projects are explicitly skipped.
+
+- Check repaired-merge index signatures before loading Git blobs, and wait for unresolved content using index entries alone. Reuse the captured entries when a full snapshot is required. Batch parent-path lookups with bounded command arguments and read both parents' record/metadata blobs through one `cat-file --batch`, retaining identity, file-mode, hash and fact-history checks.
+
 ## 0.27.1 — 2026-10-23
 
 - Reject project-relative library prefixes in `draft seal --file` before writing the seal or changing metadata. Return a corrected library-relative path and retry command preserving the draft id, base version and category arguments. Match only the configured library prefix, preserving legitimate nested paths and existing record reads.

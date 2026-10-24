@@ -9,6 +9,7 @@ export const errorDefinitions = {
   unsupported_format: { retryable: false, kind: "review", message: "Back up and inspect the workspace before choosing a migration or reset." },
   project_busy: { retryable: true, kind: "retry", message: "Wait for the current operation, then retry the same request." },
   git_unavailable: { retryable: false, kind: "configure", message: "Install Git to configure or use a Git-managed workspace; the default mode does not require Git." },
+  git_hooks_unavailable: { retryable: false, kind: "configure", message: "Inspect the hook health details. Restore PATH/project dependencies and use the normal npm installation or docnexus init to refresh hooks; custom hook managers require explicit integration." },
   git_operation_failed: { retryable: false, kind: "review", message: "Inspect the workspace repository and host tracking before retrying; Git setup may be partially complete." },
   git_branch_mismatch: { retryable: false, kind: "review", message: "Return to the pinned knowledge branch and review extra local branches before using DocNexus; do not discard changes automatically." },
   git_merge_not_ready: { retryable: false, kind: "review", message: "Resolve and stage library, metadata, source and timeline, then wait for automatic repair before committing. Hooks are installed/updated by npm installation and docnexus init. Inspect .docnexus/.runtime/git-merge.log for queued-worker failures. Same-path creates, renames and deletes require manual document-level recovery." },

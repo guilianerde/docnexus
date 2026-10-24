@@ -1,17 +1,20 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { writeConceptIndex } from "../src/concepts.js";
 import { factDocumentTemplate } from "../src/fact-renderer.js";
 import { runCli } from "../src/cli.js";
-import { installProjectGitHooks } from "../src/git-hook-setup.js";
+import { inspectProjectGitHooks, installProjectGitHooks } from "../src/git-hook-setup.js";
 import { manageGitHooks, runGitHook } from "../src/git-hooks.js";
 import { sha256, stableJson } from "../src/hash.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
+import * as workspaceGit from "../src/workspace-git.js";
+import { gitContext } from "../src/git-index.js";
+import { acquireGitWorker, clearGitWorkerRequests, gitWorkerRequests, requestGitWorker } from "../src/git-worker.js";
 
 const execute = promisify(execFile);
 const roots: string[] = [];
@@ -94,6 +97,7 @@ async function resolveContent(root: string, id: string) {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
 });
 
@@ -136,6 +140,46 @@ it("repairs a conflicted document unit after staging and gates the merge commit"
   await stage(root, "notes.txt");
   await git(root, "commit", "--no-edit");
   expect((await git(root, "rev-list", "--parents", "-n", "1", "HEAD")).trim().split(" ")).toHaveLength(3);
+});
+
+it("skips blobs for waiting/repaired indexes and rereads changed knowledge", async () => {
+  const { root, id } = await conflictingRepo();
+  const blobs = vi.spyOn(workspaceGit, "readGitBlobs");
+  expect(await runGitHook(root, "index")).toMatchObject({ status: "waiting" });
+  expect(blobs).not.toHaveBeenCalled();
+  await resolveContent(root, id);
+  expect(await runGitHook(root, "index")).toMatchObject({ status: "ready" });
+  blobs.mockClear();
+
+  await writeFile(join(root, "notes.txt"), "Unrelated code review notes.\n");
+  await stage(root, "notes.txt");
+  expect(await runGitHook(root, "index")).toMatchObject({ status: "ready" });
+  expect(blobs).not.toHaveBeenCalled();
+
+  const document = "# Token rotation\n\nReviewed again after automatic repair.\n";
+  await writeFile(join(root, "docnexus/library/auth/rotation.md"), document);
+  await stage(root, "docnexus/library/auth/rotation.md");
+  expect(await runGitHook(root, "index")).toMatchObject({ status: "ready" });
+  expect(blobs).toHaveBeenCalled();
+  const record = JSON.parse(await gitShow(root, `:0:docnexus/records/${id}/record.json`));
+  expect(record.document_hash).toBe(sha256(factDocumentTemplate(document)));
+});
+
+it("batches both parents' record and metadata assets during repair", async () => {
+  const { root, id, ours, theirs } = await conflictingRepo();
+  await runGitHook(root, "index");
+  await resolveContent(root, id);
+  const trees = vi.spyOn(workspaceGit, "readGitTree");
+  const blobs = vi.spyOn(workspaceGit, "readGitBlobs");
+
+  expect(await runGitHook(root, "index")).toMatchObject({ status: "ready" });
+
+  const paths = [`docnexus/records/${id}/record.json`, `docnexus/records/${id}/metadata.json`];
+  for (const parent of [ours, theirs]) {
+    expect(trees.mock.calls.some(([, commit, batch]) => commit === parent && batch.length === paths.length
+      && paths.every(path => batch.includes(path)))).toBe(true);
+  }
+  expect(blobs.mock.calls.some(([, objects]) => objects.length === 4)).toBe(true);
 });
 
 it("refuses automatic repair that would overwrite unstaged edits", async () => {
@@ -289,6 +333,31 @@ it("reports idle status outside a merge", async () => {
   expect(await runGitHook(root, "check")).toMatchObject({ status: "skipped", reason: "no_knowledge_changes" });
 });
 
+it("allows one worker lease and retains index events received during a batch", async () => {
+  const root = await makeRoot();
+  await initRepo(root);
+  const context = await gitContext(root);
+  const lease = await acquireGitWorker(context);
+  expect(lease).toBeDefined();
+  try {
+    expect(await acquireGitWorker(context)).toBeUndefined();
+    expect(await runGitHook(root, "worker")).toMatchObject({ status: "already_running" });
+    await expect(readFile(join(root, ".docnexus/.runtime/git-merge.log"))).rejects.toThrow();
+    await requestGitWorker(context);
+    await requestGitWorker(context);
+    const batch = await gitWorkerRequests(context);
+    expect(batch).toHaveLength(2);
+    await requestGitWorker(context);
+    await clearGitWorkerRequests(context, batch);
+    expect(await gitWorkerRequests(context)).toHaveLength(1);
+  } finally { lease?.close(); }
+  const next = await acquireGitWorker(context);
+  expect(next).toBeDefined();
+  next?.close();
+  expect(await runGitHook(root, "worker")).toMatchObject({ status: "idle" });
+  expect(await gitWorkerRequests(context)).toEqual([]);
+});
+
 it("writes timestamped worker diagnostics", async () => {
   const { root, id } = await conflictingRepo();
   await resolveContent(root, id);
@@ -333,7 +402,12 @@ it("rotates an oversized merge log and keeps one previous file", async () => {
 it("installs hooks during CLI init and refreshes an existing installation", async () => {
   const root = await makeRoot();
   await git(root, "init");
-  await runCli(["init"], root);
+  const cliDirectory = join(root, ".docnexus/node_modules/@rowansenne/docnexus/dist/src");
+  await mkdir(cliDirectory, { recursive: true });
+  await writeFile(join(root, ".docnexus/package.json"), '{"dependencies":{"@rowansenne/docnexus":"0.27.1"}}');
+  await writeFile(join(cliDirectory, "cli.js"), "// Runtime file for hook health checks.\n");
+  const initialized = JSON.parse(await runCli(["init"], root));
+  expect(initialized.git_hooks).toMatchObject({ ok: true, status: "ready", installed: true, runtime: { ok: true } });
   expect(await manageGitHooks(root, "status")).toMatchObject({ installed: true });
   const hookDirectory = join(root, ".git", "hooks");
   await rm(join(hookDirectory, "pre-merge-commit"));
@@ -348,9 +422,9 @@ it("installs hooks during CLI init and refreshes an existing installation", asyn
 
 it("skips automatic hook installation until initialization and Git are available", async () => {
   const root = await makeRoot();
-  await installProjectGitHooks(root);
+  expect(await installProjectGitHooks(root)).toMatchObject({ status: "skipped", reason: "project_not_initialized" });
   await expect(readFile(join(root, ".docnexus/project.json"))).rejects.toThrow();
-  await runCli(["init"], root);
+  expect(JSON.parse(await runCli(["init"], root)).git_hooks).toMatchObject({ ok: true, status: "skipped", reason: "no_git_repository" });
   await expect(readFile(join(root, ".git/hooks/pre-commit"))).rejects.toThrow();
 });
 
@@ -364,10 +438,31 @@ it("leaves a custom hook manager unchanged during automatic installation", async
   await writeFile(join(directory, "pre-commit"), custom);
   await git(root, "config", "core.hooksPath", "custom-hooks");
 
-  await expect(installProjectGitHooks(root)).resolves.toBeUndefined();
+  await expect(installProjectGitHooks(root)).resolves.toMatchObject({ ok: false, status: "unavailable", reason: "custom_hooks_path" });
 
   expect(await readFile(join(directory, "pre-commit"), "utf8")).toBe(custom);
   await expect(readFile(join(root, ".git/hooks/pre-commit"))).rejects.toThrow();
+});
+
+it("reports missing, stale, nonexecutable hooks and missing runtimes without repairing them", async () => {
+  const root = await makeRoot();
+  await git(root, "init");
+  await initializeProject(root);
+  expect(await inspectProjectGitHooks(root)).toMatchObject({ status: "missing", installed: false });
+  await manageGitHooks(root, "install");
+  const hook = join(root, ".git/hooks/pre-commit");
+  const script = await readFile(hook, "utf8");
+  expect(await inspectProjectGitHooks(root)).toMatchObject({ status: "unavailable", installed: true, runtime: { ok: false } });
+  await writeFile(hook, `${script}\n# Older or customized script\n`);
+  expect(await inspectProjectGitHooks(root)).toMatchObject({ status: "outdated", installed: true });
+  expect(await readFile(hook, "utf8")).toBe(`${script}\n# Older or customized script\n`);
+  await writeFile(hook, script);
+  if (process.platform !== "win32") {
+    await chmod(hook, 0o600);
+    const health = await inspectProjectGitHooks(root);
+    expect(health.status).toBe("unavailable");
+    expect(health.hooks).toContainEqual(expect.objectContaining({ name: "pre-commit", executable: false }));
+  }
 });
 
 it("installs native hooks with backup and restores originals on uninstall", async () => {

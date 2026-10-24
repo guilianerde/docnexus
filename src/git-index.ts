@@ -53,6 +53,11 @@ export async function readIndexEntries(context: GitContext, indexFile = context.
 
 export async function readIndex(context: GitContext, indexFile = context.index, include?: (entry: GitIndexEntry) => boolean) {
   const entries = (await readIndexEntries(context, indexFile)).filter(entry => !include || include(entry));
+  return readIndexAssets(context, entries);
+}
+
+/** Populate an already captured index without listing its entries again. */
+export async function readIndexAssets(context: GitContext, entries: GitIndexEntry[]) {
   if (entries.some(entry => entry.mode !== "100644" && entry.mode !== "100755")) throw new DocNexusError("git_merge_not_ready", "knowledge assets must be regular Git files");
   const blobs = await readGitBlobs(context.repository, entries.map(entry => entry.oid));
   const staged = new Map(entries.filter(entry => entry.stage === 0).map(entry => [entry.path, blobs.get(entry.oid)!]));

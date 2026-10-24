@@ -7,6 +7,8 @@ import { workspacePath } from "./layout.js";
 import { inspectRecords, type RecordsState } from "./managed-documents.js";
 import { requireInitializedProject } from "./project.js";
 import { inspectSkills, type SkillsState } from "./skills.js";
+import { inspectProjectGitHooks } from "./git-hook-setup.js";
+import type { GitHooksHealth } from "./git-hooks.js";
 
 interface Check {
   ok: boolean;
@@ -27,6 +29,7 @@ export interface DoctorOutput {
     index: Check & Partial<RetrievalIndexState>;
     database: Check;
     embedding: Check & Partial<DefaultEmbeddingRuntimeCheck>;
+    git_hooks: GitHooksHealth;
   };
   recommendations: string[];
 }
@@ -43,6 +46,7 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
   let index: DoctorOutput["checks"]["index"] = { ok: false, skipped: true };
   let database: Check = { ok: false, skipped: true };
   let embedding: DoctorOutput["checks"]["embedding"] = { ok: false, skipped: true };
+  let gitHooks: GitHooksHealth = { ok: false, status: "skipped", skipped: true, installed: false, reason: "project_not_initialized" };
   try {
     await requireInitializedProject(root);
     Object.assign(project, { ok: true, initialized: true, workspace_path: workspacePath(root) });
@@ -52,6 +56,8 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
     recommendations.push(`Run "docnexus init" in ${root}.`);
   }
   if (project.ok) {
+    gitHooks = await inspectProjectGitHooks(root);
+    if (!gitHooks.ok) recommendations.push(gitHooks.message ?? "Restore Git hooks with the normal npm installation and docnexus init.");
     const state = await inspectSkills(root);
     skills = { ...state, ok: state.missing.length === 0 && !state.outdated };
     if (!skills.ok) recommendations.push("Run docnexus skills sync to restore the project skills.");
@@ -94,6 +100,7 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
   const finding = (code: ConstructorParameters<typeof DocNexusError>[0], message: string, details?: Record<string, unknown>) => issues.push(errorEnvelope(new DocNexusError(code, message, details), root));
   if (!node.ok) finding("node_unsupported", "Node.js does not meet the supported runtime version.");
   if (project.ok) {
+    if (!gitHooks.ok) finding("git_hooks_unavailable", gitHooks.message ?? "Git hook setup is not healthy.", { status: gitHooks.status, reason: gitHooks.reason });
     if (!skills.ok) finding("skills_outdated", skills.message ?? "Project skills are missing or outdated.");
     if (!records.ok) finding("text_integrity_error", records.message ?? "Canonical text has edits, missing files or damaged records.", { edited: records.edited, missing_library: records.missing_library, invalid_records: records.invalid_records });
     else if (!index.ok) finding(index.schema_status === "unsupported" ? "index_schema_incompatible" : index.schema_status === "legacy" ? "index_outdated" : index.message ? "index_unavailable" : "index_outdated", index.message ?? "The retrieval projection is not synchronized.");
@@ -102,9 +109,9 @@ export async function runDoctor(projectRoot: string): Promise<DoctorOutput> {
   }
   return {
     protocol_version: PROTOCOL_VERSION, issues,
-    result: [node, project, skills, records, index, database, embedding].every((check) => check.ok) ? "ok" : "issues_found",
+    result: [node, project, skills, records, index, database, embedding, gitHooks].every((check) => check.ok) ? "ok" : "issues_found",
     checked_at: new Date().toISOString(),
-    checks: { node, project, skills, records, index, database, embedding },
+    checks: { node, project, skills, records, index, database, embedding, git_hooks: gitHooks },
     recommendations
   };
 }

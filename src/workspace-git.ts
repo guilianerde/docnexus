@@ -47,7 +47,33 @@ export async function runWorkspaceGit(root: string, args: string[], options: Git
   return (await git(root, ["--literal-pathspecs", ...args], undefined, true, options))!;
 }
 
-/** One Git process for a staged snapshot; byte lengths are parsed before UTF-8 decoding. */
+export interface GitTreeEntry { mode: string; type: string; oid: string }
+
+/** Read exact parent paths in bounded batches, preserving literal/NUL-safe names. */
+export async function readGitTree(root: string, commit: string, paths: readonly string[]): Promise<Map<string, GitTreeEntry>> {
+  if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(commit)) throw new DocNexusError("git_operation_failed", "invalid Git commit identity");
+  const unique = [...new Set(paths)];
+  const entries = new Map<string, GitTreeEntry>();
+  for (let start = 0; start < unique.length;) {
+    let end = start;
+    let bytes = 0;
+    // Keep arguments comfortably below platform command-line limits.
+    do { bytes += Buffer.byteLength(unique[end++]) + 1; }
+    while (end < unique.length && bytes + Buffer.byteLength(unique[end]) + 1 <= 16_384);
+    const batch = unique.slice(start, end);
+    const requested = new Set(batch);
+    const tree = await runWorkspaceGit(root, ["ls-tree", "-z", commit, "--", ...batch]);
+    for (const line of tree.split("\0").filter(Boolean)) {
+      const match = /^([0-7]{6}) (blob|tree|commit) ([a-f0-9]{40}(?:[a-f0-9]{24})?)\t([\s\S]+)$/.exec(line);
+      if (!match) throw new DocNexusError("git_operation_failed", "invalid Git tree entry");
+      if (requested.has(match[4])) entries.set(match[4], { mode: match[1], type: match[2], oid: match[3] });
+    }
+    start = end;
+  }
+  return entries;
+}
+
+/** Read unique Git blobs in one process; parse byte lengths before UTF-8 decoding. */
 export async function readGitBlobs(root: string, objects: string[]): Promise<Map<string, string>> {
   const ids = [...new Set(objects)];
   if (!ids.length) return new Map();

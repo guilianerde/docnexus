@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { runDoctor } from "../src/doctor.js";
 import { initializeProject } from "../src/project.js";
@@ -29,7 +31,18 @@ describe("text workspace diagnostics", () => {
     await initializeProject(path, { agents: ["codex"] });
     const output = await runDoctor(path);
     expect(output).toMatchObject({ result: "ok", checks: { records: { ok: true, record_count: 0 }, skills: { ok: true } }, recommendations: [] });
-    expect(Object.keys(output.checks)).toEqual(["node", "project", "skills", "records", "index", "database", "embedding"]);
+    expect(Object.keys(output.checks)).toEqual(["node", "project", "skills", "records", "index", "database", "embedding", "git_hooks"]);
+    expect(output.checks.git_hooks).toMatchObject({ ok: true, status: "skipped", reason: "no_git_repository" });
+  });
+
+  it("reports missing Git hooks without installing them", async () => {
+    const path = await root();
+    await promisify(execFile)("git", ["-C", path, "init"]);
+    await initializeProject(path, { agents: ["codex"] });
+    const output = await runDoctor(path);
+    expect(output.checks.git_hooks).toMatchObject({ ok: false, status: "missing", installed: false });
+    expect(output.issues).toContainEqual(expect.objectContaining({ code: "git_hooks_unavailable" }));
+    await expect(readFile(join(path, ".git/hooks/pre-commit"))).rejects.toThrow();
   });
 
   it("reports edits, missing files and corruption without modifying them", async () => {

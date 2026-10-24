@@ -8,7 +8,7 @@ import { factIssuesError, factUpdateIssues, resolveKnowledge, type KnowledgeDocu
 import { factDocumentTemplate, renderFactDocument } from "./fact-renderer.js";
 import { assertRefinedDocumentLength } from "./document-length.js";
 import { assertNoSymbolicLinks } from "./workspace-io.js";
-import { runWorkspaceGit } from "./workspace-git.js";
+import { readGitBlobs, readGitTree, runWorkspaceGit } from "./workspace-git.js";
 import { parseRecordFile, resolveManagedTarget, type RecordFile } from "./workspace-reader.js";
 import type { DocNexusMetadata } from "./types.js";
 
@@ -71,11 +71,17 @@ export async function prepareGitMerge(projectRoot: string, snapshot: GitMergeSna
     if (libraryConflicts.has(repoPath(libraryRelativePath(record.file_path, root)))) ids.add(record.id);
   }
 
-  async function committedFile(commit: string, path: string): Promise<string> {
-    const entry = await git(["ls-tree", "-z", commit, "--", path]);
-    const match = /^(100644|100755) blob ([a-f0-9]+)\t([\s\S]*)\0$/.exec(entry);
-    if (!match || match[3] !== path) throw notReady(`both Git parents must contain the same regular document assets: ${path}; creates, deletes and renames require manual recovery`);
-    return git(["cat-file", "blob", match[2]]);
+  const parentPaths = [...ids].sort().flatMap(id => ["record.json", "metadata.json"].map(name => repoPath(`${recordRelativePath(id, root)}/${name}`)));
+  const trees = (await Promise.allSettled([ours, theirs].map(commit => readGitTree(repository, commit, parentPaths))))
+    .map(result => { if (result.status === "rejected") throw result.reason; return result.value; });
+  const objects = trees.flatMap(tree => parentPaths.map(path => {
+    const entry = tree.get(path);
+    if (!entry || entry.type !== "blob" || !["100644", "100755"].includes(entry.mode)) throw notReady(`both Git parents must contain the same regular document assets: ${path}; creates, deletes and renames require manual recovery`);
+    return entry.oid;
+  }));
+  const parentBlobs = await readGitBlobs(repository, objects);
+  function committedFile(parent: number, path: string): string {
+    return parentBlobs.get(trees[parent].get(path)!.oid)!;
   }
 
   const documents: KnowledgeDocument[] = [];
@@ -105,12 +111,12 @@ export async function prepareGitMerge(projectRoot: string, snapshot: GitMergeSna
   for (const id of [...ids].sort()) {
     const versions: RecordFile[] = [];
     const previous: KnowledgeDocument[] = [];
-    for (const commit of [ours, theirs]) {
+    for (let parent = 0; parent < trees.length; parent++) {
       const recordPath = repoPath(`${recordRelativePath(id, root)}/record.json`);
-      const record = await parseRecordFile(root, id, await committedFile(commit, recordPath));
-      const metadata: unknown = JSON.parse(await committedFile(commit, repoPath(`${recordRelativePath(id, root)}/metadata.json`)));
+      const record = await parseRecordFile(root, id, committedFile(parent, recordPath));
+      const metadata: unknown = JSON.parse(committedFile(parent, repoPath(`${recordRelativePath(id, root)}/metadata.json`)));
       assertValidMetadata(metadata);
-      if (sha256(stableJson(metadata)) !== record.metadata_hash) throw notReady(`committed metadata does not match record ${id} in ${commit}`);
+      if (sha256(stableJson(metadata)) !== record.metadata_hash) throw notReady(`committed metadata does not match record ${id} in ${[ours, theirs][parent]}`);
       versions.push(record);
       previous.push({ id, file_path: record.file_path, metadata });
     }

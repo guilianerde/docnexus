@@ -89,8 +89,7 @@ const init: CommandHandler = async ({ projectRoot, args }) => {
   const options = parseOptions(args);
   const agents = options.agent === undefined || options.agent === "none" ? [] : parseSkillsTargets(options.agent);
   const result = await initializeProject(projectRoot, { agents, gitRemote: options["git-remote"], outputDir: options["output-dir"] });
-  await installProjectGitHooks(projectRoot);
-  return json(result);
+  return json({ ...result, git_hooks: await installProjectGitHooks(projectRoot) });
 };
 
 const reset: CommandHandler = async ({ projectRoot, args }) =>
