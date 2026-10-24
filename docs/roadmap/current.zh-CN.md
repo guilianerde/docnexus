@@ -4,7 +4,7 @@
 
 ## 当前定位
 
-0.28.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
+0.28.1 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
 
 ## 已实现
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.1 — 2026-10-25
+
+- Normalize the worker regression fixture’s temporary project path before constructing its Git context, matching the CLI entry point on macOS. Runtime behavior is unchanged from 0.28.0; 0.28.0 was not published to npm because release verification stopped at this fixture.
+
 ## 0.28.0 — 2026-10-25
 
 - Coalesce merge-worker requests behind one crash-released lease per Git index, retaining events received during processing and shutdown. Report Git hook health in CLI init and doctor, checking script contents, executable permissions, the CLI file and Node on PATH; automatic setup failures remain nonfatal and non-Git projects are explicitly skipped.

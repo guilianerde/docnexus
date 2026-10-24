@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -336,7 +336,7 @@ it("reports idle status outside a merge", async () => {
 it("allows one worker lease and retains index events received during a batch", async () => {
   const root = await makeRoot();
   await initRepo(root);
-  const context = await gitContext(root);
+  const context = await gitContext(await realpath(root));
   const lease = await acquireGitWorker(context);
   expect(lease).toBeDefined();
   try {
