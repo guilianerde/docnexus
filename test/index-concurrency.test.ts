@@ -10,6 +10,7 @@ import { LocalHashEmbedder } from "../src/embedder.js";
 import * as defaultEmbedding from "../src/embedder-default.js";
 import { runCli } from "../src/cli.js";
 import { recall } from "../src/recall.js";
+import { usageMetrics, type UsageMetrics } from "../src/usage-metrics.js";
 
 const roots: string[] = [];
 afterEach(async () => { vi.useRealTimers(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -92,4 +93,66 @@ it("replans after another model changes the index while embeddings are being pre
   expect(bodyCalls).toBe(2);
   const expected = (await hash.embed(input.document)).map(value => -value);
   (await listIndexedChunks(root, saved.id))[0].embedding.forEach((value, index) => expect(value).toBeCloseTo(expected[index], 6));
+});
+
+it.each(["tokenizer", "signature"])("allows a write during %s preparation before checking the fast path", async stage => {
+  const root = await mkdtemp(join(tmpdir(), "docnexus-index-probe-")); roots.push(root);
+  await initializeProject(root);
+  const saved = await upsertManagedDocument(root, input);
+  const entered = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  let pause = false;
+  const wait = async () => { if (pause) { pause = false; entered.resolve(); await resume.promise; } };
+  const hash = new LocalHashEmbedder();
+  const model = { dimension: hash.dimension,
+    tokenBudget: async () => {
+      if (stage === "tokenizer") await wait();
+      return { maxTokens: 4096, countTokens: (text: string) => text.length };
+    },
+    embed: async (text: string) => {
+      if (stage === "signature" && text === "DocNexus embedding model signature") await wait();
+      return hash.embed(text);
+    }
+  };
+  await syncRetrievalIndex(root, {}, model);
+  pause = true;
+  const pending = recall(root, { query: "Updated convention" }, model);
+  try {
+    await within(entered.promise);
+    await within(upsertManagedDocument(root, { ...input, document: "Updated convention" }));
+  } finally { resume.resolve(); await pending; }
+  expect((await listIndexedChunks(root, saved.id)).map(chunk => chunk.text)).toContain("Updated convention");
+  expect((await inspectRetrievalIndex(root)).in_sync).toBe(true);
+});
+
+it("synchronizes an empty workspace without loading a model", async () => {
+  const root = await mkdtemp(join(tmpdir(), "docnexus-index-empty-")); roots.push(root);
+  await initializeProject(root);
+  const unavailable = vi.fn(async (): Promise<never> => { throw new Error("model must not load"); });
+  const model = { dimension: 512, tokenBudget: unavailable, embed: unavailable };
+  for (let attempt = 0; attempt < 2; attempt++) expect(await syncRetrievalIndex(root, {}, model)).toMatchObject({ processed_documents: 0, embedded_chunks: 0 });
+  expect(unavailable).not.toHaveBeenCalled();
+});
+
+it("detects fact expiry during the signature probe before taking the fast path", async () => {
+  const root = await mkdtemp(join(tmpdir(), "docnexus-index-probe-expiry-")); roots.push(root);
+  await initializeProject(root);
+  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+  const saved = await upsertManagedDocument(root, { ...input, document: "{{fact:fact_probe_expiry}}", metadata: { ...input.metadata, facts: [
+    { id: "fact_probe_expiry", text: "Temporary assertion", provenance: "Decision", valid_from: "2020-01-01T00:00:00Z", valid_until: "2026-01-02T00:00:00Z" }
+  ] } });
+  const hash = new LocalHashEmbedder();
+  let expire = false;
+  const model = { dimension: hash.dimension, embed: async (text: string) => {
+    if (expire && text === "DocNexus embedding model signature") vi.setSystemTime(new Date("2026-01-03T00:00:00Z"));
+    return hash.embed(text);
+  } };
+  await syncRetrievalIndex(root, {}, model);
+  expire = true;
+  const metrics: UsageMetrics = {};
+  const result = await usageMetrics.run(metrics, () => recall(root, { query: "Temporary assertion" }, model));
+  expect(result.as_of).toBe("2026-01-03T00:00:00.000Z");
+  expect(metrics.sync_processed_documents).toBe(1);
+  expect((await listIndexedChunks(root, saved.id)).some(chunk => chunk.text.includes("Temporary assertion"))).toBe(false);
+  expect((await inspectRetrievalIndex(root)).in_sync).toBe(true);
 });

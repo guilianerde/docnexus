@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.2 — 2026-10-29
+
+- Complete unchanged recall and index synchronization within one validated workspace snapshot and one database lease. Keep tokenizer/model-signature preparation outside the project lock, skip model loading for empty index synchronization, and retry when a first document appears after the directory hint.
+- Skip repeated schema creation and shared extension initialization locking when the current projection and required named indexes exist. Restore missing indexes, retain transactional schema upgrades, and reuse projection signatures and index state during synchronization.
+- Preserve content-hash validation, fact lifecycle updates, model/chunking invalidation, generation checks and lock-free chunk inference for changed projections. Budgeted evidence still revalidates its snapshot before assembly. Add regression coverage for asset reads, database opens, concurrent model preparation, fact expiry, empty workspaces and index repair.
+
+Compatibility: CLI output, workspace format 7, draft manifest format 3 and projection schema 2 remain unchanged. Retrieval ranking and HNSW candidate selection are unchanged.
+
 ## 0.28.1 — 2026-10-25
 
 - Normalize the worker regression fixture’s temporary project path before constructing its Git context, matching the CLI entry point on macOS. Runtime behavior is unchanged from 0.28.0; 0.28.0 was not published to npm because release verification stopped at this fixture.

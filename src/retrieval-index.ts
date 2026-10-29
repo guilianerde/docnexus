@@ -3,6 +3,10 @@ import { documentAnchor, factAnchor, recordVersion } from "./source-anchor.js";
 import { asDocNexusError, DocNexusError } from "./errors.js";
 import { loadWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspace-snapshot.js";
 import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import { relative } from "node:path";
+import { recordsPath } from "./layout.js";
+import { assertNoSymbolicLinks } from "./workspace-io.js";
 import { withProjectLock } from "./project-lock.js";
 import { CHUNKING_SIGNATURE, chunkText } from "./chunker.js";
 import { createDefaultEmbedder } from "./embedder-default.js";
@@ -16,7 +20,7 @@ import type { ManagedChunk } from "./types.js";
 import { projectionKnowledge, resolveKnowledge } from "./knowledge.js";
 import { loadKnowledgeDocuments } from "./knowledge-service.js";
 import { withRetrievalDatabase, type RetrievalDatabase } from "./postgres-engine.js";
-import { deletePostgresDocument, ensurePostgresStore, inspectProjectionSchema, readChunks, readIndexedProjections, readIndexState, replacePostgresProjection, writeIndexState } from "./postgres-store.js";
+import { deletePostgresDocument, ensurePostgresStore, inspectProjectionSchema, readChunks, readIndexedProjections, readIndexState, replacePostgresProjection, writeIndexState, type IndexedProjection } from "./postgres-store.js";
 import { addUsageMetric } from "./usage-metrics.js";
 
 export interface RetrievalIndexState {
@@ -51,15 +55,7 @@ export async function inspectRetrievalIndex(root: string, at = new Date().toISOS
           message: schema.status === "legacy" ? "retrieval projection needs rebuilding; run docnexus index sync" : "incompatible retrieval projection; use a compatible DocNexus release" };
         const indexed = await readIndexedProjections(db);
         const state = await readIndexState(db);
-        const byId = new Map(indexed.map(row => [row.id, row]));
-        const ids = new Set(records.map(r => r.id));
-        const unindexed = records.filter(r => !byId.has(r.id)).map(r => r.id);
-        const outdated = records.filter(r => {
-          const row = byId.get(r.id);
-          return row && (state.get("chunking_signature") !== CHUNKING_SIGNATURE || row.projection_signature !== expected.get(r.id) || row.document_hash !== r.document_hash || row.metadata_hash !== r.metadata_hash || row.record_version !== sha256(stableJson(r)) || row.file_path !== r.file_path || row.chunk_count === 0 || row.missing_anchor_count > 0);
-        }).map(r => r.id);
-        const orphaned = indexed.filter(row => !ids.has(row.id)).map(row => row.id);
-        return { ...version, available: true, record_count: records.length, indexed_count: indexed.length, chunk_count: indexed.reduce((sum, row) => sum + row.chunk_count, 0), unindexed, outdated, orphaned, in_sync: unindexed.length + outdated.length + orphaned.length === 0 };
+        return { ...version, ...compareIndexedProjections(records, indexed, expected, state) };
       }, false)) ?? missing;
     } catch (error) { return { ...missing, in_sync: false, message: (error as Error).message }; }
   });
@@ -74,37 +70,54 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
   operation: (db: RetrievalDatabase, snapshot: WorkspaceSnapshot, result: IndexSyncResult) => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     addUsageMetric("sync_attempts");
-    const snapshot = await loadWorkspaceSnapshot(root).catch((error: Error) => {
-      const failure = asDocNexusError(error, "text_integrity_error");
-      if (failure.code !== "text_integrity_error") throw failure;
-      throw new DocNexusError("text_integrity_error", `memory text is missing, invalid or externally modified; run doctor and document sync before indexing: ${failure.message}`);
-    });
-    const { records, documents } = snapshot;
-    const tokenBudget = records.length ? await embedder.tokenBudget?.().catch(error => { throw asDocNexusError(error, "embedding_failed"); }) : undefined;
+    // Only a hint for avoiding model startup on an empty workspace. The locked
+    // snapshot below validates all assets and detects a concurrent first write.
+    const hasDocuments = await withProjectLock(root, async () => {
+      const directory = recordsPath(root);
+      await assertNoSymbolicLinks(root, relative(root, directory));
+      return (await readdir(directory, { withFileTypes: true })).some(entry => entry.isDirectory());
+    }).catch(indexTextError);
+    const tokenBudget = hasDocuments ? await embedder.tokenBudget?.().catch(error => { throw asDocNexusError(error, "embedding_failed"); }) : undefined;
     let signature: string | undefined;
-    if (records.length) {
+    if (hasDocuments) {
       if (embedder.dimension !== EMBEDDING_DIMENSION) throw new DocNexusError("embedding_failed", "embedding dimension mismatch");
       const probe = await embedText(embedder, "DocNexus embedding model signature");
       validateEmbedding(probe);
       signature = sha256(JSON.stringify({ probe, tokenLimit: tokenBudget?.maxTokens ?? null }));
     }
-    const versions = new Map(records.map(record => [record.id, snapshot.recordVersion(record.id)]));
-    const projections = new Map(documents.map(document => {
-      const projection = snapshot.projectDocument(document.id);
-      return [document.id, { ...projection, signature: anchoredProjectionSignature(projection, versions) }] as const;
-    }));
     const plan = await withProjectLock(root, async () => (await withRetrievalDatabase(root, async db => {
+      const snapshot = await loadWorkspaceSnapshot(root).catch(indexTextError);
+      const { records, documents } = snapshot;
+      if (records.length && signature === undefined) return { kind: "retry" as const };
+      const versions = new Map(records.map(record => [record.id, snapshot.recordVersion(record.id)]));
+      const projections = new Map(documents.map(document => {
+        const projection = snapshot.projectDocument(document.id);
+        return [document.id, { ...projection, signature: anchoredProjectionSignature(projection, versions) }] as const;
+      }));
       await ensurePostgresStore(db);
-      const state = await inspectRetrievalIndex(root, snapshot.at, snapshot);
       const stored = await readIndexState(db);
+      const state = compareIndexedProjections(records, await readIndexedProjections(db),
+        new Map([...projections].map(([id, projection]) => [id, projection.signature])), stored);
       signature ??= stored.get("embedding_signature") ?? "";
       const modelChanged = records.length > 0 && signature !== stored.get("embedding_signature");
-      const pending = options.all || modelChanged ? records : records.filter(r => state.unindexed.includes(r.id) || state.outdated.includes(r.id));
+      const stateChanged = modelChanged || stored.get("chunking_signature") !== CHUNKING_SIGNATURE;
+      if (!options.all && state.in_sync && !stateChanged) {
+        await refreshFactViews(root, snapshot);
+        const result: IndexSyncResult = { result: "completed", processed_documents: 0, rebuilt_documents: 0,
+          removed_documents: 0, embedded_chunks: 0, reused_chunks: 0 };
+        recordSyncMetrics(result);
+        return { kind: "completed" as const, value: await operation(db, snapshot, result) };
+      }
+      const changed = new Set([...state.unindexed, ...state.outdated]);
+      const pending = options.all || modelChanged ? records : records.filter(r => changed.has(r.id));
       const previous = new Map<string, Awaited<ReturnType<typeof readChunks>>>();
       for (const record of pending) previous.set(record.id, await readChunks(db, record.id));
-      return { pending, orphaned: state.orphaned, previous, generation: stored.get("index_generation"),
-        stateChanged: modelChanged || stored.get("chunking_signature") !== CHUNKING_SIGNATURE };
+      return { kind: "pending" as const, snapshot, projections, pending, orphaned: state.orphaned, previous,
+        generation: stored.get("index_generation"), stateChanged };
     }))!);
+    if (plan.kind === "retry") continue;
+    if (plan.kind === "completed") return plan.value;
+    const { snapshot, projections } = plan;
     let embedded = 0, reused = 0;
     const prepared: Array<{ record: WorkspaceSnapshot["records"][number]; projection: ReturnType<typeof projectionKnowledge>; chunks: ManagedChunk[] }> = [];
     for (const record of plan.pending) {
@@ -151,10 +164,7 @@ export async function withSyncedRetrieval<T>(root: string, options: { all?: bool
         });
         const result: IndexSyncResult = { result: "completed", processed_documents: prepared.length, rebuilt_documents: prepared.length,
           removed_documents: plan.orphaned.length, embedded_chunks: embedded, reused_chunks: reused };
-        addUsageMetric("sync_processed_documents", result.processed_documents);
-        addUsageMetric("sync_embedded_chunks", result.embedded_chunks);
-        addUsageMetric("sync_reused_chunks", result.reused_chunks);
-        addUsageMetric("sync_removed_documents", result.removed_documents);
+        recordSyncMetrics(result);
         return { retry: false as const, value: await operation(db, current, result) };
       }))!;
     });
@@ -181,6 +191,31 @@ export async function listIndexedChunks(root: string, id: string): Promise<Manag
 
 function validateEmbedding(embedding: number[]): void {
   if (embedding.length !== EMBEDDING_DIMENSION || !embedding.every(Number.isFinite)) throw new DocNexusError("embedding_failed", "embedding dimension mismatch or non-finite values");
+}
+
+function indexTextError(error: unknown): never {
+  const failure = asDocNexusError(error, "text_integrity_error");
+  if (failure.code !== "text_integrity_error") throw failure;
+  throw new DocNexusError("text_integrity_error", `memory text is missing, invalid or externally modified; run doctor and document sync before indexing: ${failure.message}`);
+}
+
+function compareIndexedProjections(records: WorkspaceSnapshot["records"], indexed: IndexedProjection[], expected: Map<string, string>, state: Map<string, string>): RetrievalIndexState {
+  const byId = new Map(indexed.map(row => [row.id, row]));
+  const ids = new Set(records.map(r => r.id));
+  const unindexed = records.filter(r => !byId.has(r.id)).map(r => r.id);
+  const outdated = records.filter(r => {
+    const row = byId.get(r.id);
+    return row && (state.get("chunking_signature") !== CHUNKING_SIGNATURE || row.projection_signature !== expected.get(r.id) || row.document_hash !== r.document_hash || row.metadata_hash !== r.metadata_hash || row.record_version !== sha256(stableJson(r)) || row.file_path !== r.file_path || row.chunk_count === 0 || row.missing_anchor_count > 0);
+  }).map(r => r.id);
+  const orphaned = indexed.filter(row => !ids.has(row.id)).map(row => row.id);
+  return { available: true, record_count: records.length, indexed_count: indexed.length, chunk_count: indexed.reduce((sum, row) => sum + row.chunk_count, 0), unindexed, outdated, orphaned, in_sync: unindexed.length + outdated.length + orphaned.length === 0 };
+}
+
+function recordSyncMetrics(result: IndexSyncResult): void {
+  addUsageMetric("sync_processed_documents", result.processed_documents);
+  addUsageMetric("sync_embedded_chunks", result.embedded_chunks);
+  addUsageMetric("sync_reused_chunks", result.reused_chunks);
+  addUsageMetric("sync_removed_documents", result.removed_documents);
 }
 
 function anchoredProjectionSignature(projection: ReturnType<typeof projectionKnowledge>, versions: Map<string, string>): string {

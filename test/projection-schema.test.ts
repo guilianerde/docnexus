@@ -68,3 +68,24 @@ it("rolls back a failed schema upgrade and retries it safely", async () => {
   });
   expect((await syncRetrievalIndex(root, {}, new LocalHashEmbedder())).processed_documents).toBe(1);
 });
+
+it("skips initialization for a complete schema but restores missing retrieval indexes", async () => {
+  const { root } = await setup();
+  const indexes = ["chunks_document_idx", "chunks_embedding_idx", "edges_from_idx", "edges_to_idx"];
+  await withRetrievalDatabase(root, async db => {
+    const transaction = vi.spyOn(db, "transaction");
+    const exec = vi.spyOn(db, "exec");
+    const query = vi.spyOn(db, "query");
+    await ensurePostgresStore(db);
+    expect(transaction).not.toHaveBeenCalled();
+    expect(exec).not.toHaveBeenCalled();
+    expect(query.mock.calls.some(([sql]) => sql.includes("pg_advisory_xact_lock"))).toBe(false);
+    await db.exec(`DROP INDEX ${indexes.map(name => `"${db.schema}".${name}`).join(",")}`);
+  });
+  expect(await syncRetrievalIndex(root, {}, new LocalHashEmbedder())).toMatchObject({ processed_documents: 0, embedded_chunks: 0 });
+  await withRetrievalDatabase(root, async db => {
+    const rows = await db.query<{ name: string; valid: boolean }>(`SELECT c.relname AS name,i.indisvalid AS valid FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname=ANY($2::text[])`, [db.schema, indexes]);
+    expect(rows).toHaveLength(indexes.length);
+    expect(rows.every(row => row.valid)).toBe(true);
+  });
+});

@@ -9,6 +9,10 @@ import * as renderer from "../src/fact-renderer.js";
 import { queryDocuments } from "../src/document-query.js";
 import { loadWorkspaceSnapshot } from "../src/workspace-snapshot.js";
 import { assertNoSymbolicLinks } from "../src/workspace-io.js";
+import { syncRetrievalIndex } from "../src/retrieval-index.js";
+import { recall } from "../src/recall.js";
+import { LocalHashEmbedder } from "../src/embedder.js";
+import { usageMetrics, type UsageMetrics } from "../src/usage-metrics.js";
 
 vi.mock("node:fs/promises", async (original) => {
   const fs = await original<typeof import("node:fs/promises")>();
@@ -17,6 +21,43 @@ vi.mock("node:fs/promises", async (original) => {
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
+
+it.each(["hybrid", "vector", "index"] as const)("validates unchanged assets once and opens one database for %s", async mode => {
+  const root = await mkdtemp(join(tmpdir(), "docnexus-snapshot-retrieval-")); roots.push(root);
+  await initializeProject(root);
+  const saved = await upsertManagedDocument(root, { file_path: "memory.md", source: "Decision", document: "Current convention", metadata: {
+    title: "Memory", summary: "Current knowledge", tags: [], entities: [], relationships: []
+  } });
+  const embedder = new LocalHashEmbedder();
+  await syncRetrievalIndex(root, {}, embedder);
+  vi.mocked(readFile).mockClear();
+  const metrics: UsageMetrics = {};
+  await usageMetrics.run(metrics, async () => {
+    if (mode === "index") expect(await syncRetrievalIndex(root, {}, embedder)).toMatchObject({ processed_documents: 0, embedded_chunks: 0, reused_chunks: 0 });
+    else expect((await recall(root, { query: "Current convention", mode }, embedder)).results[0].document_ref.document_id).toBe(saved.id);
+  });
+  expect(metrics).toMatchObject({ snapshot_loads: 1, database_opens: 1, sync_attempts: 1, sync_processed_documents: 0,
+    sync_embedded_chunks: 0, embedding_calls: mode === "index" ? 1 : 2 });
+  const paths = vi.mocked(readFile).mock.calls.map(([path]) => String(path).split(sep).join("/")).filter(path => /\/(records|library)\//.test(path));
+  expect(paths).toHaveLength(3);
+  expect(new Set(paths).size).toBe(3);
+  expect(paths.some(path => /\/(source|timeline)\.md$/.test(path))).toBe(false);
+});
+
+it("retries model preparation when the empty-directory hint is stale", async () => {
+  const root = await mkdtemp(join(tmpdir(), "docnexus-snapshot-first-write-")); roots.push(root);
+  await initializeProject(root);
+  const saved = await upsertManagedDocument(root, { file_path: "memory.md", source: "Decision", document: "First convention", metadata: {
+    title: "Memory", summary: "Current knowledge", tags: [], entities: [], relationships: []
+  } });
+  // Simulate a first document appearing after the directory hint was read.
+  vi.mocked(readdir).mockResolvedValueOnce([]);
+  const metrics: UsageMetrics = {};
+  const found = await usageMetrics.run(metrics, () => recall(root, { query: "First convention" }, new LocalHashEmbedder()));
+  expect(found.results[0].document_ref.document_id).toBe(saved.id);
+  expect(metrics.sync_attempts).toBe(2);
+  expect(metrics.sync_embedded_chunks).toBeGreaterThan(0);
+});
 
 it.each(["search", "page"])("reads only current knowledge once for a fact-heavy %s", async (operation) => {
   const root = await mkdtemp(join(tmpdir(), "docnexus-snapshot-")); roots.push(root);

@@ -13,6 +13,7 @@ import { recall } from "../src/recall.js";
 import { withRetrievalDatabase } from "../src/postgres-engine.js";
 import { resetProjectData } from "../src/reset.js";
 import { tables } from "../src/postgres-store.js";
+import { usageMetrics, type UsageMetrics } from "../src/usage-metrics.js";
 
 const roots: string[] = [];
 afterEach(async () => { delete process.env.DOCNEXUS_DATABASE_URL; await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -38,7 +39,9 @@ it("uses Postgres wire connections, isolated project schemas and incremental ind
       expect((await db.query<{ title: string }>(`SELECT title FROM ${tables(db).documents} WHERE id=$1`, [saved.id]))[0].title).toBe(metadata.title);
       return (await db.query<{ oid: number; storage: string }>("SELECT oid::int AS oid,relfilenode::text AS storage FROM pg_class WHERE oid=to_regclass($1)", [`${db.schema}.chunks_embedding_idx`]))[0];
     });
-    expect((await recall(roots[0], { query: "Refresh tokens", limit: 1 }, embedder)).results[0].document_ref.document_id).toBe(saved.id);
+    const metrics: UsageMetrics = {};
+    expect((await usageMetrics.run(metrics, () => recall(roots[0], { query: "Refresh tokens", limit: 1 }, embedder))).results[0].document_ref.document_id).toBe(saved.id);
+    expect(metrics).toMatchObject({ snapshot_loads: 1, database_opens: 1, sync_processed_documents: 0, embedding_calls: 2 });
     expect((await recall(roots[1], { query: "Refresh tokens" }, embedder)).results).toEqual([]);
     await deleteManagedDocument(roots[0], { id: saved.id, confirm: true });
     await upsertManagedDocument(roots[0], { file_path: "wire.md", source: "New source", document: "# Wire\n\nRefresh tokens rotate on every use.", metadata });

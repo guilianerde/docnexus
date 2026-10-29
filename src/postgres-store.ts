@@ -42,6 +42,12 @@ export async function hasRetrievalSchema(db: RetrievalDatabase): Promise<boolean
 
 export async function ensurePostgresStore(db: RetrievalDatabase): Promise<void> {
   const t = tables(db);
+  const current = await inspectProjectionSchema(db);
+  if (current.status === "current") {
+    const indexes = ["chunks_document_idx", "chunks_embedding_idx", "edges_from_idx", "edges_to_idx"].map(name => `${db.schema}.${name}`);
+    const [{ present }] = await db.query<{ present: boolean }>("SELECT bool_and(to_regclass(name) IS NOT NULL) AS present FROM unnest($1::text[]) AS indexes(name)", [indexes]);
+    if (present) return;
+  }
   await db.transaction(async tx => {
     // Different projects can initialize the shared pgvector extension concurrently.
     if (db.kind === "postgres") await tx.query("SELECT pg_advisory_xact_lock(680195, 1)");

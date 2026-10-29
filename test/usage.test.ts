@@ -67,7 +67,7 @@ it("measures retrieval work and evidence delivery without another index or snaps
     snapshot_loads: 2, database_opens: 2, sync_attempts: 1, keyword_candidates: 1, vector_candidates: 1, keyword_top1_retained: 1 } });
   expect(first.metrics.sync_embedded_chunks).toBeGreaterThan(0);
   expect(first.metrics.embedding_calls).toBeGreaterThan(2);
-  expect(second).toMatchObject({ metrics: { snapshot_loads: 3, embedding_calls: 2, sync_embedded_chunks: 0, sync_processed_documents: 0, recall_result_count: 1 },
+  expect(second).toMatchObject({ metrics: { snapshot_loads: 2, database_opens: 1, embedding_calls: 2, sync_embedded_chunks: 0, sync_processed_documents: 0, recall_result_count: 1 },
     evidence: { primary_documents: 1, budget: 2000 } });
   expect(second.evidence.estimated_tokens).toBeLessThanOrEqual(2000);
   expect(first.duration_ms).toBeGreaterThan(0);
