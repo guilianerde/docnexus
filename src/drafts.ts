@@ -10,7 +10,7 @@ import { validateMetadata } from "./metadata.js";
 import { assertRefinedDocumentLength } from "./document-length.js";
 import { isDocumentCategory, type DocNexusMetadata } from "./types.js";
 import { atomicWrite } from "./workspace-io.js";
-import { factDocumentTemplate, factReferenceIds, renderFactDocument } from "./fact-renderer.js";
+import { factDocumentTemplate, factReferenceIds } from "./fact-renderer.js";
 import { validateKnowledgeWrite } from "./knowledge-service.js";
 
 export const DRAFT_MANIFEST_SCHEMA_VERSION = 3;
@@ -231,8 +231,9 @@ export async function sealDraft(
     };
     let previewFile: string | undefined;
     // Check the whole fact chain at seal time, so every issue is reported before review and ingestion.
-    const prospective = await validateKnowledgeWrite(projectRoot, { id: prior?.id ?? "draft_preview", file_path: filePath, metadata: metadata as DocNexusMetadata, document });
-    const rendered = renderFactDocument(document, prospective.knowledge.facts).document;
+    const id = prior?.id ?? "draft_preview";
+    const prospective = await validateKnowledgeWrite(projectRoot, { id, file_path: filePath, metadata: metadata as DocNexusMetadata, document });
+    const rendered = prospective.renderedChanges.get(id) ?? document;
     assertRefinedDocumentLength(rendered, filePath);
     if (factReferenceIds(document).length) {
       manifest.rendered_hash = sha256(rendered);
@@ -265,10 +266,11 @@ export async function previewDraft(projectRoot: string, draftId: string) {
     const template = factDocumentTemplate(draft.document);
     const prior = (await listRecordFiles(projectRoot)).find(record => record.file_path === draft.manifest.file_path);
     if (prior) await readAssets(projectRoot, prior);
+    const id = prior?.id ?? "draft_preview";
     const prospective = await validateKnowledgeWrite(projectRoot, {
-      id: prior?.id ?? "draft_preview", file_path: draft.manifest.file_path, metadata: draft.metadata, document: template
+      id, file_path: draft.manifest.file_path, metadata: draft.metadata, document: template
     });
-    const document = renderFactDocument(template, prospective.knowledge.facts).document;
+    const document = prospective.renderedChanges.get(id) ?? template;
     assertRefinedDocumentLength(document, draft.manifest.file_path);
     if (factReferenceIds(template).length && draft.manifest.rendered_hash === undefined) {
       throw new DocNexusError("preview_changed", "fact-backed draft requires a sealed preview; seal the draft again");

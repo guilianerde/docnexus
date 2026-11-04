@@ -191,7 +191,6 @@ const documentAdd: CommandHandler = async ({ projectRoot, rest }) => {
     throw new DocNexusError("invalid_params", "document add requires --draft <draft_id>");
   }
   const result = await ingestDraft(projectRoot, { draftId: options.draft, replace });
-  await writeConceptIndex(projectRoot);
   return json({ ...result, draft_id: options.draft, library_path: libraryRelativePath(result.file_path, projectRoot) });
 };
 
@@ -325,7 +324,6 @@ const documentDelete: CommandHandler = async ({ projectRoot, rest }) => {
   }
   const options = parseOptions(args);
   const deleted = await deleteManagedDocument(projectRoot, { file_path: options.file, id: options.id, confirm: force });
-  await writeConceptIndex(projectRoot);
   return json(deleted);
 };
 
@@ -336,7 +334,6 @@ const documentSync: CommandHandler = async ({ projectRoot, rest }) => {
     ? (JSON.parse(await readProjectFile(projectRoot, options["metadata-file"])) as DocNexusMetadata)
     : undefined;
   const result = await syncManagedDocument(projectRoot, { id: options.id, file_path: options.file, metadata });
-  await writeConceptIndex(projectRoot);
   return json({ ...result, library_path: libraryRelativePath(result.file_path, projectRoot) });
 };
 

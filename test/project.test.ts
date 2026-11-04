@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { ensureManagedWorkspace } from "../src/managed-documents.js";
 import {
   initializeProject,
   projectMarkerPath,
@@ -53,6 +54,22 @@ describe("project initialization", () => {
     await expect(readFile(sentinel, "utf8")).resolves.toBe("existing data");
     await expect(readFile(projectMarkerPath(root), "utf8")).resolves.toBe(before);
     await expect(readFile(join(root, ".docnexus", "skills", "docnexus", "SKILL.md"), "utf8")).resolves.toContain("name: docnexus");
+  });
+
+  it("only rewrites the generated metadata schema when its content changes", async () => {
+    const root = await makeRoot();
+    await initializeProject(root);
+    const path = join(root, ".docnexus", "schemas", "metadata.schema.json");
+    const expected = await readFile(path, "utf8");
+    await utimes(path, 1, 1);
+    const { mtimeMs } = await stat(path);
+
+    await ensureManagedWorkspace(root);
+    expect((await stat(path)).mtimeMs).toBe(mtimeMs);
+
+    await writeFile(path, "{}");
+    await ensureManagedWorkspace(root);
+    await expect(readFile(path, "utf8")).resolves.toBe(expected);
   });
 
   it.each(["dependencies", "devDependencies"])("initializes over a scoped npm installation using %s without changing host or install manifests", async dependencyField => {

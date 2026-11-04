@@ -166,7 +166,7 @@ npm 安装/升级及 CLI `init` 自动安装或更新本地钩子，接入原生
 
 钩子按当前 Git 工作树的相对布局寻找项目和本地 CLI，并从 PATH 选择 Node。运行时缺失不阻塞普通代码提交；涉及知识的提交会明确提示恢复 Node 和项目依赖，索引钩子只警告并跳过自动修复。旧版绝对路径钩子及新增钩子随正常安装/升级自动更新；设置失败只警告，不阻断安装或初始化；原生旧钩子仍保留，uninstall 可恢复。每个 Git 索引通过本地 SQLite 租约限制为一个活动 worker，崩溃后由 OS 释放；等待期间不持项目锁。请求保存在该索引所在 Git 元数据目录的 docnexus-worker-requests/，分批消费，退出前后复查新事件，失败请求等待新事件再重试，避免重复排队和丢失唤醒。排队 worker 的日志每行带 ISO 时间戳，超过 64 KiB 轮转为单份 `git-merge.log.1`，失败原因不会因文件无限增长而丢失。CLI init 的 git_hooks 与 doctor 的 checks.git_hooks 返回 ready/missing/outdated/unavailable/skipped，核对脚本与当前生成模板、执行权限、CLI 文件和当前 PATH 的 Node >=22.13；非 Git 项目健康跳过，检查不安装或修复钩子，不健康时 doctor 报 git_hooks_unavailable。详细步骤与限制见 [Git 合并工作流](../../skills/docnexus-library/references/git-merge.md) 和 [Skills/Git 编排](./skills-workspace.zh-CN.md#分发与-git)。
 
-Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及版本标记、`schemas/metadata.schema.json`；其他名称的自定义 skill 仍可提交。克隆后安装锁定依赖并运行 `init --agent <target>`，恢复 skills、schema 和链接；独立知识仓库同时传入 `--git-remote <url>`。已跟踪副本需显式取消跟踪，详见[恢复与迁移](./skills-workspace.zh-CN.md#已有仓库迁移)。之后关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新最多 300 份文档和 300 个概念的目录，不导入未托管文件。
+Git 保存完整知识、工作区配置和安装 manifest/lockfile，忽略 `node_modules/`、`store/`、`.runtime/`、六个官方 skills 副本及版本标记、`schemas/metadata.schema.json`；其他名称的自定义 skill 仍可提交。克隆后安装锁定依赖并运行 `init --agent <target>`，恢复 skills、schema 和链接；独立知识仓库同时传入 `--git-remote <url>`。已跟踪副本需显式取消跟踪，详见[恢复与迁移](./skills-workspace.zh-CN.md#已有仓库迁移)。之后关键词查找与全文读取直接使用当前文本；默认宿主仓库模式可跟随业务分支，独立知识仓库受固定分支检查约束；语义召回自动同步派生索引。`index sync` 也刷新概念目录，目录内容按字节预算分片展示，不导入未托管文件。
 
 `doctor` 在恢复未完成事务后检查文本、索引、数据库、本地模型和 skills，不修复缺失投影。新建空工作区尚无检索库是正常状态。`graph audit` 检查已存在的文档/关系投影、孤立概念与 HNSW；缺失存储先运行同步。
 

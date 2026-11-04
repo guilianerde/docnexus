@@ -75,8 +75,8 @@ export interface RenderedFactSpan {
   start: number; end: number; template_start: number; template_end: number; fact_id: string;
 }
 
-export function renderFactDocument(document: string, facts: ResolvedFact[]): { document: string; references: RenderedFactReference[]; fact_spans: RenderedFactSpan[] } {
-  const byId = new Map(facts.map((fact) => [fact.id, fact]));
+export function renderFactDocument(document: string, facts: ResolvedFact[] | ReadonlyMap<string, ResolvedFact>): { document: string; references: RenderedFactReference[]; fact_spans: RenderedFactSpan[] } {
+  const byId = Array.isArray(facts) ? new Map(facts.map((fact) => [fact.id, fact])) : facts;
   const references: RenderedFactReference[] = [];
   const spans: RenderedFactSpan[] = [];
   let offset = 0, templateOffset = 0;

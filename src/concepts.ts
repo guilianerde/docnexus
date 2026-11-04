@@ -1,13 +1,13 @@
 import { lstat, readdir, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { withProjectLock } from "./project-lock.js";
-import { atomicWrite, readIfExists } from "./workspace-io.js";
+import { assertNoSymbolicLinks, atomicWrite, readIfExists } from "./workspace-io.js";
 import { conceptIndexPath, conceptShardsPath, libraryRelativePath, WORKSPACE_DIRNAME, workspaceDirectory } from "./layout.js";
-import { assertNoSymbolicLinks, listManagedDocuments, readRecordMetadata } from "./managed-documents.js";
+import { listRecordFiles, readRecordMetadata } from "./workspace-reader.js";
 import type { EntityType, RelationshipType } from "./types.js";
-import { resolveKnowledge } from "./knowledge.js";
-import { loadKnowledgeDocuments } from "./knowledge-service.js";
-import { sha256 } from "./hash.js";
+import { resolveKnowledge, type KnowledgeDocument } from "./knowledge.js";
+import { sha256, stableJson } from "./hash.js";
+import { DocNexusError } from "./errors.js";
 
 export interface ConceptEntry {
   name: string;
@@ -53,15 +53,21 @@ export async function buildConceptIndex(
 ): Promise<ConceptIndex> {
   return withProjectLock(projectRoot, async () => {
     // Earliest documents win the display name and description of a shared concept, so output is stable.
-    const records = (await listManagedDocuments(projectRoot))
+    const records = (await listRecordFiles(projectRoot))
       .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.file_path.localeCompare(b.file_path));
+    const declarations: Array<KnowledgeDocument & { title: string }> = [];
+    for (const record of records) {
+      const metadata = await readRecordMetadata(projectRoot, record.id);
+      if (sha256(stableJson(metadata)) !== record.metadata_hash) throw new DocNexusError("text_integrity_error", `record ${record.id} metadata.json does not match record.json`);
+      declarations.push({ id: record.id, file_path: record.file_path, title: record.title, metadata });
+    }
     const concepts = new Map<string, ConceptEntry>();
     const documents: ConceptIndex["documents"] = [];
-    const knowledge = resolveKnowledge(await loadKnowledgeDocuments(projectRoot));
-    for (const record of records) {
-      const metadata = knowledge.resolver.canonicalize(await readRecordMetadata(projectRoot, record.id));
+    const knowledge = resolveKnowledge(declarations);
+    for (const record of declarations) {
+      const metadata = knowledge.resolver.canonicalize(record.metadata);
       const category = metadata.category ?? UNCATEGORIZED;
-      documents.push({ id: record.id, file_path: record.file_path, title: record.title, summary: record.summary, category });
+      documents.push({ id: record.id, file_path: record.file_path, title: record.title, summary: metadata.summary, category });
       const byName = new Map<string, ConceptEntry>();
       for (const entity of metadata.entities) {
         const key = conceptKey(entity.type, entity.name);

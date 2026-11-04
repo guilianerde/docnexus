@@ -2,8 +2,9 @@ import { access, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isDirectCliInvocation, runCli } from "../src/cli.js";
+import * as concepts from "../src/concepts.js";
 import { upsertManagedDocument } from "../src/managed-documents.js";
 import { initializeProject } from "../src/project.js";
 import type { DocNexusMetadata } from "../src/types.js";
@@ -194,6 +195,29 @@ describe("runCli", () => {
     await expect(runCli(["draft", "discard", "--id", draft.draft_id], projectRoot)).rejects.toThrow("--force");
     await runCli(["draft", "discard", "--id", draft.draft_id, "--force"], projectRoot);
     expect(JSON.parse(await runCli(["draft", "list"], projectRoot)).drafts).toEqual([]);
+  });
+
+  it("refreshes concept navigation once per document add, sync, and delete", async () => {
+    const projectRoot = await makeRoot();
+    await runCli(["init"], projectRoot);
+    const draft = await sealDraft(projectRoot, "auth.md", { source: "Source", document: "# Auth" });
+    const navigation = join(projectRoot, "docnexus/CONCEPTS.md");
+    const refresh = vi.spyOn(concepts, "writeConceptIndex");
+
+    const { id } = JSON.parse(await runCli(["document", "add", "--draft", draft.draft_id], projectRoot));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await expect(readFile(navigation, "utf8")).resolves.toContain("1 document(s)");
+
+    await rm(navigation);
+    refresh.mockClear();
+    await runCli(["document", "sync", "--id", id], projectRoot);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await expect(readFile(navigation, "utf8")).resolves.toContain("1 document(s)");
+
+    refresh.mockClear();
+    await runCli(["document", "delete", "--id", id, "--force"], projectRoot);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    await expect(readFile(navigation, "utf8")).resolves.toContain("No project memory yet");
   });
 
   it("rejects invalid, unsealed, and modified drafts", async () => {

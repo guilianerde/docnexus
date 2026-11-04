@@ -60,7 +60,8 @@ export async function ensureManagedWorkspace(projectRoot: string): Promise<void>
     }
     const schemaPath = join(schemasPath(root), "metadata.schema.json");
     await assertNoSymbolicLinks(root, relative(root, schemaPath));
-    await atomicWrite(schemaPath, `${stableJson(metadataSchema)}\n`);
+    const schema = `${stableJson(metadataSchema)}\n`;
+    if (await readIfExists(schemaPath) !== schema) await atomicWrite(schemaPath, schema);
   });
 }
 
@@ -89,7 +90,7 @@ export async function upsertManagedDocument(
     assertDocumentId(id);
     if (options.ingestion && options.ingestion.documentId !== id) throw new DocNexusError("internal_error", "ingestion document identity mismatch");
     const prospective = await validateKnowledgeWrite(projectRoot, { id, file_path: target.relativePath, metadata: input.metadata, document: template, document_hash: hashes.document_hash });
-    const rendered = renderFactDocument(template, prospective.knowledge.facts).document;
+    const rendered = prospective.renderedChanges.get(id) ?? template;
     // Apply the refinement policy at ingestion/adoption, retaining legacy reads
     // and low-level storage support for existing long documents.
     const enforceLength = options.ingestion !== undefined || options.acceptLibraryEdit;
@@ -115,15 +116,14 @@ export async function upsertManagedDocument(
     ]);
     // Include dependent generated views in the same recoverable write, preserving their authored text.
     for (const document of prospective.documents) {
-      if (document.id === id || document.document === undefined || !factReferenceIds(document.document).length) continue;
-      const body = renderFactDocument(document.document, prospective.knowledge.facts).document;
-      if (body !== document.document) {
-        if (sha256(factDocumentTemplate(document.document)) !== document.document_hash) {
-          throw new DocNexusError("text_integrity_error", `managed target was externally modified: ${document.file_path}; run "docnexus document sync" to adopt the edit`);
-        }
-        if (enforceLength) assertRefinedDocumentLength(body, document.file_path);
-        files.set((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, body);
+      if (document.id === id || document.document === undefined) continue;
+      const body = prospective.renderedChanges.get(document.id);
+      if (body === undefined) continue;
+      if (sha256(factDocumentTemplate(document.document)) !== document.document_hash) {
+        throw new DocNexusError("text_integrity_error", `managed target was externally modified: ${document.file_path}; run "docnexus document sync" to adopt the edit`);
       }
+      if (enforceLength) assertRefinedDocumentLength(body, document.file_path);
+      files.set((await resolveManagedTarget(projectRoot, document.file_path)).absolutePath, body);
     }
     if (options.ingestion) files.set(options.ingestion.receipt.path, options.ingestion.receipt.content);
     await commitTextTransaction(projectRoot, files, { rollbackDirectories: prior ? [] : [directory] });

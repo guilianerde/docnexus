@@ -265,8 +265,14 @@ export function validateKnowledgeUpdate(documents: KnowledgeDocument[], document
     (value.fact_id === chain.fact_id || value.fact_id === chain.related_fact_id));
   const issues = [...updateIssues, ...chainIssues.filter((chain) => !explained(chain))];
   if (issues.length > 0) throw factIssuesError(issues);
-  for (const entry of prospective) if (entry.document !== undefined) renderFactDocument(entry.document, knowledge.facts);
-  return { documents: prospective, knowledge };
+  const factsById = new Map(knowledge.facts.map((fact) => [fact.id, fact]));
+  const renderedChanges = new Map<string, string>();
+  for (const entry of prospective) {
+    if (entry.document === undefined) continue;
+    const rendered = renderFactDocument(entry.document, factsById).document;
+    if (rendered !== entry.document) renderedChanges.set(entry.id, rendered);
+  }
+  return { documents: prospective, knowledge, renderedChanges };
 }
 
 export function factsForDocuments(facts: ResolvedFact[], documentIds: string[], knowledgeDocuments: KnowledgeDocument[] = []): ResolvedFact[] {

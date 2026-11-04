@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.28.3 — 2026-11-04
+
+- Read each managed record and its metadata once per concept directory build. Skip writing the generated metadata schema when its contents already match.
+- Reuse the fact lookup and rendered Markdown from write validation during ingestion, draft sealing, and preview. Dependent fact views still participate in the same recoverable text transaction.
+- Refresh concept navigation once on successful `document add`, `document sync`, and `document delete` through the text transaction. An unchanged `document sync` can restore missing navigation, and journal replay rebuilds it from the recovered state.
+
 ## 0.28.2 — 2026-10-29
 
 - Complete unchanged recall and index synchronization within one validated workspace snapshot and one database lease. Keep tokenizer/model-signature preparation outside the project lock, skip model loading for empty index synchronization, and retry when a first document appears after the directory hint.
