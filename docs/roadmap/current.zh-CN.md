@@ -1,10 +1,10 @@
 # DocNexus 当前状态与路线图
 
-更新日期：2026-10-29。本页只记录当前状态与下一步；各轮测试数字、智能体验收过程和结论边界见[验收记录](../operations/validation-history.zh-CN.md)，版本变更见 [Changelog](../../CHANGELOG.md)。
+更新日期：2026-11-19。本页只记录当前状态与下一步；各轮测试数字、智能体验收过程和结论边界见[验收记录](../operations/validation-history.zh-CN.md)，版本变更见 [Changelog](../../CHANGELOG.md)。
 
 ## 当前定位
 
-0.28.3 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
+0.29.0 采用分层项目记忆：Markdown 当前知识、来源时间线、PGLite/Postgres＋pgvector 文档/chunk/关系投影、本地 ONNX embedding 和 skills 编排。文本为真源，数据库可重建，CLI 不调用外部 LLM。默认本地 PGLite，环境 URL 可选独立 Postgres。工作区格式 7 将程序和 skills 放在 .docnexus/，知识保存到配置父目录下的 docnexus/；npm 安装强制清理识别出的旧格式目录，不迁移旧数据。
 
 ## 已实现
 
@@ -30,7 +30,7 @@
 - 本机项目锁、持久化文本事务、中断后的保存/删除/回滚恢复；模型与 embedding 在锁外准备、锁内校验提交。
 - 可选原生 Git 合并恢复：索引钩子记录双方提交与 resolve-undo 冲突，内容暂存后重建 record、时间线、事实视图与导航；`pre-commit` 按范围校验，代码提交跳过；rebase/cherry-pick/revert 明确拒绝；排队 worker 日志带时间戳并轮转。
 - 机器错误协议、`--json` 失败输出、`protocol` 发现与 doctor 结构化 issues。
-- 本地只读文档浏览页与全量/分页文档查询接口。
+- 本地只读文档浏览页支持分类分布、跨页搜索、正文目录和左栏折叠，提供全量/分页文档查询接口。
 - 本地使用记录、匿名指标、显式反馈与单文件导出。
 - 确定性测试、真实离线模型 E2E、安装包冒烟测试；CI 覆盖 Linux 原生 Postgres，以及 macOS / Windows 上的 PGLite 路径（Windows 首次通过前为非阻塞）。
 - 固定中英文检索评估集、扩展质量基线（开发/保留集分开）与知识维护程序回放，详见[检索评估](../operations/retrieval-evaluation.md)和[知识维护评估](../operations/knowledge-evaluation.zh-CN.md)。

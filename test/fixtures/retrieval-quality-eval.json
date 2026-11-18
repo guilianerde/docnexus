@@ -81,7 +81,7 @@
       "source_path": "docs/architecture/document-query.zh-CN.md",
       "excerpts": [
         "命令启动固定项目的本地服务，仅绑定 `127.0.0.1`。默认自动选择空闲端口，打开终端输出的 URL；Ctrl+C 停止服务。目标项目必须先初始化，不会自动导入当前仓库文件。",
-        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，参数和查询接口一致；返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页和分类的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部当前正文、metadata 及事实时间状态；参数错误为 400，旧 revision 为 409，当前知识文本不可用为 503，不会以 304 隐藏正文或 metadata 的变化或损坏。来源与时间线的损坏不阻塞此查询，也不单独使 ETag 失效，应通过 doctor 检查。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
+        "HTTP `GET /api/documents` 接收 `all=true`、`page`、`page_size`、`category`、`revision`，并支持可选的 `q`（最多 120 个 UTF-16 代码单元）。搜索在分类筛选之后、分页之前进行，对标题、摘要、标签和库内路径做 Unicode NFKC 规范化和不区分大小写的子串匹配。以空白分隔的关键词必须全部命中。返回原查询对象，各文档增加 `html` 字段用于浏览。响应携带绑定快照版本、分页、分类和关键词的弱 ETag；接口支持携带 `If-None-Match`，相同视图未变化时返回无正文的 304，跳过 Markdown HTML 渲染与完整正文传输。浏览页按需获取完整内容，不发起轮询。每次请求仍校验全部当前正文、metadata 及事实时间状态；参数错误为 400，旧 revision 为 409，当前知识文本不可用为 503，不会以 304 隐藏正文或 metadata 的变化或损坏。来源与时间线的损坏不阻塞此查询，也不单独使 ETag 失效，应通过 doctor 检查。这个 HTTP 接口面向本地浏览页；其他编排调用继续使用 CLI/Node 查询契约。"
       ]
     },
     {

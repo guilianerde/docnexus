@@ -104,9 +104,9 @@ export async function startDocumentViewer(projectRoot: string, port = 0): Promis
       return;
     }
     try {
-      const snapshot = await observeUsage(root, ["document", "query", ...[...url.searchParams].flatMap(([key, value]) => [`--${key.replaceAll("_", "-")}`, value])],
+      const snapshot = await observeUsage(root, ["document", "query", ...[...url.searchParams].flatMap(([key, value]) => key === "q" ? [] : [`--${key.replaceAll("_", "-")}`, value])],
         () => queryDocuments(root, input), "viewer");
-      const etag = `W/"${sha256(JSON.stringify([snapshot.revision, input.all ?? false, input.page ?? 1, input.page_size ?? 20, input.category ?? null]))}"`;
+      const etag = `W/"${sha256(JSON.stringify([snapshot.revision, input.all ?? false, input.page ?? 1, input.page_size ?? 20, input.category ?? null, input.q ?? ""]))}"`;
       response.setHeader("ETag", etag);
       // Validate canonical text and fact time before skipping HTML and transfer.
       if (request.headers["if-none-match"] === etag) {
@@ -138,7 +138,7 @@ export async function startDocumentViewer(projectRoot: string, port = 0): Promis
 
 function parseViewerQuery(params: URLSearchParams): DocumentQueryInput {
   for (const key of params.keys()) {
-    if (!["all", "page", "page_size", "category", "revision"].includes(key) || params.getAll(key).length !== 1) throw new Error(`Invalid or repeated query parameter: ${key}`);
+    if (!["all", "page", "page_size", "category", "q", "revision"].includes(key) || params.getAll(key).length !== 1) throw new Error(`Invalid or repeated query parameter: ${key}`);
   }
   const input: DocumentQueryInput = {};
   if (params.has("all")) {
@@ -157,6 +157,11 @@ function parseViewerQuery(params: URLSearchParams): DocumentQueryInput {
     const value = params.get("category")!;
     if (!isDocumentCategory(value)) throw new Error("Invalid category");
     input.category = value;
+  }
+  if (params.has("q")) {
+    const value = params.get("q")!;
+    if (value.length > 120) throw new Error("q must be at most 120 characters");
+    input.q = value.trim();
   }
   if (params.has("revision")) {
     const value = params.get("revision")!;

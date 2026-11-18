@@ -30,7 +30,7 @@ afterEach(async () => {
 async function add(root: string, file = "policy.md") {
   return upsertManagedDocument(root, {
     file_path: file, source: "User decision", document: "# Policy\n\n{{fact:fact_viewer_policy}}\n",
-    metadata: { title: "Policy", summary: "Current policy", category: "项目约定", category_reason: "项目已有约定类文档", tags: ["policy"], entities: [], relationships: [], facts: [{ id: "fact_viewer_policy", text: "Review changes", provenance: "Project owner", valid_from: "2020-01-01T00:00:00Z" }] }
+    metadata: { title: "Policy", summary: "Current policy", category: "项目约定", category_reason: "项目已有约定类文档", tags: ["review-cycle"], entities: [], relationships: [], facts: [{ id: "fact_viewer_policy", text: "Review changes", provenance: "Project owner", valid_from: "2020-01-01T00:00:00Z" }] }
   });
 }
 
@@ -68,6 +68,32 @@ describe("read-only document viewer", () => {
     const after = await snapshot(`${viewer.url}/api/documents`);
     expect(after.categories).toEqual([{ id: "团队决策", label: "团队决策", count: 1 }]);
     expect(after.documents[0].category_reason).toBe("结合项目决策目录调整分类");
+  });
+
+  it("searches document metadata across pages and combines search with category filtering", async () => {
+    const { root, viewer } = await setup();
+    await upsertManagedDocument(root, { file_path: "a-guide.md", source: "Guide", document: "Reference only", metadata: {
+      title: "Guide", summary: "Reference", category: "项目约定", tags: [], entities: [], relationships: []
+    } });
+    const record = await add(root, "z-policy.md");
+    const url = new URL("/api/documents?page_size=1", viewer.url);
+    expect((await snapshot(url.href)).documents[0].id).not.toBe(record.id);
+    url.searchParams.set("q", "ＰＯＬＩＣＹ current z-policy review-cycle");
+    url.searchParams.set("category", "项目约定");
+    const match = await fetch(url);
+    const output = await match.json() as DocumentQueryOutput;
+    expect(output).toMatchObject({ total: 1, total_documents: 2, categories: [{ id: "项目约定", count: 2 }],
+      pagination: { total_pages: 1 }, documents: [{ id: record.id }] });
+
+    const headers = { "If-None-Match": match.headers.get("etag")! };
+    expect((await fetch(url, { headers })).status).toBe(304);
+    url.searchParams.set("q", "review changes");
+    const noMatch = await fetch(url, { headers });
+    expect(noMatch.status).toBe(200);
+    expect(await noMatch.json()).toMatchObject({ total: 0, documents: [] });
+    url.searchParams.set("q", "policy");
+    url.searchParams.set("category", "其他分类");
+    expect((await snapshot(url.href)).total).toBe(0);
   });
 
   it("returns an empty 304 without rendering HTML only for the same validated page and category", async () => {
@@ -132,7 +158,7 @@ describe("read-only document viewer", () => {
       req.on("error", reject); req.end();
     })).toBe(403);
     for (const path of ["/project.json", "/api/documents/policy.md", "/api/document/delete"]) expect((await fetch(viewer.url + path)).status).toBe(404);
-    for (const query of ["page=0", "page_size=101", "all=false", "all=true&page=1", "revision=bad", "project_root=/tmp", "page=1&page=2", "category=%20"]) {
+    for (const query of ["page=0", "page_size=101", "all=false", "all=true&page=1", "revision=bad", "project_root=/tmp", "page=1&page=2", "category=%20", "q=a&q=b", `q=${"a".repeat(121)}`]) {
       expect((await fetch(`${viewer.url}/api/documents?${query}`)).status).toBe(400);
     }
     expect((await fetch(viewer.url, { method: "HEAD" })).status).toBe(200);

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.29.0 — 2026-11-19
+
+- Show project-wide category counts and proportions in the local viewer. Search titles, summaries, tags and library paths across all pages or within a selected category.
+- Generate a collapsible outline from Markdown headings. Fold the category and document panels to widen the reader, or reopen them to resume the same search and page.
+- Keep pagination in view on desktop and make it easier to move between the document list and reader on phones.
+
 ## 0.28.3 — 2026-11-04
 
 - Read each managed record and its metadata once per concept directory build. Skip writing the generated metadata schema when its contents already match.

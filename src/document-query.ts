@@ -14,6 +14,7 @@ export interface DocumentQueryInput {
   page?: number;
   page_size?: number;
   category?: DocumentCategory;
+  q?: string;
   revision?: string;
 }
 
@@ -61,7 +62,10 @@ export async function queryDocuments(projectRoot: string, input: DocumentQueryIn
   const offset = (page - 1) * size;
   if (!Number.isSafeInteger(offset)) throw new DocNexusError("invalid_params", "page offset exceeds the safe integer range");
   if (input.category !== undefined && !isDocumentCategory(input.category)) throw new DocNexusError("invalid_params", "category must be a trimmed name of 1–80 characters without control characters");
+  if (input.q !== undefined && (typeof input.q !== "string" || input.q.length > 120)) throw new DocNexusError("invalid_params", "q must be a string of at most 120 characters");
   if (input.revision !== undefined && (typeof input.revision !== "string" || !/^[a-f0-9]{64}$/.test(input.revision))) throw new DocNexusError("invalid_params", "revision must be a SHA-256 snapshot identifier");
+  const normalize = (value: string) => value.normalize("NFKC").toLowerCase();
+  const terms = normalize(input.q ?? "").trim().split(/\s+/).filter(Boolean);
 
   return withProjectLock(projectRoot, async () => {
     const root = await realpath(projectRoot);
@@ -79,7 +83,13 @@ export async function queryDocuments(projectRoot: string, input: DocumentQueryIn
     for (const record of records) { const category = categoryFor(record.id); counts.set(category, (counts.get(category) ?? 0) + 1); }
     const categories = [...counts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
       .map(([id, count]) => ({ id, label: documentCategoryLabel(id), count }));
-    const filtered = records.filter((record) => input.category === undefined || categoryFor(record.id) === input.category);
+    const filtered = records.filter((record) => {
+      if (input.category !== undefined && categoryFor(record.id) !== input.category) return false;
+      if (!terms.length) return true;
+      const { title, summary, tags } = byId.get(record.id)!.metadata;
+      const fields = [title, summary, ...tags, libraryRelativePath(record.file_path, root)].map(normalize);
+      return terms.every((term) => fields.some((field) => field.includes(term)));
+    });
     const selected = input.all ? filtered : filtered.slice(offset, offset + size);
     const totalPages = Math.ceil(filtered.length / size);
     return {

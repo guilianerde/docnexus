@@ -11,26 +11,36 @@
 <body>
   <a class="skip-link" href="#reader">跳到文档正文</a>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="DocNexus 首页"><span class="brand-mark" aria-hidden="true">N</span>DocNexus<span class="brand-divider">/</span><span class="brand-subtitle">项目知识</span></a>
-    <div class="top-actions"><span class="readonly">只读浏览</span><button id="refresh" type="button">刷新文档 <span aria-hidden="true">↻</span></button></div>
+    <a class="brand" href="/" aria-label="DocNexus 首页"><span class="brand-mark" aria-hidden="true">N</span>DocNexus<span class="brand-divider" aria-hidden="true">/</span><span class="brand-subtitle">项目知识库</span></a>
+    <div class="top-actions"><span class="readonly">本地只读</span><button id="refresh" type="button">刷新文档 <span aria-hidden="true">↻</span></button></div>
   </header>
   <div class="workspace">
-    <aside class="sidebar" aria-label="分类导航">
-      <div class="project"><span class="eyebrow">WORKSPACE</span><h1 id="project-name">项目文档</h1><p id="project-path">正在连接本地项目…</p></div>
-      <div class="section-label">文档分类</div>
-      <nav id="categories" aria-label="文档分类"></nav>
-      <div class="sidebar-foot"><span class="live-dot" aria-hidden="true"></span>点击刷新查看最新知识<p>分类随文档与项目演进</p></div>
+    <aside id="category-panel" class="sidebar" aria-label="分类导航">
+      <div class="project"><span class="eyebrow">当前项目</span><p id="project-name">项目文档</p><p id="project-path">正在连接本地项目…</p></div>
+      <div class="section-label" id="categories-title">分类分布</div>
+      <nav id="categories" aria-labelledby="categories-title"></nav>
     </aside>
-    <section class="document-list" aria-labelledby="list-title">
-      <div class="list-heading"><span class="eyebrow">KNOWLEDGE LIBRARY</span><div class="list-title-row"><h2 id="list-title">全部文档</h2><span id="document-count" class="count">—</span></div><p>选择一份文档，阅读当前知识。</p></div>
+    <section id="library" class="document-list" aria-labelledby="list-title" tabindex="-1">
+      <div class="list-heading">
+        <div class="list-title-row"><h2 id="list-title">全部文档</h2><span id="document-count" class="count">—</span></div>
+        <form id="document-search" role="search">
+          <label for="query">搜索文档</label>
+          <div class="search-controls"><input id="query" type="search" placeholder="标题、摘要、标签或路径" maxlength="120" autocomplete="off" enterkeyhint="search"><button type="submit">搜索</button></div>
+          <div id="search-feedback" class="search-feedback" hidden><span id="search-result" role="status"></span><button id="clear-search" type="button">清除</button></div>
+        </form>
+      </div>
       <div class="list-controls"><label for="page-size">每页</label><select id="page-size"><option value="10">10 篇</option><option value="20" selected>20 篇</option><option value="50">50 篇</option></select><span id="list-position"></span></div>
       <div id="documents" class="list-items" aria-busy="true"><p class="empty">正在读取文档…</p></div>
       <nav class="pagination" aria-label="文档分页"><button id="previous" disabled>上一页</button><span id="page-label">—</span><button id="next" disabled>下一页</button></nav>
     </section>
     <main id="reader" class="reader" tabindex="-1">
-      <div class="reader-toolbar"><span id="document-path">文档阅读</span><span id="sync-status" role="status" aria-live="polite">正在加载…</span></div>
+      <div class="reader-toolbar">
+        <button id="toggle-navigation" type="button" aria-controls="category-panel library" aria-expanded="true">收起左栏</button>
+        <a id="back-to-list" class="back-to-list" href="#library">返回文档列表</a>
+        <span id="document-path">文档阅读</span><span id="sync-status" role="status">正在加载…</span>
+      </div>
       <div id="error" role="alert" hidden></div>
-      <div id="detail"><div class="reader-empty"><span class="eyebrow">YOUR PROJECT, IN CONTEXT</span><h2>知识，从这里连接。</h2><p>在左侧选择文档，查看正文、分类依据与事实来源。</p></div></div>
+      <div id="detail"><div class="reader-empty"><h2>正在加载项目文档</h2></div></div>
     </main>
   </div>
 </body>

@@ -78,7 +78,7 @@ docs/knowledge/docnexus/          # --output-dir docs/knowledge; 默认 docnexus
 
 ## 文档浏览与查询
 
-运行 `./.docnexus/node_modules/.bin/docnexus view`，打开输出的本机 URL，即可按分类、分页浏览文档、分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页只读，在打开、手动刷新或切换分类时加载，每次请求都校验真源与事实时间。
+运行 `./.docnexus/node_modules/.bin/docnexus view`，打开输出的本机 URL，即可查看分类分布，按标题、摘要、标签或路径搜索文档，并通过正文目录跳转章节。点击“收起左栏”可扩大阅读区。阅读区也会展示分类依据和事实来源。可用 `--port 4317` 指定端口，Ctrl+C 停止。浏览页只读，按需加载，每次请求都校验真源与事实时间。
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus document query --all

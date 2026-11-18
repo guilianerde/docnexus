@@ -78,7 +78,7 @@ See the [fact workflow](skills/docnexus-extract/references/facts.md) for lifecyc
 
 ## Viewer and document query
 
-Run `./.docnexus/node_modules/.bin/docnexus view` and open the printed local URL to browse categories, paginated documents, classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. The viewer is read-only, loads on opening/manual refresh/category changes, and verifies canonical text and fact time on every request.
+Run `./.docnexus/node_modules/.bin/docnexus view` and open the printed local URL. Browse the category distribution, search by title, summary, tag or path, and use the document outline to jump between sections. Collapse the left panels for a wider reader. The viewer also shows classification reasons and fact provenance. Use `--port 4317` to choose a port and Ctrl+C to stop. The viewer is read-only, loads on demand, and verifies canonical text and fact time on every request.
 
 ```bash
 ./.docnexus/node_modules/.bin/docnexus document query --all
